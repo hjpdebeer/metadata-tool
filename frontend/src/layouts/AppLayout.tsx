@@ -34,7 +34,15 @@ const menuItems = [
       { key: '/data-dictionary/technical', icon: <FolderOpenOutlined />, label: 'Technical Metadata' },
     ],
   },
-  { key: '/data-quality', icon: <SafetyCertificateOutlined />, label: 'Data Quality' },
+  {
+    key: 'data-quality-group',
+    icon: <SafetyCertificateOutlined />,
+    label: 'Data Quality',
+    children: [
+      { key: '/data-quality', icon: <SafetyCertificateOutlined />, label: 'Overview' },
+      { key: '/data-quality/rules', icon: <CheckSquareOutlined />, label: 'Quality Rules' },
+    ],
+  },
   { key: '/lineage', icon: <ApartmentOutlined />, label: 'Data Lineage' },
   { key: '/applications', icon: <AppstoreOutlined />, label: 'Applications' },
   { key: '/processes', icon: <PartitionOutlined />, label: 'Business Processes' },
@@ -61,13 +69,17 @@ const AppLayout: React.FC = () => {
     if (path === '/data-dictionary/cde') return '/data-dictionary/cde';
     if (path === '/data-dictionary/technical') return '/data-dictionary/technical';
     if (path.startsWith('/data-dictionary')) return '/data-dictionary';
+    if (path.startsWith('/data-quality/rules')) return '/data-quality/rules';
+    if (path.startsWith('/data-quality')) return '/data-quality';
     return path;
   };
 
-  // Open the data-dictionary sub-menu when on any data-dictionary route
+  // Open sub-menus when on matching routes
   const getOpenKeys = () => {
-    if (location.pathname.startsWith('/data-dictionary')) return ['data-dictionary-group'];
-    return [];
+    const keys: string[] = [];
+    if (location.pathname.startsWith('/data-dictionary')) keys.push('data-dictionary-group');
+    if (location.pathname.startsWith('/data-quality')) keys.push('data-quality-group');
+    return keys;
   };
 
   const handleMenuClick = ({ key }: { key: string }) => {

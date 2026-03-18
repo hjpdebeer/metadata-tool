@@ -50,9 +50,13 @@ use metadata_tool::db::{self, AppState};
         api::data_dictionary::list_columns,
         api::data_dictionary::create_column,
         api::data_quality::list_dimensions,
+        api::data_quality::list_rule_types,
         api::data_quality::list_rules,
+        api::data_quality::get_rule,
         api::data_quality::create_rule,
+        api::data_quality::update_rule,
         api::data_quality::get_assessments,
+        api::data_quality::create_assessment,
         api::data_quality::get_element_scores,
         api::lineage::list_graphs,
         api::lineage::get_graph,
@@ -186,7 +190,10 @@ async fn main() -> anyhow::Result<()> {
         .route("/api/v1/data-dictionary/tables/{table_id}/columns", get(api::data_dictionary::list_columns).post(api::data_dictionary::create_column))
         // Data Quality
         .route("/api/v1/data-quality/dimensions", get(api::data_quality::list_dimensions))
+        .route("/api/v1/data-quality/rule-types", get(api::data_quality::list_rule_types))
         .route("/api/v1/data-quality/rules", get(api::data_quality::list_rules).post(api::data_quality::create_rule))
+        .route("/api/v1/data-quality/rules/{rule_id}", get(api::data_quality::get_rule).put(api::data_quality::update_rule))
+        .route("/api/v1/data-quality/assessments", post(api::data_quality::create_assessment))
         .route("/api/v1/data-quality/assessments/{rule_id}", get(api::data_quality::get_assessments))
         .route("/api/v1/data-quality/scores/element/{element_id}", get(api::data_quality::get_element_scores))
         // Data Lineage

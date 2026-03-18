@@ -14,6 +14,10 @@ import DataElementForm from './pages/DataElementForm';
 import CdePage from './pages/CdePage';
 import TechnicalMetadataPage from './pages/TechnicalMetadataPage';
 import WorkflowTasksPage from './pages/WorkflowTasksPage';
+import DataQualityDashboard from './pages/DataQualityDashboard';
+import QualityRulesPage from './pages/QualityRulesPage';
+import QualityRuleDetail from './pages/QualityRuleDetail';
+import QualityRuleForm from './pages/QualityRuleForm';
 import PlaceholderPage from './pages/PlaceholderPage';
 import LoginPage from './pages/LoginPage';
 
@@ -101,15 +105,11 @@ const App: React.FC = () => {
               <Route path="data-dictionary/technical" element={<TechnicalMetadataPage />} />
               <Route path="data-dictionary/:id" element={<DataElementDetail />} />
               <Route path="data-dictionary/:id/edit" element={<DataElementForm />} />
-              <Route
-                path="data-quality"
-                element={
-                  <PlaceholderPage
-                    title="Data Quality"
-                    description="Quality dimensions, rules, assessments, and scores"
-                  />
-                }
-              />
+              <Route path="data-quality" element={<DataQualityDashboard />} />
+              <Route path="data-quality/rules" element={<QualityRulesPage />} />
+              <Route path="data-quality/rules/new" element={<QualityRuleForm />} />
+              <Route path="data-quality/rules/:id" element={<QualityRuleDetail />} />
+              <Route path="data-quality/rules/:id/edit" element={<QualityRuleForm />} />
               <Route
                 path="lineage"
                 element={

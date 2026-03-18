@@ -4,6 +4,7 @@ import { Layout, Menu, Typography, Avatar, Dropdown, Space, Badge, Tag } from 'a
 import {
   BookOutlined,
   DatabaseOutlined,
+  FolderOpenOutlined,
   SafetyCertificateOutlined,
   ApartmentOutlined,
   AppstoreOutlined,
@@ -15,6 +16,7 @@ import {
   LogoutOutlined,
   MenuFoldOutlined,
   MenuUnfoldOutlined,
+  WarningOutlined,
 } from '@ant-design/icons';
 import { useAuth } from '../hooks/useAuth';
 
@@ -22,7 +24,16 @@ const { Header, Sider, Content } = Layout;
 
 const menuItems = [
   { key: '/glossary', icon: <BookOutlined />, label: 'Business Glossary' },
-  { key: '/data-dictionary', icon: <DatabaseOutlined />, label: 'Data Dictionary' },
+  {
+    key: 'data-dictionary-group',
+    icon: <DatabaseOutlined />,
+    label: 'Data Dictionary',
+    children: [
+      { key: '/data-dictionary', icon: <DatabaseOutlined />, label: 'All Elements' },
+      { key: '/data-dictionary/cde', icon: <WarningOutlined />, label: 'Critical Data Elements' },
+      { key: '/data-dictionary/technical', icon: <FolderOpenOutlined />, label: 'Technical Metadata' },
+    ],
+  },
   { key: '/data-quality', icon: <SafetyCertificateOutlined />, label: 'Data Quality' },
   { key: '/lineage', icon: <ApartmentOutlined />, label: 'Data Lineage' },
   { key: '/applications', icon: <AppstoreOutlined />, label: 'Applications' },
@@ -43,6 +54,21 @@ const AppLayout: React.FC = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const { user, logout } = useAuth();
+
+  // Derive selected key from current path
+  const getSelectedKey = () => {
+    const path = location.pathname;
+    if (path === '/data-dictionary/cde') return '/data-dictionary/cde';
+    if (path === '/data-dictionary/technical') return '/data-dictionary/technical';
+    if (path.startsWith('/data-dictionary')) return '/data-dictionary';
+    return path;
+  };
+
+  // Open the data-dictionary sub-menu when on any data-dictionary route
+  const getOpenKeys = () => {
+    if (location.pathname.startsWith('/data-dictionary')) return ['data-dictionary-group'];
+    return [];
+  };
 
   const handleMenuClick = ({ key }: { key: string }) => {
     if (key === 'logout') {
@@ -130,7 +156,8 @@ const AppLayout: React.FC = () => {
         </div>
         <Menu
           mode="inline"
-          selectedKeys={[location.pathname]}
+          selectedKeys={[getSelectedKey()]}
+          defaultOpenKeys={getOpenKeys()}
           items={menuItems}
           onClick={({ key }) => navigate(key)}
           style={{ borderRight: 0, marginTop: 8 }}

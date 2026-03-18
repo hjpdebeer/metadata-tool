@@ -8,6 +8,11 @@ import Dashboard from './pages/Dashboard';
 import GlossaryPage from './pages/GlossaryPage';
 import GlossaryTermDetail from './pages/GlossaryTermDetail';
 import GlossaryTermForm from './pages/GlossaryTermForm';
+import DataDictionaryPage from './pages/DataDictionaryPage';
+import DataElementDetail from './pages/DataElementDetail';
+import DataElementForm from './pages/DataElementForm';
+import CdePage from './pages/CdePage';
+import TechnicalMetadataPage from './pages/TechnicalMetadataPage';
 import WorkflowTasksPage from './pages/WorkflowTasksPage';
 import PlaceholderPage from './pages/PlaceholderPage';
 import LoginPage from './pages/LoginPage';
@@ -90,15 +95,12 @@ const App: React.FC = () => {
               <Route path="glossary/new" element={<GlossaryTermForm />} />
               <Route path="glossary/:id" element={<GlossaryTermDetail />} />
               <Route path="glossary/:id/edit" element={<GlossaryTermForm />} />
-              <Route
-                path="data-dictionary"
-                element={
-                  <PlaceholderPage
-                    title="Data Dictionary"
-                    description="Data elements, technical metadata, and critical data element management"
-                  />
-                }
-              />
+              <Route path="data-dictionary" element={<DataDictionaryPage />} />
+              <Route path="data-dictionary/new" element={<DataElementForm />} />
+              <Route path="data-dictionary/cde" element={<CdePage />} />
+              <Route path="data-dictionary/technical" element={<TechnicalMetadataPage />} />
+              <Route path="data-dictionary/:id" element={<DataElementDetail />} />
+              <Route path="data-dictionary/:id/edit" element={<DataElementForm />} />
               <Route
                 path="data-quality"
                 element={

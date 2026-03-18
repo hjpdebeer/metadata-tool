@@ -37,8 +37,18 @@ use metadata_tool::db::{self, AppState};
         api::data_dictionary::list_elements,
         api::data_dictionary::get_element,
         api::data_dictionary::create_element,
+        api::data_dictionary::update_element,
         api::data_dictionary::list_cde,
+        api::data_dictionary::designate_cde,
         api::data_dictionary::list_source_systems,
+        api::data_dictionary::create_source_system,
+        api::data_dictionary::list_classifications,
+        api::data_dictionary::list_schemas,
+        api::data_dictionary::create_schema,
+        api::data_dictionary::list_tables,
+        api::data_dictionary::create_table,
+        api::data_dictionary::list_columns,
+        api::data_dictionary::create_column,
         api::data_quality::list_dimensions,
         api::data_quality::list_rules,
         api::data_quality::create_rule,
@@ -166,9 +176,14 @@ async fn main() -> anyhow::Result<()> {
         .route("/api/v1/stats", get(api::glossary::get_stats))
         // Data Dictionary
         .route("/api/v1/data-dictionary/elements", get(api::data_dictionary::list_elements).post(api::data_dictionary::create_element))
-        .route("/api/v1/data-dictionary/elements/{element_id}", get(api::data_dictionary::get_element))
         .route("/api/v1/data-dictionary/elements/cde", get(api::data_dictionary::list_cde))
-        .route("/api/v1/data-dictionary/source-systems", get(api::data_dictionary::list_source_systems))
+        .route("/api/v1/data-dictionary/elements/{element_id}", get(api::data_dictionary::get_element).put(api::data_dictionary::update_element))
+        .route("/api/v1/data-dictionary/elements/{element_id}/cde", post(api::data_dictionary::designate_cde))
+        .route("/api/v1/data-dictionary/classifications", get(api::data_dictionary::list_classifications))
+        .route("/api/v1/data-dictionary/source-systems", get(api::data_dictionary::list_source_systems).post(api::data_dictionary::create_source_system))
+        .route("/api/v1/data-dictionary/source-systems/{system_id}/schemas", get(api::data_dictionary::list_schemas).post(api::data_dictionary::create_schema))
+        .route("/api/v1/data-dictionary/schemas/{schema_id}/tables", get(api::data_dictionary::list_tables).post(api::data_dictionary::create_table))
+        .route("/api/v1/data-dictionary/tables/{table_id}/columns", get(api::data_dictionary::list_columns).post(api::data_dictionary::create_column))
         // Data Quality
         .route("/api/v1/data-quality/dimensions", get(api::data_quality::list_dimensions))
         .route("/api/v1/data-quality/rules", get(api::data_quality::list_rules).post(api::data_quality::create_rule))

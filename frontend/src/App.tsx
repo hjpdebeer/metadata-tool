@@ -18,6 +18,13 @@ import DataQualityDashboard from './pages/DataQualityDashboard';
 import QualityRulesPage from './pages/QualityRulesPage';
 import QualityRuleDetail from './pages/QualityRuleDetail';
 import QualityRuleForm from './pages/QualityRuleForm';
+import ApplicationsPage from './pages/ApplicationsPage';
+import ApplicationDetail from './pages/ApplicationDetail';
+import ApplicationForm from './pages/ApplicationForm';
+import ProcessesPage from './pages/ProcessesPage';
+import ProcessDetail from './pages/ProcessDetail';
+import ProcessForm from './pages/ProcessForm';
+import CriticalProcessesPage from './pages/CriticalProcessesPage';
 import PlaceholderPage from './pages/PlaceholderPage';
 import LoginPage from './pages/LoginPage';
 
@@ -119,24 +126,15 @@ const App: React.FC = () => {
                   />
                 }
               />
-              <Route
-                path="applications"
-                element={
-                  <PlaceholderPage
-                    title="Business Application Registry"
-                    description="Application inventory, classification, and data element links"
-                  />
-                }
-              />
-              <Route
-                path="processes"
-                element={
-                  <PlaceholderPage
-                    title="Business Process Registry"
-                    description="Business process documentation and critical process management"
-                  />
-                }
-              />
+              <Route path="applications" element={<ApplicationsPage />} />
+              <Route path="applications/new" element={<ApplicationForm />} />
+              <Route path="applications/:id" element={<ApplicationDetail />} />
+              <Route path="applications/:id/edit" element={<ApplicationForm />} />
+              <Route path="processes" element={<ProcessesPage />} />
+              <Route path="processes/new" element={<ProcessForm />} />
+              <Route path="processes/critical" element={<CriticalProcessesPage />} />
+              <Route path="processes/:id" element={<ProcessDetail />} />
+              <Route path="processes/:id/edit" element={<ProcessForm />} />
               <Route path="workflow" element={<WorkflowTasksPage />} />
             </Route>
           </Routes>

@@ -64,14 +64,29 @@ use metadata_tool::db::{self, AppState};
         api::lineage::add_node,
         api::lineage::add_edge,
         api::lineage::impact_analysis,
+        // Applications
         api::applications::list_applications,
         api::applications::get_application,
         api::applications::create_application,
         api::applications::update_application,
+        api::applications::list_classifications,
+        api::applications::link_data_element,
+        api::applications::list_app_elements,
+        api::applications::list_interfaces,
+        // Processes
         api::processes::list_processes,
         api::processes::get_process,
         api::processes::create_process,
+        api::processes::update_process,
         api::processes::list_critical_processes,
+        api::processes::list_categories,
+        api::processes::add_step,
+        api::processes::list_steps,
+        api::processes::link_data_element,
+        api::processes::list_process_elements,
+        api::processes::link_application,
+        api::processes::list_process_applications,
+        // Workflow
         api::workflow::my_pending_tasks,
         api::workflow::get_instance,
         api::workflow::transition,
@@ -204,11 +219,18 @@ async fn main() -> anyhow::Result<()> {
         .route("/api/v1/lineage/impact/{node_id}", get(api::lineage::impact_analysis))
         // Applications
         .route("/api/v1/applications", get(api::applications::list_applications).post(api::applications::create_application))
+        .route("/api/v1/applications/classifications", get(api::applications::list_classifications))
         .route("/api/v1/applications/{app_id}", get(api::applications::get_application).put(api::applications::update_application))
+        .route("/api/v1/applications/{app_id}/elements", get(api::applications::list_app_elements).post(api::applications::link_data_element))
+        .route("/api/v1/applications/{app_id}/interfaces", get(api::applications::list_interfaces))
         // Processes
         .route("/api/v1/processes", get(api::processes::list_processes).post(api::processes::create_process))
-        .route("/api/v1/processes/{process_id}", get(api::processes::get_process))
         .route("/api/v1/processes/critical", get(api::processes::list_critical_processes))
+        .route("/api/v1/processes/categories", get(api::processes::list_categories))
+        .route("/api/v1/processes/{process_id}", get(api::processes::get_process).put(api::processes::update_process))
+        .route("/api/v1/processes/{process_id}/steps", get(api::processes::list_steps).post(api::processes::add_step))
+        .route("/api/v1/processes/{process_id}/elements", get(api::processes::list_process_elements).post(api::processes::link_data_element))
+        .route("/api/v1/processes/{process_id}/applications", get(api::processes::list_process_applications).post(api::processes::link_application))
         // Workflow
         .route("/api/v1/workflow/tasks/pending", get(api::workflow::my_pending_tasks))
         .route("/api/v1/workflow/instances/{instance_id}", get(api::workflow::get_instance))

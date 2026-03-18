@@ -1,0 +1,5 @@
+# Metadata Tool — Clippy linting configuration
+# Enforced via: cargo clippy --workspace --all-targets -- -D warnings
+
+too-many-arguments-threshold = 8
+type-complexity-threshold = 300

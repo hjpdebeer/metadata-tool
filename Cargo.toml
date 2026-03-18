@@ -7,3 +7,48 @@ version = "0.1.0"
 edition = "2024"
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/hjpdebeer/metadata-tool"
+
+# All external dependencies declared here, referenced with workspace = true
+# in individual crate Cargo.toml files. Never add versions directly to crates.
+[workspace.dependencies]
+# Web framework
+axum = { version = "0.8", features = ["macros", "json"] }
+axum-extra = { version = "0.10", features = ["typed-header", "cookie"] }
+tower = { version = "0.5", features = ["full"] }
+tower-http = { version = "0.6", features = ["cors", "trace", "compression-gzip", "request-id", "timeout"] }
+tokio = { version = "1", features = ["full"] }
+hyper = { version = "1" }
+
+# Database
+sqlx = { version = "0.8", features = ["runtime-tokio-rustls", "postgres", "uuid", "chrono", "json", "migrate"] }
+
+# Serialization
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# Auth
+jsonwebtoken = "9"
+openidconnect = "4"
+
+# OpenAPI
+utoipa = { version = "5", features = ["axum_extras", "uuid", "chrono"] }
+utoipa-swagger-ui = { version = "8", features = ["axum"] }
+
+# Observability
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
+
+# Configuration
+dotenvy = "0.15"
+
+# Utilities
+uuid = { version = "1", features = ["v7", "serde"] }
+chrono = { version = "0.4", features = ["serde"] }
+thiserror = "2"
+anyhow = "1"
+validator = { version = "0.19", features = ["derive"] }
+regex = "1"
+reqwest = { version = "0.12", features = ["json"] }
+
+# Testing
+axum-test = "16"

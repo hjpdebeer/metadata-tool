@@ -85,11 +85,32 @@ metadata-tool/
 │       ├── pages/            # Page components
 │       ├── services/         # API client (axios)
 │       └── theme/            # Ant Design theme configuration
+├── docs/
+│   └── architecture/
+│       └── decisions/       # Architecture Decision Records (ADRs)
+├── .github/
+│   ├── pull_request_template.md
+│   └── ISSUE_TEMPLATE/      # Bug report and feature request templates
+├── METADATA_TOOL_PRINCIPLES.md  # 14 foundational principles
+├── CODING_STANDARDS.md      # Coding standards, naming, testing, conventions
+├── CLAUDE.md                # AI assistant guidance
 ├── docker-compose.yml       # PostgreSQL for local dev
 ├── .env.example             # Environment variable template
+├── rustfmt.toml             # Rust formatting config
+├── clippy.toml              # Rust linting config
+├── deny.toml                # Dependency licence/advisory checks
 ├── LICENSE-MIT
 └── LICENSE-APACHE
 ```
+
+## Documentation
+
+| Document | Purpose |
+|----------|---------|
+| [METADATA_TOOL_PRINCIPLES.md](METADATA_TOOL_PRINCIPLES.md) | 14 foundational principles governing all design decisions |
+| [CODING_STANDARDS.md](CODING_STANDARDS.md) | Naming conventions, module structure, testing, database, and git standards |
+| [CLAUDE.md](CLAUDE.md) | Guidance for Claude Code AI assistant |
+| [docs/architecture/decisions/](docs/architecture/decisions/) | Architecture Decision Records (ADRs) |
 
 ## License
 

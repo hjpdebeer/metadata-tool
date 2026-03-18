@@ -53,26 +53,45 @@ CREATE TABLE login_audit_log (
     occurred_at        TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
--- Generic audit trigger function
+-- Generic audit trigger function.
+-- Extracts the record_id from the first UUID column found in the row's JSONB
+-- representation. Relies on the convention that all tables have a UUID PK
+-- column ending in _id as their first column.
 CREATE OR REPLACE FUNCTION audit_trigger_function()
 RETURNS TRIGGER AS $$
+DECLARE
+    v_record_id UUID;
+    v_changed_by UUID;
+    v_row_data JSONB;
+    v_pk_col TEXT;
 BEGIN
+    -- Resolve the PK column name: {singular_table}_id convention
+    v_pk_col := regexp_replace(TG_TABLE_NAME, 's$', '') || '_id';
+
+    -- Resolve changed_by from session variable (set by app layer)
+    BEGIN
+        v_changed_by := current_setting('app.current_user_id', TRUE)::UUID;
+    EXCEPTION WHEN OTHERS THEN
+        v_changed_by := NULL;
+    END;
+
     IF TG_OP = 'INSERT' THEN
+        v_row_data := to_jsonb(NEW);
+        v_record_id := (v_row_data ->> v_pk_col)::UUID;
         INSERT INTO audit_log (table_name, record_id, action, new_values, changed_by)
-        VALUES (TG_TABLE_NAME, NEW.*)::TEXT::UUID, 'INSERT', to_jsonb(NEW),
-               CASE WHEN TG_TABLE_NAME != 'audit_log' THEN
-                   COALESCE(current_setting('app.current_user_id', TRUE)::UUID, NULL)
-               END);
+        VALUES (TG_TABLE_NAME, COALESCE(v_record_id, gen_random_uuid()), 'INSERT', v_row_data, v_changed_by);
         RETURN NEW;
     ELSIF TG_OP = 'UPDATE' THEN
+        v_row_data := to_jsonb(OLD);
+        v_record_id := (v_row_data ->> v_pk_col)::UUID;
         INSERT INTO audit_log (table_name, record_id, action, old_values, new_values, changed_by)
-        VALUES (TG_TABLE_NAME, OLD.*)::TEXT::UUID, 'UPDATE', to_jsonb(OLD), to_jsonb(NEW),
-               COALESCE(current_setting('app.current_user_id', TRUE)::UUID, NULL));
+        VALUES (TG_TABLE_NAME, COALESCE(v_record_id, gen_random_uuid()), 'UPDATE', v_row_data, to_jsonb(NEW), v_changed_by);
         RETURN NEW;
     ELSIF TG_OP = 'DELETE' THEN
+        v_row_data := to_jsonb(OLD);
+        v_record_id := (v_row_data ->> v_pk_col)::UUID;
         INSERT INTO audit_log (table_name, record_id, action, old_values, changed_by)
-        VALUES (TG_TABLE_NAME, OLD.*)::TEXT::UUID, 'DELETE', to_jsonb(OLD),
-               COALESCE(current_setting('app.current_user_id', TRUE)::UUID, NULL));
+        VALUES (TG_TABLE_NAME, COALESCE(v_record_id, gen_random_uuid()), 'DELETE', v_row_data, v_changed_by);
         RETURN OLD;
     END IF;
 END;

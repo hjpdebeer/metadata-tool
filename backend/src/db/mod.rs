@@ -1,3 +1,4 @@
+use sqlx::postgres::{PgConnectOptions, PgSslMode};
 use sqlx::PgPool;
 
 use crate::config::AppConfig;
@@ -15,6 +16,15 @@ impl AppState {
     }
 }
 
+/// Create a connection pool from a DATABASE_URL string.
+///
+/// Parses the URL and disables SSL for local development (Docker PostgreSQL
+/// does not have SSL configured). In production, configure SSL via the
+/// connection string or environment.
 pub async fn create_pool(database_url: &str) -> Result<PgPool, sqlx::Error> {
-    PgPool::connect(database_url).await
+    let options: PgConnectOptions = database_url
+        .parse::<PgConnectOptions>()?
+        .ssl_mode(PgSslMode::Prefer);
+
+    PgPool::connect_with(options).await
 }

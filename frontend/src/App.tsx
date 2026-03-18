@@ -6,6 +6,9 @@ import { AuthProvider, useAuth } from './hooks/useAuth';
 import AppLayout from './layouts/AppLayout';
 import Dashboard from './pages/Dashboard';
 import GlossaryPage from './pages/GlossaryPage';
+import GlossaryTermDetail from './pages/GlossaryTermDetail';
+import GlossaryTermForm from './pages/GlossaryTermForm';
+import WorkflowTasksPage from './pages/WorkflowTasksPage';
 import PlaceholderPage from './pages/PlaceholderPage';
 import LoginPage from './pages/LoginPage';
 
@@ -84,6 +87,9 @@ const App: React.FC = () => {
               <Route index element={<Navigate to="/dashboard" replace />} />
               <Route path="dashboard" element={<Dashboard />} />
               <Route path="glossary" element={<GlossaryPage />} />
+              <Route path="glossary/new" element={<GlossaryTermForm />} />
+              <Route path="glossary/:id" element={<GlossaryTermDetail />} />
+              <Route path="glossary/:id/edit" element={<GlossaryTermForm />} />
               <Route
                 path="data-dictionary"
                 element={
@@ -129,15 +135,7 @@ const App: React.FC = () => {
                   />
                 }
               />
-              <Route
-                path="workflow"
-                element={
-                  <PlaceholderPage
-                    title="My Tasks"
-                    description="Workflow tasks assigned to you"
-                  />
-                }
-              />
+              <Route path="workflow" element={<WorkflowTasksPage />} />
             </Route>
           </Routes>
         </AuthProvider>

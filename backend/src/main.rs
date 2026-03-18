@@ -1,7 +1,6 @@
 use axum::middleware;
 use axum::routing::{get, post};
 use axum::Router;
-use sqlx::migrate::MigrateDatabase;
 use tower_http::cors::{Any, CorsLayer};
 use tower_http::trace::TraceLayer;
 use tracing_subscriber::EnvFilter;
@@ -32,7 +31,9 @@ use metadata_tool::db::{self, AppState};
         api::glossary::create_term,
         api::glossary::update_term,
         api::glossary::list_domains,
+        api::glossary::list_categories,
         api::glossary::ai_enrich_term,
+        api::glossary::get_stats,
         api::data_dictionary::list_elements,
         api::data_dictionary::get_element,
         api::data_dictionary::create_element,
@@ -125,13 +126,8 @@ async fn main() -> anyhow::Result<()> {
     let config = AppConfig::from_env()?;
     let addr = format!("{}:{}", config.host, config.port);
 
-    // Ensure database exists
-    if !sqlx::Postgres::database_exists(&config.database_url).await? {
-        tracing::info!("Creating database...");
-        sqlx::Postgres::create_database(&config.database_url).await?;
-    }
-
     // Connect to database and run migrations
+    // Note: Docker Compose creates the database automatically via POSTGRES_DB
     let pool = db::create_pool(&config.database_url).await?;
     sqlx::migrate!("./migrations").run(&pool).await?;
     tracing::info!("Database migrations applied");
@@ -165,6 +161,9 @@ async fn main() -> anyhow::Result<()> {
         .route("/api/v1/glossary/terms/{term_id}", get(api::glossary::get_term).put(api::glossary::update_term))
         .route("/api/v1/glossary/terms/{term_id}/ai-enrich", post(api::glossary::ai_enrich_term))
         .route("/api/v1/glossary/domains", get(api::glossary::list_domains))
+        .route("/api/v1/glossary/categories", get(api::glossary::list_categories))
+        // Dashboard
+        .route("/api/v1/stats", get(api::glossary::get_stats))
         // Data Dictionary
         .route("/api/v1/data-dictionary/elements", get(api::data_dictionary::list_elements).post(api::data_dictionary::create_element))
         .route("/api/v1/data-dictionary/elements/{element_id}", get(api::data_dictionary::get_element))

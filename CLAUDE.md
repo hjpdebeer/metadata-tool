@@ -22,7 +22,7 @@ These documents govern all design decisions and code contributions. Read them be
 
 - **Backend** (`backend/`): Rust, Axum web framework, SQLx for PostgreSQL, utoipa for OpenAPI
 - **Frontend** (`frontend/`): React 19 + TypeScript + Vite + Ant Design + React Flow (lineage visualization)
-- **Database**: PostgreSQL 17, 3NF normalized, 12 migration files in `backend/migrations/`
+- **Database**: PostgreSQL 17, 3NF normalized, 16 migration files in `backend/migrations/`
 - **Auth**: Microsoft Entra ID SSO via OpenID Connect, JWT sessions, RBAC
 - **AI**: Claude API (primary), OpenAI (fallback) for metadata enrichment (ADR-0004)
 
@@ -74,7 +74,7 @@ Each domain (glossary, data_dictionary, data_quality, lineage, applications, pro
 Shared app state (`db::AppState`) holds the PgPool and AppConfig, passed to all handlers via Axum's `State` extractor.
 
 ### Database schema (Principle 2, 3, 9)
-- 12 sequential migrations in `backend/migrations/` (001_extensions through 012_meta_and_triggers)
+- 16 sequential migrations in `backend/migrations/` (001_extensions through 016_app_process_seed)
 - UUIDs for all primary keys (`gen_random_uuid`)
 - Soft deletes via `deleted_at` column where appropriate
 - Full-text search via `TSVECTOR` columns on glossary_terms and data_elements
@@ -140,3 +140,16 @@ Full rules in CODING_STANDARDS.md Section 1. Key points:
 - The `workflow` module constants are in `backend/src/workflow/mod.rs` — reference these when building workflow logic rather than hardcoding state strings.
 - All domain entities go through the same workflow lifecycle (Principle 5) — new entity types should follow the same pattern.
 - CDE propagation is automatic via DB triggers (Principle 12) — never implement CDE logic in application code that bypasses the triggers.
+- AI enrichment uses `Extension<Claims>` for auth and stores all suggestions in `ai_suggestions` for audit trail. The AI module is in `backend/src/ai/mod.rs`.
+- Notifications are queued (not sent) — email sending via Microsoft Graph API is ready for configuration. In-app notifications work immediately.
+- User management requires ADMIN role — enforced via `require_admin()` guard in `api/users.rs`.
+- Dev-mode auth (email + password) is active when `ENTRA_TENANT_ID` is not configured. Will auto-disable when Entra SSO is set up.
+
+## Codebase Statistics
+
+- **36 Rust source files**, ~10,200 lines
+- **28 frontend pages** + 2 components + 10 API service files, ~14,200 lines TypeScript
+- **~94 API endpoint functions** across 12 API modules
+- **16 database migrations** creating ~50 tables
+- **12 unit tests** (JWT, AI parser, notification templates)
+- **7 metadata domains**: glossary, data dictionary, data quality, lineage, applications, processes, workflow

@@ -1,0 +1,59 @@
+use chrono::{DateTime, Utc};
+use serde::{Deserialize, Serialize};
+use sqlx::FromRow;
+use utoipa::ToSchema;
+use uuid::Uuid;
+
+#[derive(Debug, Clone, Serialize, Deserialize, FromRow, ToSchema)]
+pub struct User {
+    pub user_id: Uuid,
+    pub username: String,
+    pub email: String,
+    pub display_name: String,
+    pub first_name: Option<String>,
+    pub last_name: Option<String>,
+    pub department: Option<String>,
+    pub job_title: Option<String>,
+    pub entra_object_id: Option<String>,
+    pub is_active: bool,
+    pub last_login_at: Option<DateTime<Utc>>,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, FromRow, ToSchema)]
+pub struct Role {
+    pub role_id: Uuid,
+    pub role_code: String,
+    pub role_name: String,
+    pub description: Option<String>,
+    pub is_system_role: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+pub struct UserWithRoles {
+    #[serde(flatten)]
+    pub user: User,
+    pub roles: Vec<Role>,
+}
+
+#[derive(Debug, Deserialize, ToSchema)]
+pub struct CreateUserRequest {
+    pub username: String,
+    pub email: String,
+    pub display_name: String,
+    pub first_name: Option<String>,
+    pub last_name: Option<String>,
+    pub department: Option<String>,
+    pub job_title: Option<String>,
+    pub role_ids: Vec<Uuid>,
+}
+
+#[derive(Debug, Deserialize, ToSchema)]
+pub struct UpdateUserRequest {
+    pub display_name: Option<String>,
+    pub department: Option<String>,
+    pub job_title: Option<String>,
+    pub is_active: Option<bool>,
+    pub role_ids: Option<Vec<Uuid>>,
+}

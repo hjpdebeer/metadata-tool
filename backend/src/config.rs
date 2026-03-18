@@ -1,0 +1,81 @@
+use std::env;
+
+#[derive(Debug, Clone)]
+pub struct AppConfig {
+    pub database_url: String,
+    pub host: String,
+    pub port: u16,
+    pub jwt_secret: String,
+    pub jwt_expiry_hours: u64,
+    pub entra: EntraConfig,
+    pub graph: GraphConfig,
+    pub ai: AiConfig,
+    pub frontend_url: String,
+}
+
+#[derive(Debug, Clone)]
+pub struct EntraConfig {
+    pub tenant_id: String,
+    pub client_id: String,
+    pub client_secret: String,
+    pub redirect_uri: String,
+}
+
+#[derive(Debug, Clone)]
+pub struct GraphConfig {
+    pub tenant_id: String,
+    pub client_id: String,
+    pub client_secret: String,
+    pub sender_email: String,
+}
+
+#[derive(Debug, Clone)]
+pub struct AiConfig {
+    pub primary_provider: String,
+    pub anthropic_api_key: Option<String>,
+    pub anthropic_model: String,
+    pub openai_api_key: Option<String>,
+    pub openai_model: String,
+}
+
+impl AppConfig {
+    pub fn from_env() -> Result<Self, env::VarError> {
+        Ok(Self {
+            database_url: env::var("DATABASE_URL")?,
+            host: env::var("HOST").unwrap_or_else(|_| "0.0.0.0".into()),
+            port: env::var("PORT")
+                .unwrap_or_else(|_| "8080".into())
+                .parse()
+                .expect("PORT must be a valid u16"),
+            jwt_secret: env::var("JWT_SECRET")?,
+            jwt_expiry_hours: env::var("JWT_EXPIRY_HOURS")
+                .unwrap_or_else(|_| "8".into())
+                .parse()
+                .expect("JWT_EXPIRY_HOURS must be a valid u64"),
+            entra: EntraConfig {
+                tenant_id: env::var("ENTRA_TENANT_ID")?,
+                client_id: env::var("ENTRA_CLIENT_ID")?,
+                client_secret: env::var("ENTRA_CLIENT_SECRET")?,
+                redirect_uri: env::var("ENTRA_REDIRECT_URI")?,
+            },
+            graph: GraphConfig {
+                tenant_id: env::var("GRAPH_TENANT_ID")?,
+                client_id: env::var("GRAPH_CLIENT_ID")?,
+                client_secret: env::var("GRAPH_CLIENT_SECRET")?,
+                sender_email: env::var("GRAPH_SENDER_EMAIL")?,
+            },
+            ai: AiConfig {
+                primary_provider: env::var("AI_PRIMARY_PROVIDER")
+                    .unwrap_or_else(|_| "claude".into()),
+                anthropic_api_key: env::var("ANTHROPIC_API_KEY").ok(),
+                anthropic_model: env::var("ANTHROPIC_MODEL")
+                    .unwrap_or_else(|_| "claude-sonnet-4-6".into()),
+                openai_api_key: env::var("OPENAI_API_KEY").ok(),
+                openai_model: env::var("OPENAI_MODEL")
+                    .unwrap_or_else(|_| "gpt-4o".into()),
+            },
+            frontend_url: env::var("FRONTEND_URL")
+                .unwrap_or_else(|_| "http://localhost:5173".into()),
+        })
+    }
+}

@@ -1,5 +1,5 @@
 use axum::middleware;
-use axum::routing::{get, post};
+use axum::routing::{delete, get, post, put};
 use axum::Router;
 use tower_http::cors::{Any, CorsLayer};
 use tower_http::trace::TraceLayer;
@@ -61,8 +61,13 @@ use metadata_tool::db::{self, AppState};
         api::lineage::list_graphs,
         api::lineage::get_graph,
         api::lineage::create_graph,
+        api::lineage::update_graph,
         api::lineage::add_node,
+        api::lineage::update_node_position,
+        api::lineage::delete_node,
         api::lineage::add_edge,
+        api::lineage::delete_edge,
+        api::lineage::list_node_types,
         api::lineage::impact_analysis,
         // Applications
         api::applications::list_applications,
@@ -213,9 +218,13 @@ async fn main() -> anyhow::Result<()> {
         .route("/api/v1/data-quality/scores/element/{element_id}", get(api::data_quality::get_element_scores))
         // Data Lineage
         .route("/api/v1/lineage/graphs", get(api::lineage::list_graphs).post(api::lineage::create_graph))
-        .route("/api/v1/lineage/graphs/{graph_id}", get(api::lineage::get_graph))
+        .route("/api/v1/lineage/graphs/{graph_id}", get(api::lineage::get_graph).put(api::lineage::update_graph))
         .route("/api/v1/lineage/graphs/{graph_id}/nodes", post(api::lineage::add_node))
         .route("/api/v1/lineage/graphs/{graph_id}/edges", post(api::lineage::add_edge))
+        .route("/api/v1/lineage/node-types", get(api::lineage::list_node_types))
+        .route("/api/v1/lineage/nodes/{node_id}/position", put(api::lineage::update_node_position))
+        .route("/api/v1/lineage/nodes/{node_id}", delete(api::lineage::delete_node))
+        .route("/api/v1/lineage/edges/{edge_id}", delete(api::lineage::delete_edge))
         .route("/api/v1/lineage/impact/{node_id}", get(api::lineage::impact_analysis))
         // Applications
         .route("/api/v1/applications", get(api::applications::list_applications).post(api::applications::create_application))

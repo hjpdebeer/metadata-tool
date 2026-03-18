@@ -25,6 +25,9 @@ import ProcessesPage from './pages/ProcessesPage';
 import ProcessDetail from './pages/ProcessDetail';
 import ProcessForm from './pages/ProcessForm';
 import CriticalProcessesPage from './pages/CriticalProcessesPage';
+import LineageGraphList from './pages/LineageGraphList';
+import LineageGraphCreate from './pages/LineageGraphCreate';
+import LineageGraphView from './pages/LineageGraphView';
 import PlaceholderPage from './pages/PlaceholderPage';
 import LoginPage from './pages/LoginPage';
 
@@ -117,15 +120,9 @@ const App: React.FC = () => {
               <Route path="data-quality/rules/new" element={<QualityRuleForm />} />
               <Route path="data-quality/rules/:id" element={<QualityRuleDetail />} />
               <Route path="data-quality/rules/:id/edit" element={<QualityRuleForm />} />
-              <Route
-                path="lineage"
-                element={
-                  <PlaceholderPage
-                    title="Data Lineage"
-                    description="Business and technical data lineage visualization"
-                  />
-                }
-              />
+              <Route path="lineage" element={<LineageGraphList />} />
+              <Route path="lineage/new" element={<LineageGraphCreate />} />
+              <Route path="lineage/:id" element={<LineageGraphView />} />
               <Route path="applications" element={<ApplicationsPage />} />
               <Route path="applications/new" element={<ApplicationForm />} />
               <Route path="applications/:id" element={<ApplicationDetail />} />

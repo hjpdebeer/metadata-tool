@@ -556,7 +556,7 @@ const ApplicationDetail: React.FC = () => {
               '-'
             )}
           </Descriptions.Item>
-          {application.technology_stack && (
+          {application.technology_stack != null ? (
             <Descriptions.Item label="Technology Stack" span={2}>
               <Text code style={{ fontSize: 12, whiteSpace: 'pre-wrap' }}>
                 {typeof application.technology_stack === 'string'
@@ -564,7 +564,7 @@ const ApplicationDetail: React.FC = () => {
                   : JSON.stringify(application.technology_stack, null, 2)}
               </Text>
             </Descriptions.Item>
-          )}
+          ) : null}
           <Descriptions.Item label="Critical">
             {application.is_critical ? (
               <Tag color="red" style={{ fontWeight: 600 }}>

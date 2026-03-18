@@ -1,8 +1,12 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
-use utoipa::ToSchema;
+use utoipa::{IntoParams, ToSchema};
 use uuid::Uuid;
+
+// ---------------------------------------------------------------------------
+// Core entities (map directly to database tables)
+// ---------------------------------------------------------------------------
 
 #[derive(Debug, Clone, Serialize, Deserialize, FromRow, ToSchema)]
 pub struct LineageGraph {
@@ -49,6 +53,68 @@ pub struct LineageEdge {
     pub properties: Option<serde_json::Value>,
 }
 
+// ---------------------------------------------------------------------------
+// List item (for graph listing with aggregate counts)
+// ---------------------------------------------------------------------------
+
+/// List view of a lineage graph with node/edge counts and creator name
+#[derive(Debug, Clone, Serialize, FromRow, ToSchema)]
+pub struct LineageGraphListItem {
+    pub graph_id: Uuid,
+    pub graph_name: String,
+    pub graph_type: String,
+    pub description: Option<String>,
+    pub is_current: bool,
+    pub node_count: i64,
+    pub edge_count: i64,
+    pub created_by_name: Option<String>,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
+// ---------------------------------------------------------------------------
+// Node type (seeded in migration 006)
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Clone, Serialize, Deserialize, FromRow, ToSchema)]
+pub struct LineageNodeType {
+    pub node_type_id: Uuid,
+    pub type_code: String,
+    pub type_name: String,
+    pub description: Option<String>,
+    pub icon_name: Option<String>,
+}
+
+// ---------------------------------------------------------------------------
+// Node view (enriched with node type info for React Flow)
+// ---------------------------------------------------------------------------
+
+/// Enriched node view including type info joined from lineage_node_types
+#[derive(Debug, Clone, Serialize, FromRow, ToSchema)]
+pub struct LineageNodeView {
+    pub node_id: Uuid,
+    pub graph_id: Uuid,
+    pub node_type_id: Uuid,
+    pub node_name: String,
+    pub node_label: Option<String>,
+    pub description: Option<String>,
+    pub system_id: Option<Uuid>,
+    pub table_id: Option<Uuid>,
+    pub element_id: Option<Uuid>,
+    pub application_id: Option<Uuid>,
+    pub process_id: Option<Uuid>,
+    pub position_x: Option<f64>,
+    pub position_y: Option<f64>,
+    pub properties: Option<serde_json::Value>,
+    pub node_type_code: String,
+    pub node_type_name: String,
+    pub icon_name: Option<String>,
+}
+
+// ---------------------------------------------------------------------------
+// Request types
+// ---------------------------------------------------------------------------
+
 #[derive(Debug, Deserialize, ToSchema)]
 pub struct CreateLineageGraphRequest {
     pub graph_name: String,
@@ -56,6 +122,12 @@ pub struct CreateLineageGraphRequest {
     pub description: Option<String>,
     pub scope_type: Option<String>,
     pub scope_entity_id: Option<Uuid>,
+}
+
+#[derive(Debug, Deserialize, ToSchema)]
+pub struct UpdateLineageGraphRequest {
+    pub graph_name: Option<String>,
+    pub description: Option<String>,
 }
 
 #[derive(Debug, Deserialize, ToSchema)]
@@ -81,13 +153,64 @@ pub struct AddLineageEdgeRequest {
     pub description: Option<String>,
 }
 
+#[derive(Debug, Deserialize, ToSchema)]
+pub struct UpdateNodePositionRequest {
+    pub node_id: Uuid,
+    pub position_x: f64,
+    pub position_y: f64,
+}
+
+#[derive(Debug, Deserialize, IntoParams, ToSchema)]
+pub struct SearchGraphsRequest {
+    pub query: Option<String>,
+    pub graph_type: Option<String>,
+    pub page: Option<i64>,
+    pub page_size: Option<i64>,
+}
+
+// ---------------------------------------------------------------------------
+// Full graph structure for visualization (React Flow)
+// ---------------------------------------------------------------------------
+
 /// Full graph structure for visualization
 #[derive(Debug, Serialize, ToSchema)]
 pub struct LineageGraphView {
     #[serde(flatten)]
     pub graph: LineageGraph,
-    pub nodes: Vec<LineageNode>,
+    pub nodes: Vec<LineageNodeView>,
     pub edges: Vec<LineageEdge>,
+}
+
+// ---------------------------------------------------------------------------
+// Impact analysis
+// ---------------------------------------------------------------------------
+
+/// A node in the impact analysis result with its traversal depth
+#[derive(Debug, Clone, Serialize, FromRow, ToSchema)]
+pub struct ImpactedNode {
+    pub node_id: Uuid,
+    pub graph_id: Uuid,
+    pub node_type_id: Uuid,
+    pub node_name: String,
+    pub node_label: Option<String>,
+    pub description: Option<String>,
+    pub node_type_code: String,
+    pub node_type_name: String,
+    pub icon_name: Option<String>,
+    pub depth: i32,
+}
+
+/// An edge in the impact analysis result with its traversal depth
+#[derive(Debug, Clone, Serialize, FromRow, ToSchema)]
+pub struct ImpactedEdge {
+    pub edge_id: Uuid,
+    pub graph_id: Uuid,
+    pub source_node_id: Uuid,
+    pub target_node_id: Uuid,
+    pub edge_type: String,
+    pub transformation_logic: Option<String>,
+    pub description: Option<String>,
+    pub depth: i32,
 }
 
 /// Impact analysis result
@@ -95,7 +218,7 @@ pub struct LineageGraphView {
 pub struct ImpactAnalysis {
     pub source_node_id: Uuid,
     pub direction: String, // UPSTREAM or DOWNSTREAM
-    pub impacted_nodes: Vec<LineageNode>,
-    pub impacted_edges: Vec<LineageEdge>,
-    pub depth: i32,
+    pub impacted_nodes: Vec<ImpactedNode>,
+    pub impacted_edges: Vec<ImpactedEdge>,
+    pub max_depth_reached: i32,
 }

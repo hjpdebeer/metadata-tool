@@ -71,6 +71,7 @@ const AppLayout: React.FC = () => {
     if (path.startsWith('/data-dictionary')) return '/data-dictionary';
     if (path.startsWith('/data-quality/rules')) return '/data-quality/rules';
     if (path.startsWith('/data-quality')) return '/data-quality';
+    if (path.startsWith('/lineage')) return '/lineage';
     if (path.startsWith('/applications')) return '/applications';
     if (path.startsWith('/processes')) return '/processes';
     return path;

@@ -74,7 +74,7 @@ Enterprise Metadata Management Tool - Implementation Roadmap
 | WI-ID | Title | Type | Priority | Effort | Dependencies | Status |
 |-------|-------|------|----------|--------|--------------|--------|
 | WI-001 | Implement JWT token issuance and validation | Backend | P0 | 3d | - | Not Started |
-| WI-002 | Implement Entra ID SSO flow (login, callback, token exchange) | Backend | P0 | 3d | WI-001 | Not Started |
+| WI-002 | Add password_hash column, seed dev users, dev-login endpoint | Backend | P0 | 2d | WI-001 | Not Started |
 | WI-003 | Implement require_auth middleware | Backend | P0 | 1d | WI-001 | Not Started |
 | WI-004 | Implement require_role middleware (RBAC) | Backend | P0 | 2d | WI-003 | Not Started |
 | WI-005 | Seed initial workflow states and definitions | Backend | P0 | 1d | - | Not Started |
@@ -82,7 +82,9 @@ Enterprise Metadata Management Tool - Implementation Roadmap
 | WI-007 | Implement workflow task creation and assignment | Backend | P1 | 2d | WI-006 | Not Started |
 | WI-008 | Implement workflow history recording | Backend | P1 | 1d | WI-006 | Not Started |
 | WI-009 | Create test utilities module (fixtures, db setup) | Backend | P1 | 1d | - | Not Started |
-| WI-010 | Add AuthProvider context to frontend | Frontend | P0 | 2d | WI-002 | Not Started |
+| WI-010 | Add AuthProvider context and dev-login page to frontend | Frontend | P0 | 2d | WI-002 | Not Started |
+
+> **Note (2026-03-18):** WI-002 was revised. Entra ID SSO is deferred to Phase 7 (Sprint 13) alongside Microsoft Graph notifications — both depend on Microsoft tenant configuration that is impractical during development. Sprint 1-2 uses a dev-mode login (email + bcrypt password) that is automatically disabled when `ENTRA_TENANT_ID` is configured. See WI-134 below.
 
 ### Phase 1: Glossary Vertical Slice
 
@@ -229,6 +231,10 @@ Enterprise Metadata Management Tool - Implementation Roadmap
 | WI-114 | Frontend: Notification bell with unread count | Frontend | P2 | 1d | WI-113 | Not Started |
 | WI-115 | Frontend: Notification preferences page | Frontend | P2 | 1d | WI-112 | Not Started |
 | WI-116 | Unit tests for notification handlers | Backend | P1 | 1d | WI-108-113 | Not Started |
+| WI-134 | Implement Entra ID SSO flow (login, callback, token exchange) | Backend | P1 | 3d | WI-001 | Not Started |
+| WI-135 | Configure dev-login auto-disable when ENTRA_TENANT_ID is set | Backend | P1 | 0.5d | WI-134 | Not Started |
+
+> **Note (2026-03-18):** WI-134 and WI-135 were moved here from Phase 0. Entra ID SSO requires a configured Microsoft tenant, which is impractical during development. The dev-mode login (WI-002) provides full auth functionality for development and testing. When Entra is configured, the dev-login endpoint is automatically disabled.
 
 ### Phase 8: Admin & Polish
 
@@ -489,16 +495,16 @@ Enterprise Metadata Management Tool - Implementation Roadmap
 
 ### Sprint 1: Auth Foundation
 **Duration**: 2 weeks
-**Theme**: Authentication infrastructure
+**Theme**: Authentication infrastructure (dev-mode — Entra SSO deferred to Sprint 13)
 
 | Story ID | Title | Points | Owner | Dependencies | Acceptance Criteria |
 |----------|-------|--------|-------|--------------|---------------------|
 | WI-001 | JWT token issuance and validation | 5 | - | - | Tokens issued with claims, validation rejects expired/invalid tokens |
-| WI-002 | Entra ID SSO flow | 5 | - | WI-001 | Login redirects to Entra, callback exchanges code for tokens |
-| WI-003 | require_auth middleware | 3 | - | WI-001 | Protected routes return 401 without valid JWT |
+| WI-002 | Dev-mode login (password_hash, seed users, endpoint) | 5 | - | WI-001 | POST /api/v1/auth/dev-login accepts email+password, returns JWT. Seeded admin + test users available |
+| WI-003 | require_auth middleware | 3 | - | WI-001 | Protected routes return 401 without valid JWT, Claims injected into request extensions |
 | WI-009 | Test utilities module | 2 | - | - | Fixture builders, test DB setup helper available |
 
-**Sprint Goal**: Users can authenticate via Entra ID SSO and receive a valid JWT.
+**Sprint Goal**: Users can log in via dev-mode (email + password) and receive a valid JWT. Protected routes enforce authentication.
 **Capacity**: 15 points
 **Committed**: 15 points
 
@@ -511,13 +517,13 @@ Enterprise Metadata Management Tool - Implementation Roadmap
 | Story ID | Title | Points | Owner | Dependencies | Acceptance Criteria |
 |----------|-------|--------|-------|--------------|---------------------|
 | WI-004 | require_role middleware | 3 | - | WI-003 | Endpoints reject users without required role (403) |
-| WI-005 | Seed workflow states and definitions | 2 | - | - | All entity types have active workflow definitions |
-| WI-006 | Workflow state transition logic | 5 | - | WI-005 | Valid transitions succeed, invalid return error |
-| WI-007 | Workflow task creation and assignment | 3 | - | WI-006 | Tasks created on PROPOSED state, assigned to approvers |
+| WI-005 | Seed workflow states and definitions | 2 | - | - | All entity types have active workflow definitions with transitions |
+| WI-006 | Workflow state transition logic | 5 | - | WI-005 | Valid transitions succeed, invalid return error, entity status updated |
+| WI-007 | Workflow task creation and assignment | 3 | - | WI-006 | Tasks created on UNDER_REVIEW state, assigned to DATA_STEWARD role |
 | WI-008 | Workflow history recording | 2 | - | WI-006 | Every transition logged with user, timestamp, comments |
-| WI-010 | Frontend AuthProvider | 3 | - | WI-002 | Login/logout works, JWT stored, user context available |
+| WI-010 | Frontend AuthProvider + dev-login page | 3 | - | WI-002 | Login page with email/password, JWT stored, user context available, logout works |
 
-**Sprint Goal**: Workflow engine can transition entities through states with task assignment.
+**Sprint Goal**: Workflow engine can transition entities through states with task assignment. Frontend has working login.
 **Capacity**: 18 points
 **Committed**: 18 points
 

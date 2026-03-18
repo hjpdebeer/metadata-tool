@@ -1,10 +1,13 @@
 use axum::extract::{Path, State};
+use axum::Extension;
 use axum::Json;
 use uuid::Uuid;
 
+use crate::auth::Claims;
 use crate::db::AppState;
 use crate::domain::workflow::*;
 use crate::error::AppResult;
+use crate::workflow::service;
 
 #[utoipa::path(
     get,
@@ -16,10 +19,11 @@ use crate::error::AppResult;
     tag = "workflow"
 )]
 pub async fn my_pending_tasks(
-    State(_state): State<AppState>,
+    State(state): State<AppState>,
+    Extension(claims): Extension<Claims>,
 ) -> AppResult<Json<Vec<PendingTaskView>>> {
-    // TODO: Get tasks assigned to current user or their roles
-    Ok(Json(vec![]))
+    let tasks = service::get_pending_tasks(&state.pool, claims.sub, &claims.roles).await?;
+    Ok(Json(tasks))
 }
 
 #[utoipa::path(
@@ -33,10 +37,11 @@ pub async fn my_pending_tasks(
     tag = "workflow"
 )]
 pub async fn get_instance(
-    State(_state): State<AppState>,
-    Path(_instance_id): Path<Uuid>,
+    State(state): State<AppState>,
+    Path(instance_id): Path<Uuid>,
 ) -> AppResult<Json<WorkflowInstanceView>> {
-    Err(crate::error::AppError::NotFound("Instance not found".into()))
+    let view = service::get_workflow_instance(&state.pool, instance_id).await?;
+    Ok(Json(view))
 }
 
 #[utoipa::path(
@@ -52,14 +57,21 @@ pub async fn get_instance(
     tag = "workflow"
 )]
 pub async fn transition(
-    State(_state): State<AppState>,
-    Path(_instance_id): Path<Uuid>,
-    Json(_body): Json<WorkflowTransitionRequest>,
+    State(state): State<AppState>,
+    Path(instance_id): Path<Uuid>,
+    Extension(claims): Extension<Claims>,
+    Json(body): Json<WorkflowTransitionRequest>,
 ) -> AppResult<Json<WorkflowInstance>> {
-    // TODO: Validate transition, update state, create tasks, send notifications
-    Err(crate::error::AppError::Internal(anyhow::anyhow!(
-        "Not implemented yet"
-    )))
+    let instance = service::transition_workflow(
+        &state.pool,
+        instance_id,
+        &body.action,
+        claims.sub,
+        body.comments.as_deref(),
+    )
+    .await?;
+
+    Ok(Json(instance))
 }
 
 #[utoipa::path(
@@ -74,12 +86,19 @@ pub async fn transition(
     tag = "workflow"
 )]
 pub async fn complete_task(
-    State(_state): State<AppState>,
-    Path(_task_id): Path<Uuid>,
-    Json(_body): Json<CompleteTaskRequest>,
+    State(state): State<AppState>,
+    Path(task_id): Path<Uuid>,
+    Extension(claims): Extension<Claims>,
+    Json(body): Json<CompleteTaskRequest>,
 ) -> AppResult<Json<WorkflowTask>> {
-    // TODO: Complete task, check if all tasks done, auto-transition if so
-    Err(crate::error::AppError::Internal(anyhow::anyhow!(
-        "Not implemented yet"
-    )))
+    let task = service::complete_task(
+        &state.pool,
+        task_id,
+        claims.sub,
+        &body.decision,
+        body.comments.as_deref(),
+    )
+    .await?;
+
+    Ok(Json(task))
 }

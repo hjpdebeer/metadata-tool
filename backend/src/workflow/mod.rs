@@ -1,5 +1,7 @@
 // Workflow engine module - manages entity lifecycle states
 
+pub mod service;
+
 /// Supported workflow entity types
 pub const ENTITY_GLOSSARY_TERM: &str = "GLOSSARY_TERM";
 pub const ENTITY_DATA_ELEMENT: &str = "DATA_ELEMENT";

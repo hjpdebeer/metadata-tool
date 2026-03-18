@@ -1,0 +1,729 @@
+use chrono::{DateTime, TimeDelta, Utc};
+use sqlx::PgPool;
+use uuid::Uuid;
+
+use crate::domain::workflow::{
+    PendingTaskView, WorkflowHistoryEntry, WorkflowInstance, WorkflowInstanceView, WorkflowTask,
+};
+use crate::error::{AppError, AppResult};
+
+use super::{ACTION_APPROVE, ACTION_REJECT, ACTION_REVISE, STATE_UNDER_REVIEW};
+
+// ---------------------------------------------------------------------------
+// Internal row types for queries that don't map to domain structs directly
+// ---------------------------------------------------------------------------
+
+#[derive(sqlx::FromRow)]
+struct WorkflowDefRow {
+    workflow_def_id: Uuid,
+}
+
+#[derive(sqlx::FromRow)]
+struct StateRow {
+    state_id: Uuid,
+    state_code: String,
+    is_terminal: bool,
+}
+
+#[derive(sqlx::FromRow)]
+struct TransitionRow {
+    to_state_id: Uuid,
+}
+
+#[derive(sqlx::FromRow)]
+struct EntityTypeRow {
+    entity_type_id: Uuid,
+    table_name: String,
+}
+
+#[derive(sqlx::FromRow)]
+struct ApproverRow {
+    approver_user_id: Option<Uuid>,
+    approver_role_id: Option<Uuid>,
+}
+
+#[derive(sqlx::FromRow)]
+struct PendingTaskRow {
+    // Task fields
+    task_id: Uuid,
+    instance_id: Uuid,
+    task_type: String,
+    task_name: String,
+    description: Option<String>,
+    assigned_to_user_id: Option<Uuid>,
+    assigned_to_role_id: Option<Uuid>,
+    status: String,
+    due_date: Option<DateTime<Utc>>,
+    completed_at: Option<DateTime<Utc>>,
+    completed_by: Option<Uuid>,
+    decision: Option<String>,
+    comments: Option<String>,
+    // Joined fields
+    entity_type: String,
+    entity_id: Uuid,
+    workflow_name: String,
+    submitted_by: String,
+    submitted_at: DateTime<Utc>,
+}
+
+#[derive(sqlx::FromRow)]
+struct InstanceViewRow {
+    // Instance fields
+    instance_id: Uuid,
+    workflow_def_id: Uuid,
+    entity_type_id: Uuid,
+    entity_id: Uuid,
+    current_state_id: Uuid,
+    initiated_by: Uuid,
+    initiated_at: DateTime<Utc>,
+    completed_at: Option<DateTime<Utc>>,
+    completion_notes: Option<String>,
+    // Joined fields
+    current_state_name: String,
+    entity_type_name: String,
+    initiated_by_name: String,
+}
+
+// ---------------------------------------------------------------------------
+// 1. initiate_workflow
+// ---------------------------------------------------------------------------
+
+/// Create a new workflow instance in DRAFT state for the given entity.
+///
+/// Looks up the active workflow definition for `entity_type_code`, resolves
+/// the DRAFT initial state, and inserts a new `workflow_instances` row.
+pub async fn initiate_workflow(
+    pool: &PgPool,
+    entity_type_code: &str,
+    entity_id: Uuid,
+    initiated_by: Uuid,
+) -> AppResult<WorkflowInstance> {
+    // Look up the entity type
+    let entity_type = sqlx::query_as::<_, EntityTypeRow>(
+        "SELECT entity_type_id, table_name
+         FROM workflow_entity_types
+         WHERE type_code = $1",
+    )
+    .bind(entity_type_code)
+    .fetch_optional(pool)
+    .await?
+    .ok_or_else(|| {
+        AppError::NotFound(format!(
+            "workflow entity type not found: {entity_type_code}"
+        ))
+    })?;
+
+    // Look up the active workflow definition for this entity type
+    let wf_def = sqlx::query_as::<_, WorkflowDefRow>(
+        "SELECT workflow_def_id
+         FROM workflow_definitions
+         WHERE entity_type_id = $1 AND is_active = TRUE
+         LIMIT 1",
+    )
+    .bind(entity_type.entity_type_id)
+    .fetch_optional(pool)
+    .await?
+    .ok_or_else(|| {
+        AppError::Workflow(format!(
+            "no active workflow definition for entity type: {entity_type_code}"
+        ))
+    })?;
+
+    // Look up the DRAFT (initial) state
+    let draft_state = sqlx::query_as::<_, StateRow>(
+        "SELECT state_id, state_code, is_terminal
+         FROM workflow_states
+         WHERE state_code = 'DRAFT' AND is_initial = TRUE",
+    )
+    .fetch_optional(pool)
+    .await?
+    .ok_or_else(|| AppError::Workflow("DRAFT workflow state not found".into()))?;
+
+    // Create the workflow instance
+    let instance = sqlx::query_as::<_, WorkflowInstance>(
+        "INSERT INTO workflow_instances
+             (workflow_def_id, entity_type_id, entity_id, current_state_id, initiated_by)
+         VALUES ($1, $2, $3, $4, $5)
+         RETURNING instance_id, workflow_def_id, entity_type_id, entity_id,
+                   current_state_id, initiated_by, initiated_at,
+                   completed_at, completion_notes",
+    )
+    .bind(wf_def.workflow_def_id)
+    .bind(entity_type.entity_type_id)
+    .bind(entity_id)
+    .bind(draft_state.state_id)
+    .bind(initiated_by)
+    .fetch_one(pool)
+    .await?;
+
+    Ok(instance)
+}
+
+// ---------------------------------------------------------------------------
+// 2. transition_workflow
+// ---------------------------------------------------------------------------
+
+/// Advance a workflow instance by performing the given action.
+///
+/// Validates that the transition is legal from the current state, records
+/// history, optionally creates approval tasks (when entering UNDER_REVIEW),
+/// marks terminal states, and updates the underlying entity's `status_id`.
+pub async fn transition_workflow(
+    pool: &PgPool,
+    instance_id: Uuid,
+    action_code: &str,
+    performed_by: Uuid,
+    comments: Option<&str>,
+) -> AppResult<WorkflowInstance> {
+    // Fetch the current instance
+    let instance = sqlx::query_as::<_, WorkflowInstance>(
+        "SELECT instance_id, workflow_def_id, entity_type_id, entity_id,
+                current_state_id, initiated_by, initiated_at,
+                completed_at, completion_notes
+         FROM workflow_instances
+         WHERE instance_id = $1",
+    )
+    .bind(instance_id)
+    .fetch_optional(pool)
+    .await?
+    .ok_or_else(|| {
+        AppError::NotFound(format!("workflow instance not found: {instance_id}"))
+    })?;
+
+    if instance.completed_at.is_some() {
+        return Err(AppError::Workflow(
+            "cannot transition a completed workflow instance".into(),
+        ));
+    }
+
+    // Look up valid transition from current state with this action
+    let transition = sqlx::query_as::<_, TransitionRow>(
+        "SELECT to_state_id
+         FROM workflow_transitions
+         WHERE workflow_def_id = $1
+           AND from_state_id = $2
+           AND action_code = $3",
+    )
+    .bind(instance.workflow_def_id)
+    .bind(instance.current_state_id)
+    .bind(action_code)
+    .fetch_optional(pool)
+    .await?
+    .ok_or_else(|| {
+        AppError::Workflow(format!(
+            "invalid transition: action '{action_code}' is not allowed from the current state"
+        ))
+    })?;
+
+    let new_state_id = transition.to_state_id;
+
+    // Look up the new state to check if it is terminal
+    let new_state = sqlx::query_as::<_, StateRow>(
+        "SELECT state_id, state_code, is_terminal
+         FROM workflow_states
+         WHERE state_id = $1",
+    )
+    .bind(new_state_id)
+    .fetch_one(pool)
+    .await?;
+
+    // Record in workflow_history
+    sqlx::query(
+        "INSERT INTO workflow_history
+             (instance_id, from_state_id, to_state_id, action, performed_by, comments)
+         VALUES ($1, $2, $3, $4, $5, $6)",
+    )
+    .bind(instance_id)
+    .bind(instance.current_state_id)
+    .bind(new_state_id)
+    .bind(action_code)
+    .bind(performed_by)
+    .bind(comments)
+    .execute(pool)
+    .await?;
+
+    // Update instance current state (and completed_at if terminal)
+    let completed_at: Option<DateTime<Utc>> = if new_state.is_terminal {
+        Some(Utc::now())
+    } else {
+        None
+    };
+
+    let updated_instance = sqlx::query_as::<_, WorkflowInstance>(
+        "UPDATE workflow_instances
+         SET current_state_id = $1,
+             completed_at = COALESCE($2, completed_at),
+             updated_at = CURRENT_TIMESTAMP
+         WHERE instance_id = $3
+         RETURNING instance_id, workflow_def_id, entity_type_id, entity_id,
+                   current_state_id, initiated_by, initiated_at,
+                   completed_at, completion_notes",
+    )
+    .bind(new_state_id)
+    .bind(completed_at)
+    .bind(instance_id)
+    .fetch_one(pool)
+    .await?;
+
+    // If entering UNDER_REVIEW, create approval tasks
+    if new_state.state_code == STATE_UNDER_REVIEW {
+        create_approval_tasks(pool, &updated_instance).await?;
+    }
+
+    // If terminal (ACCEPTED, REJECTED, DEPRECATED), cancel any remaining PENDING tasks
+    if new_state.is_terminal {
+        sqlx::query(
+            "UPDATE workflow_tasks
+             SET status = 'CANCELLED', updated_at = CURRENT_TIMESTAMP
+             WHERE instance_id = $1 AND status = 'PENDING'",
+        )
+        .bind(instance_id)
+        .execute(pool)
+        .await?;
+    }
+
+    // Update the entity's status_id to match the new workflow state.
+    // The entity_statuses table uses the same codes as workflow_states.
+    update_entity_status(pool, &updated_instance, &new_state.state_code).await?;
+
+    Ok(updated_instance)
+}
+
+// ---------------------------------------------------------------------------
+// 3. get_pending_tasks
+// ---------------------------------------------------------------------------
+
+/// Retrieve pending workflow tasks assigned to a user (directly or via roles).
+pub async fn get_pending_tasks(
+    pool: &PgPool,
+    user_id: Uuid,
+    role_codes: &[String],
+) -> AppResult<Vec<PendingTaskView>> {
+    // Build the role IDs list from role codes
+    let role_ids: Vec<Uuid> = if role_codes.is_empty() {
+        vec![]
+    } else {
+        sqlx::query_scalar::<_, Uuid>(
+            "SELECT role_id FROM roles WHERE role_code = ANY($1)",
+        )
+        .bind(role_codes)
+        .fetch_all(pool)
+        .await?
+    };
+
+    let rows = sqlx::query_as::<_, PendingTaskRow>(
+        "SELECT
+             t.task_id, t.instance_id, t.task_type, t.task_name,
+             t.description, t.assigned_to_user_id, t.assigned_to_role_id,
+             t.status, t.due_date, t.completed_at, t.completed_by,
+             t.decision, t.comments,
+             wet.type_name  AS entity_type,
+             wi.entity_id,
+             wd.workflow_name,
+             u.display_name AS submitted_by,
+             wi.initiated_at AS submitted_at
+         FROM workflow_tasks t
+         JOIN workflow_instances wi ON wi.instance_id = t.instance_id
+         JOIN workflow_definitions wd ON wd.workflow_def_id = wi.workflow_def_id
+         JOIN workflow_entity_types wet ON wet.entity_type_id = wi.entity_type_id
+         JOIN users u ON u.user_id = wi.initiated_by
+         WHERE t.status = 'PENDING'
+           AND (t.assigned_to_user_id = $1 OR t.assigned_to_role_id = ANY($2))
+         ORDER BY t.due_date ASC NULLS LAST, t.created_at ASC",
+    )
+    .bind(user_id)
+    .bind(&role_ids)
+    .fetch_all(pool)
+    .await?;
+
+    // Resolve entity names for each task
+    let mut tasks = Vec::with_capacity(rows.len());
+    for row in rows {
+        let entity_name = resolve_entity_name(pool, &row.entity_type, row.entity_id).await?;
+
+        tasks.push(PendingTaskView {
+            task: WorkflowTask {
+                task_id: row.task_id,
+                instance_id: row.instance_id,
+                task_type: row.task_type,
+                task_name: row.task_name,
+                description: row.description,
+                assigned_to_user_id: row.assigned_to_user_id,
+                assigned_to_role_id: row.assigned_to_role_id,
+                status: row.status,
+                due_date: row.due_date,
+                completed_at: row.completed_at,
+                completed_by: row.completed_by,
+                decision: row.decision,
+                comments: row.comments,
+            },
+            entity_type: row.entity_type,
+            entity_name,
+            entity_id: row.entity_id,
+            workflow_name: row.workflow_name,
+            submitted_by: row.submitted_by,
+            submitted_at: row.submitted_at,
+        });
+    }
+
+    Ok(tasks)
+}
+
+// ---------------------------------------------------------------------------
+// 4. complete_task
+// ---------------------------------------------------------------------------
+
+/// Complete a workflow task with a decision (APPROVE, REJECT, or REVISE).
+///
+/// Marks the task as completed, then triggers the corresponding workflow
+/// transition based on the decision.
+pub async fn complete_task(
+    pool: &PgPool,
+    task_id: Uuid,
+    completed_by: Uuid,
+    decision: &str,
+    comments: Option<&str>,
+) -> AppResult<WorkflowTask> {
+    // Look up the task
+    let task = sqlx::query_as::<_, WorkflowTask>(
+        "SELECT task_id, instance_id, task_type, task_name, description,
+                assigned_to_user_id, assigned_to_role_id, status,
+                due_date, completed_at, completed_by, decision, comments
+         FROM workflow_tasks
+         WHERE task_id = $1",
+    )
+    .bind(task_id)
+    .fetch_optional(pool)
+    .await?
+    .ok_or_else(|| AppError::NotFound(format!("workflow task not found: {task_id}")))?;
+
+    if task.status != "PENDING" {
+        return Err(AppError::Workflow(format!(
+            "task is not pending (current status: {})",
+            task.status
+        )));
+    }
+
+    // Validate decision
+    let action_code = match decision {
+        "APPROVE" => ACTION_APPROVE,
+        "REJECT" => ACTION_REJECT,
+        "REVISE" => ACTION_REVISE,
+        _ => {
+            return Err(AppError::Validation(format!(
+                "invalid decision: '{decision}'. Must be APPROVE, REJECT, or REVISE"
+            )));
+        }
+    };
+
+    // Mark task as completed
+    let updated_task = sqlx::query_as::<_, WorkflowTask>(
+        "UPDATE workflow_tasks
+         SET status = 'COMPLETED',
+             completed_at = CURRENT_TIMESTAMP,
+             completed_by = $1,
+             decision = $2,
+             comments = $3,
+             updated_at = CURRENT_TIMESTAMP
+         WHERE task_id = $4
+         RETURNING task_id, instance_id, task_type, task_name, description,
+                   assigned_to_user_id, assigned_to_role_id, status,
+                   due_date, completed_at, completed_by, decision, comments",
+    )
+    .bind(completed_by)
+    .bind(decision)
+    .bind(comments)
+    .bind(task_id)
+    .fetch_one(pool)
+    .await?;
+
+    // Advance the workflow based on the decision
+    transition_workflow(
+        pool,
+        task.instance_id,
+        action_code,
+        completed_by,
+        comments,
+    )
+    .await?;
+
+    Ok(updated_task)
+}
+
+// ---------------------------------------------------------------------------
+// 5. get_workflow_instance
+// ---------------------------------------------------------------------------
+
+/// Fetch a workflow instance with its current state name, entity type,
+/// initiator name, associated tasks, and full history.
+pub async fn get_workflow_instance(
+    pool: &PgPool,
+    instance_id: Uuid,
+) -> AppResult<WorkflowInstanceView> {
+    let row = sqlx::query_as::<_, InstanceViewRow>(
+        "SELECT
+             wi.instance_id, wi.workflow_def_id, wi.entity_type_id,
+             wi.entity_id, wi.current_state_id, wi.initiated_by,
+             wi.initiated_at, wi.completed_at, wi.completion_notes,
+             ws.state_name   AS current_state_name,
+             wet.type_name   AS entity_type_name,
+             u.display_name  AS initiated_by_name
+         FROM workflow_instances wi
+         JOIN workflow_states ws ON ws.state_id = wi.current_state_id
+         JOIN workflow_entity_types wet ON wet.entity_type_id = wi.entity_type_id
+         JOIN users u ON u.user_id = wi.initiated_by
+         WHERE wi.instance_id = $1",
+    )
+    .bind(instance_id)
+    .fetch_optional(pool)
+    .await?
+    .ok_or_else(|| {
+        AppError::NotFound(format!("workflow instance not found: {instance_id}"))
+    })?;
+
+    // Fetch tasks for this instance
+    let tasks = sqlx::query_as::<_, WorkflowTask>(
+        "SELECT task_id, instance_id, task_type, task_name, description,
+                assigned_to_user_id, assigned_to_role_id, status,
+                due_date, completed_at, completed_by, decision, comments
+         FROM workflow_tasks
+         WHERE instance_id = $1
+         ORDER BY created_at ASC",
+    )
+    .bind(instance_id)
+    .fetch_all(pool)
+    .await?;
+
+    // Fetch history for this instance
+    let history = sqlx::query_as::<_, WorkflowHistoryEntry>(
+        "SELECT history_id, instance_id, from_state_id, to_state_id,
+                action, performed_by, performed_at, comments
+         FROM workflow_history
+         WHERE instance_id = $1
+         ORDER BY performed_at ASC",
+    )
+    .bind(instance_id)
+    .fetch_all(pool)
+    .await?;
+
+    Ok(WorkflowInstanceView {
+        instance: WorkflowInstance {
+            instance_id: row.instance_id,
+            workflow_def_id: row.workflow_def_id,
+            entity_type_id: row.entity_type_id,
+            entity_id: row.entity_id,
+            current_state_id: row.current_state_id,
+            initiated_by: row.initiated_by,
+            initiated_at: row.initiated_at,
+            completed_at: row.completed_at,
+            completion_notes: row.completion_notes,
+        },
+        current_state_name: row.current_state_name,
+        entity_type_name: row.entity_type_name,
+        initiated_by_name: row.initiated_by_name,
+        tasks,
+        history,
+    })
+}
+
+// ---------------------------------------------------------------------------
+// Internal helpers
+// ---------------------------------------------------------------------------
+
+/// Create approval tasks for the approvers configured on the workflow definition.
+async fn create_approval_tasks(
+    pool: &PgPool,
+    instance: &WorkflowInstance,
+) -> AppResult<()> {
+    let approvers = sqlx::query_as::<_, ApproverRow>(
+        "SELECT approver_user_id, approver_role_id
+         FROM workflow_approvers
+         WHERE workflow_def_id = $1
+         ORDER BY approval_order ASC",
+    )
+    .bind(instance.workflow_def_id)
+    .fetch_all(pool)
+    .await?;
+
+    // Calculate due date from the workflow definition's SLA
+    let sla_hours: i32 = sqlx::query_scalar::<_, Option<i32>>(
+        "SELECT review_sla_hours FROM workflow_definitions WHERE workflow_def_id = $1",
+    )
+    .bind(instance.workflow_def_id)
+    .fetch_one(pool)
+    .await?
+    .unwrap_or(72);
+
+    let due_date = Utc::now()
+        + TimeDelta::try_hours(i64::from(sla_hours))
+            .unwrap_or_else(|| TimeDelta::try_hours(72).expect("72 hours fits in TimeDelta"));
+
+    for approver in &approvers {
+        sqlx::query(
+            "INSERT INTO workflow_tasks
+                 (instance_id, task_type, task_name, description,
+                  assigned_to_user_id, assigned_to_role_id, status, due_date)
+             VALUES ($1, 'APPROVE', $2, $3, $4, $5, 'PENDING', $6)",
+        )
+        .bind(instance.instance_id)
+        .bind(format!("Review and approve entity {}", instance.entity_id))
+        .bind(Some("Review the submitted entity and approve, reject, or request revision."))
+        .bind(approver.approver_user_id)
+        .bind(approver.approver_role_id)
+        .bind(due_date)
+        .execute(pool)
+        .await?;
+    }
+
+    Ok(())
+}
+
+/// Update the underlying entity's `status_id` column to match the new
+/// workflow state. Uses the `table_name` from `workflow_entity_types` to
+/// determine which table to update and the `entity_statuses` table to
+/// resolve the matching status row.
+///
+/// Each entity table has a `status_id` FK column and a primary key column
+/// that follows the pattern `{singular}_id` (e.g. `term_id`, `element_id`).
+/// We use a safe mapping from table name to PK column rather than dynamic
+/// SQL to avoid any injection risk (Principle 10).
+async fn update_entity_status(
+    pool: &PgPool,
+    instance: &WorkflowInstance,
+    state_code: &str,
+) -> AppResult<()> {
+    // Resolve the entity_statuses row matching this workflow state code
+    let status_id = sqlx::query_scalar::<_, Uuid>(
+        "SELECT status_id FROM entity_statuses WHERE status_code = $1",
+    )
+    .bind(state_code)
+    .fetch_optional(pool)
+    .await?
+    .ok_or_else(|| {
+        AppError::Workflow(format!(
+            "entity status not found for state code: {state_code}"
+        ))
+    })?;
+
+    // Resolve the table name from the entity type
+    let entity_type = sqlx::query_as::<_, EntityTypeRow>(
+        "SELECT entity_type_id, table_name
+         FROM workflow_entity_types
+         WHERE entity_type_id = $1",
+    )
+    .bind(instance.entity_type_id)
+    .fetch_one(pool)
+    .await?;
+
+    // Map table_name to the correct primary key column and execute update.
+    // We use an explicit match to avoid dynamic SQL / string interpolation
+    // in queries (Principle 10 — parameterized queries only).
+    match entity_type.table_name.as_str() {
+        "glossary_terms" => {
+            sqlx::query(
+                "UPDATE glossary_terms SET status_id = $1, updated_at = CURRENT_TIMESTAMP WHERE term_id = $2",
+            )
+            .bind(status_id)
+            .bind(instance.entity_id)
+            .execute(pool)
+            .await?;
+        }
+        "data_elements" => {
+            sqlx::query(
+                "UPDATE data_elements SET status_id = $1, updated_at = CURRENT_TIMESTAMP WHERE element_id = $2",
+            )
+            .bind(status_id)
+            .bind(instance.entity_id)
+            .execute(pool)
+            .await?;
+        }
+        "quality_rules" => {
+            sqlx::query(
+                "UPDATE quality_rules SET status_id = $1, updated_at = CURRENT_TIMESTAMP WHERE rule_id = $2",
+            )
+            .bind(status_id)
+            .bind(instance.entity_id)
+            .execute(pool)
+            .await?;
+        }
+        "applications" => {
+            sqlx::query(
+                "UPDATE applications SET status_id = $1, updated_at = CURRENT_TIMESTAMP WHERE application_id = $2",
+            )
+            .bind(status_id)
+            .bind(instance.entity_id)
+            .execute(pool)
+            .await?;
+        }
+        "business_processes" => {
+            sqlx::query(
+                "UPDATE business_processes SET status_id = $1, updated_at = CURRENT_TIMESTAMP WHERE process_id = $2",
+            )
+            .bind(status_id)
+            .bind(instance.entity_id)
+            .execute(pool)
+            .await?;
+        }
+        unknown => {
+            return Err(AppError::Workflow(format!(
+                "unsupported entity table for status update: {unknown}"
+            )));
+        }
+    }
+
+    Ok(())
+}
+
+/// Resolve a human-readable name for an entity given its type name and ID.
+/// Used to populate `PendingTaskView.entity_name`.
+async fn resolve_entity_name(
+    pool: &PgPool,
+    entity_type_name: &str,
+    entity_id: Uuid,
+) -> AppResult<String> {
+    let name = match entity_type_name {
+        "Glossary Term" => {
+            sqlx::query_scalar::<_, String>(
+                "SELECT term_name FROM glossary_terms WHERE term_id = $1",
+            )
+            .bind(entity_id)
+            .fetch_optional(pool)
+            .await?
+        }
+        "Data Element" => {
+            sqlx::query_scalar::<_, String>(
+                "SELECT element_name FROM data_elements WHERE element_id = $1",
+            )
+            .bind(entity_id)
+            .fetch_optional(pool)
+            .await?
+        }
+        "Quality Rule" => {
+            sqlx::query_scalar::<_, String>(
+                "SELECT rule_name FROM quality_rules WHERE rule_id = $1",
+            )
+            .bind(entity_id)
+            .fetch_optional(pool)
+            .await?
+        }
+        "Application" => {
+            sqlx::query_scalar::<_, String>(
+                "SELECT application_name FROM applications WHERE application_id = $1",
+            )
+            .bind(entity_id)
+            .fetch_optional(pool)
+            .await?
+        }
+        "Business Process" => {
+            sqlx::query_scalar::<_, String>(
+                "SELECT process_name FROM business_processes WHERE process_id = $1",
+            )
+            .bind(entity_id)
+            .fetch_optional(pool)
+            .await?
+        }
+        _ => None,
+    };
+
+    Ok(name.unwrap_or_else(|| format!("(unknown entity {entity_id})")))
+}

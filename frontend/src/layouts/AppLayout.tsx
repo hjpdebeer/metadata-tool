@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Outlet, useNavigate, useLocation } from 'react-router-dom';
-import { Layout, Menu, Typography, Avatar, Dropdown, Space, Badge } from 'antd';
+import { Layout, Menu, Typography, Avatar, Dropdown, Space, Badge, Tag } from 'antd';
 import {
   BookOutlined,
   DatabaseOutlined,
@@ -16,6 +16,7 @@ import {
   MenuFoldOutlined,
   MenuUnfoldOutlined,
 } from '@ant-design/icons';
+import { useAuth } from '../hooks/useAuth';
 
 const { Header, Sider, Content } = Layout;
 
@@ -29,18 +30,65 @@ const menuItems = [
   { key: '/workflow', icon: <CheckSquareOutlined />, label: 'My Tasks' },
 ];
 
+const roleColors: Record<string, string> = {
+  admin: '#1B3A5C',
+  data_steward: '#2E7D32',
+  data_owner: '#1565C0',
+  analyst: '#6A1B9A',
+  viewer: '#757575',
+};
+
 const AppLayout: React.FC = () => {
   const [collapsed, setCollapsed] = useState(false);
   const navigate = useNavigate();
   const location = useLocation();
+  const { user, logout } = useAuth();
+
+  const handleMenuClick = ({ key }: { key: string }) => {
+    if (key === 'logout') {
+      logout();
+      navigate('/login', { replace: true });
+    } else if (key === 'profile') {
+      // Profile page not yet implemented
+    } else if (key === 'settings') {
+      // Settings page not yet implemented
+    }
+  };
 
   const userMenu = {
     items: [
+      {
+        key: 'user-info',
+        label: (
+          <div style={{ padding: '4px 0' }}>
+            <div style={{ fontWeight: 500, color: '#1F2937' }}>
+              {user?.display_name || 'User'}
+            </div>
+            <div style={{ fontSize: 12, color: '#6B7280' }}>{user?.email}</div>
+            {user?.roles && user.roles.length > 0 && (
+              <div style={{ marginTop: 6 }}>
+                {user.roles.map(role => (
+                  <Tag
+                    key={role}
+                    color={roleColors[role] || '#1B3A5C'}
+                    style={{ fontSize: 11, marginRight: 4 }}
+                  >
+                    {role.replace(/_/g, ' ')}
+                  </Tag>
+                ))}
+              </div>
+            )}
+          </div>
+        ),
+        disabled: true,
+      },
+      { type: 'divider' as const },
       { key: 'profile', icon: <UserOutlined />, label: 'Profile' },
       { key: 'settings', icon: <SettingOutlined />, label: 'Settings' },
       { type: 'divider' as const },
-      { key: 'logout', icon: <LogoutOutlined />, label: 'Sign Out' },
+      { key: 'logout', icon: <LogoutOutlined />, label: 'Sign Out', danger: true },
     ],
+    onClick: handleMenuClick,
   };
 
   return (
@@ -109,9 +157,16 @@ const AppLayout: React.FC = () => {
             <Badge count={0} showZero={false}>
               <BellOutlined style={{ fontSize: 18, cursor: 'pointer' }} />
             </Badge>
-            <Dropdown menu={userMenu} placement="bottomRight">
+            <Dropdown menu={userMenu} placement="bottomRight" trigger={['click']}>
               <Space style={{ cursor: 'pointer' }}>
-                <Avatar size="small" icon={<UserOutlined />} />
+                <Avatar
+                  size="small"
+                  icon={<UserOutlined />}
+                  style={{ backgroundColor: '#1B3A5C' }}
+                />
+                <span style={{ color: '#1F2937', fontSize: 14 }}>
+                  {user?.display_name || 'User'}
+                </span>
               </Space>
             </Dropdown>
           </Space>

@@ -1,8 +1,9 @@
 use axum::extract::State;
 use axum::Json;
 use serde::Serialize;
-use sqlx::PgPool;
 use utoipa::ToSchema;
+
+use crate::db::AppState;
 
 #[derive(Serialize, ToSchema)]
 pub struct HealthResponse {
@@ -19,8 +20,8 @@ pub struct HealthResponse {
     ),
     tag = "health"
 )]
-pub async fn health_check(State(pool): State<PgPool>) -> Json<HealthResponse> {
-    let db_status = match sqlx::query("SELECT 1").execute(&pool).await {
+pub async fn health_check(State(state): State<AppState>) -> Json<HealthResponse> {
+    let db_status = match sqlx::query("SELECT 1").execute(&state.pool).await {
         Ok(_) => "connected".to_string(),
         Err(e) => format!("error: {e}"),
     };

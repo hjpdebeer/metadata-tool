@@ -1,4 +1,5 @@
-use axum::routing::{get, post, put};
+use axum::middleware;
+use axum::routing::{get, post};
 use axum::Router;
 use sqlx::migrate::MigrateDatabase;
 use tower_http::cors::{Any, CorsLayer};
@@ -8,6 +9,7 @@ use utoipa::OpenApi;
 use utoipa_swagger_ui::SwaggerUi;
 
 use metadata_tool::api;
+use metadata_tool::auth::middleware::require_auth;
 use metadata_tool::config::AppConfig;
 use metadata_tool::db::{self, AppState};
 
@@ -21,6 +23,7 @@ use metadata_tool::db::{self, AppState};
     ),
     paths(
         api::health::health_check,
+        api::auth::dev_login,
         api::auth::login,
         api::auth::callback,
         api::auth::me,
@@ -79,6 +82,7 @@ use metadata_tool::db::{self, AppState};
     components(
         schemas(
             api::health::HealthResponse,
+            api::auth::DevLoginRequest,
             api::auth::TokenResponse,
             api::auth::MeResponse,
             api::ai::AiEnrichRequest,
@@ -145,13 +149,16 @@ async fn main() -> anyhow::Result<()> {
         .allow_methods(Any)
         .allow_headers(Any);
 
-    // Build router
-    let app = Router::new()
-        // Health
+    // Public routes (no auth required)
+    let public_routes = Router::new()
         .route("/api/v1/health", get(api::health::health_check))
-        // Auth
+        .route("/api/v1/auth/dev-login", post(api::auth::dev_login))
         .route("/api/v1/auth/login", get(api::auth::login))
-        .route("/api/v1/auth/callback", get(api::auth::callback))
+        .route("/api/v1/auth/callback", get(api::auth::callback));
+
+    // Protected routes (require valid JWT)
+    let protected_routes = Router::new()
+        // Auth
         .route("/api/v1/auth/me", get(api::auth::me))
         // Business Glossary
         .route("/api/v1/glossary/terms", get(api::glossary::list_terms).post(api::glossary::create_term))
@@ -192,10 +199,20 @@ async fn main() -> anyhow::Result<()> {
         .route("/api/v1/roles", get(api::users::list_roles))
         // AI
         .route("/api/v1/ai/enrich", post(api::ai::enrich))
-        // Swagger UI
-        .merge(SwaggerUi::new("/swagger-ui").url("/api-docs/openapi.json", ApiDoc::openapi()))
-        // State & middleware
+        // Apply auth middleware to all protected routes
+        .layer(middleware::from_fn_with_state(state.clone(), require_auth));
+
+    // Swagger UI router
+    let swagger_ui = SwaggerUi::new("/swagger-ui")
+        .url("/api-docs/openapi.json", ApiDoc::openapi());
+    let swagger_router = Router::<()>::from(swagger_ui);
+
+    // Combine all routes
+    let app = Router::new()
+        .merge(public_routes)
+        .merge(protected_routes)
         .with_state(state)
+        .merge(swagger_router)
         .layer(TraceLayer::new_for_http())
         .layer(cors);
 

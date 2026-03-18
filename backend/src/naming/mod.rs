@@ -36,17 +36,17 @@ pub fn validate_name(name: &str, entity_type: &str, standards: &[NamingStandard]
         if standard.applies_to != entity_type || !standard.is_mandatory {
             continue;
         }
-        if let Ok(re) = Regex::new(&standard.pattern) {
-            if !re.is_match(name) {
-                violations.push(NamingViolation {
-                    standard_name: standard.name.clone(),
-                    message: format!(
-                        "'{}' does not match standard '{}': {}",
-                        name, standard.name, standard.description
-                    ),
-                    suggestion: None,
-                });
-            }
+        if let Ok(re) = Regex::new(&standard.pattern)
+            && !re.is_match(name)
+        {
+            violations.push(NamingViolation {
+                standard_name: standard.name.clone(),
+                message: format!(
+                    "'{name}' does not match standard '{}': {}",
+                    standard.name, standard.description
+                ),
+                suggestion: None,
+            });
         }
     }
 

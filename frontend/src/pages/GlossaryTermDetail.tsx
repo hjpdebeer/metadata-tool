@@ -26,6 +26,7 @@ import {
 import { glossaryApi, workflowApi } from '../services/glossaryApi';
 import type { GlossaryTerm, WorkflowInstanceView } from '../services/glossaryApi';
 import { useAuth } from '../hooks/useAuth';
+import AiEnrichmentPanel from '../components/AiEnrichmentPanel';
 
 const { Title, Text } = Typography;
 
@@ -305,6 +306,12 @@ const GlossaryTermDetail: React.FC = () => {
           </Descriptions.Item>
         </Descriptions>
       </Card>
+
+      <AiEnrichmentPanel
+        entityType="glossary_term"
+        entityId={id!}
+        onSuggestionApplied={fetchTerm}
+      />
 
       {workflowInstance && (
         <Card title="Workflow" style={{ marginBottom: 24 }}>

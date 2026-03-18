@@ -6,6 +6,7 @@ use crate::domain::workflow::{
     PendingTaskView, WorkflowHistoryEntry, WorkflowInstance, WorkflowInstanceView, WorkflowTask,
 };
 use crate::error::{AppError, AppResult};
+use crate::notifications;
 
 use super::{ACTION_APPROVE, ACTION_REJECT, ACTION_REVISE, STATE_UNDER_REVIEW};
 
@@ -271,6 +272,7 @@ pub async fn transition_workflow(
     }
 
     // If terminal (ACCEPTED, REJECTED, DEPRECATED), cancel any remaining PENDING tasks
+    // and notify the initiator of the final outcome.
     if new_state.is_terminal {
         sqlx::query(
             "UPDATE workflow_tasks
@@ -280,6 +282,50 @@ pub async fn transition_workflow(
         .bind(instance_id)
         .execute(pool)
         .await?;
+
+        // Notify the workflow initiator about the terminal state
+        let entity_type_name = sqlx::query_scalar::<_, String>(
+            "SELECT type_name FROM workflow_entity_types WHERE entity_type_id = $1",
+        )
+        .bind(updated_instance.entity_type_id)
+        .fetch_optional(pool)
+        .await?
+        .unwrap_or_else(|| "Entity".to_string());
+
+        let entity_name = resolve_entity_name(
+            pool,
+            &entity_type_name,
+            updated_instance.entity_id,
+        )
+        .await?;
+
+        // Resolve the old state name for the notification message
+        let old_state_name = sqlx::query_scalar::<_, String>(
+            "SELECT state_name FROM workflow_states WHERE state_id = $1",
+        )
+        .bind(instance.current_state_id)
+        .fetch_optional(pool)
+        .await?
+        .unwrap_or_else(|| "Unknown".to_string());
+
+        if let Err(e) = notifications::queue_workflow_state_changed_notification(
+            pool,
+            updated_instance.initiated_by,
+            &entity_type_name,
+            &entity_name,
+            updated_instance.entity_id,
+            &old_state_name,
+            &new_state.state_code,
+            comments,
+        )
+        .await
+        {
+            tracing::warn!(
+                initiator = %updated_instance.initiated_by,
+                error = %e,
+                "Failed to send workflow state change notification"
+            );
+        }
     }
 
     // Update the entity's status_id to match the new workflow state.
@@ -531,6 +577,7 @@ pub async fn get_workflow_instance(
 // ---------------------------------------------------------------------------
 
 /// Create approval tasks for the approvers configured on the workflow definition.
+/// After creating each task, sends an in-app notification to the assigned user.
 async fn create_approval_tasks(
     pool: &PgPool,
     instance: &WorkflowInstance,
@@ -558,6 +605,18 @@ async fn create_approval_tasks(
         + TimeDelta::try_hours(i64::from(sla_hours))
             .unwrap_or_else(|| TimeDelta::try_hours(72).expect("72 hours fits in TimeDelta"));
 
+    // Resolve the entity type name and entity name for notifications
+    let entity_type_name = sqlx::query_scalar::<_, String>(
+        "SELECT type_name FROM workflow_entity_types WHERE entity_type_id = $1",
+    )
+    .bind(instance.entity_type_id)
+    .fetch_optional(pool)
+    .await?
+    .unwrap_or_else(|| "Entity".to_string());
+
+    let entity_name = resolve_entity_name(pool, &entity_type_name, instance.entity_id).await?;
+    let due_date_str = due_date.format("%Y-%m-%d %H:%M UTC").to_string();
+
     for approver in &approvers {
         sqlx::query(
             "INSERT INTO workflow_tasks
@@ -573,6 +632,27 @@ async fn create_approval_tasks(
         .bind(due_date)
         .execute(pool)
         .await?;
+
+        // Send notification to the assigned user (if user-assigned, not role-only)
+        if let Some(user_id) = approver.approver_user_id {
+            if let Err(e) = notifications::queue_workflow_task_notification(
+                pool,
+                user_id,
+                &entity_type_name,
+                &entity_name,
+                instance.entity_id,
+                Some(&due_date_str),
+            )
+            .await
+            {
+                // Log but don't fail the task creation if notification fails
+                tracing::warn!(
+                    user_id = %user_id,
+                    error = %e,
+                    "Failed to send task assignment notification"
+                );
+            }
+        }
     }
 
     Ok(())

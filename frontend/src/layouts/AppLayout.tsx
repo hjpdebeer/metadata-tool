@@ -1,6 +1,19 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Outlet, useNavigate, useLocation } from 'react-router-dom';
-import { Layout, Menu, Typography, Avatar, Dropdown, Space, Badge, Tag } from 'antd';
+import {
+  Layout,
+  Menu,
+  Typography,
+  Avatar,
+  Dropdown,
+  Space,
+  Badge,
+  Tag,
+  Drawer,
+  List,
+  Button,
+  Empty,
+} from 'antd';
 import {
   BookOutlined,
   DatabaseOutlined,
@@ -17,37 +30,15 @@ import {
   MenuFoldOutlined,
   MenuUnfoldOutlined,
   WarningOutlined,
+  TeamOutlined,
 } from '@ant-design/icons';
 import { useAuth } from '../hooks/useAuth';
+import {
+  notificationsApi,
+  type InAppNotification,
+} from '../services/notificationsApi';
 
 const { Header, Sider, Content } = Layout;
-
-const menuItems = [
-  { key: '/glossary', icon: <BookOutlined />, label: 'Business Glossary' },
-  {
-    key: 'data-dictionary-group',
-    icon: <DatabaseOutlined />,
-    label: 'Data Dictionary',
-    children: [
-      { key: '/data-dictionary', icon: <DatabaseOutlined />, label: 'All Elements' },
-      { key: '/data-dictionary/cde', icon: <WarningOutlined />, label: 'Critical Data Elements' },
-      { key: '/data-dictionary/technical', icon: <FolderOpenOutlined />, label: 'Technical Metadata' },
-    ],
-  },
-  {
-    key: 'data-quality-group',
-    icon: <SafetyCertificateOutlined />,
-    label: 'Data Quality',
-    children: [
-      { key: '/data-quality', icon: <SafetyCertificateOutlined />, label: 'Overview' },
-      { key: '/data-quality/rules', icon: <CheckSquareOutlined />, label: 'Quality Rules' },
-    ],
-  },
-  { key: '/lineage', icon: <ApartmentOutlined />, label: 'Data Lineage' },
-  { key: '/applications', icon: <AppstoreOutlined />, label: 'Applications' },
-  { key: '/processes', icon: <PartitionOutlined />, label: 'Business Processes' },
-  { key: '/workflow', icon: <CheckSquareOutlined />, label: 'My Tasks' },
-];
 
 const roleColors: Record<string, string> = {
   admin: '#1B3A5C',
@@ -59,9 +50,147 @@ const roleColors: Record<string, string> = {
 
 const AppLayout: React.FC = () => {
   const [collapsed, setCollapsed] = useState(false);
+  const [notifDrawerOpen, setNotifDrawerOpen] = useState(false);
+  const [unreadCount, setUnreadCount] = useState(0);
+  const [notifications, setNotifications] = useState<InAppNotification[]>([]);
+  const [notifLoading, setNotifLoading] = useState(false);
   const navigate = useNavigate();
   const location = useLocation();
   const { user, logout } = useAuth();
+
+  const isAdmin = user?.roles?.some((r) => r === 'ADMIN') ?? false;
+
+  // Build menu items dynamically to include admin section when applicable
+  const menuItems = [
+    { key: '/glossary', icon: <BookOutlined />, label: 'Business Glossary' },
+    {
+      key: 'data-dictionary-group',
+      icon: <DatabaseOutlined />,
+      label: 'Data Dictionary',
+      children: [
+        { key: '/data-dictionary', icon: <DatabaseOutlined />, label: 'All Elements' },
+        {
+          key: '/data-dictionary/cde',
+          icon: <WarningOutlined />,
+          label: 'Critical Data Elements',
+        },
+        {
+          key: '/data-dictionary/technical',
+          icon: <FolderOpenOutlined />,
+          label: 'Technical Metadata',
+        },
+      ],
+    },
+    {
+      key: 'data-quality-group',
+      icon: <SafetyCertificateOutlined />,
+      label: 'Data Quality',
+      children: [
+        { key: '/data-quality', icon: <SafetyCertificateOutlined />, label: 'Overview' },
+        { key: '/data-quality/rules', icon: <CheckSquareOutlined />, label: 'Quality Rules' },
+      ],
+    },
+    { key: '/lineage', icon: <ApartmentOutlined />, label: 'Data Lineage' },
+    { key: '/applications', icon: <AppstoreOutlined />, label: 'Applications' },
+    { key: '/processes', icon: <PartitionOutlined />, label: 'Business Processes' },
+    { key: '/workflow', icon: <CheckSquareOutlined />, label: 'My Tasks' },
+    ...(isAdmin
+      ? [
+          {
+            key: 'admin-group',
+            icon: <SettingOutlined />,
+            label: 'Admin',
+            children: [
+              { key: '/admin/users', icon: <TeamOutlined />, label: 'User Management' },
+              {
+                key: '/admin/notifications',
+                icon: <BellOutlined />,
+                label: 'Notification Preferences',
+              },
+            ],
+          },
+        ]
+      : []),
+  ];
+
+  // Fetch unread count
+  const fetchUnreadCount = useCallback(async () => {
+    try {
+      const response = await notificationsApi.getUnreadCount();
+      setUnreadCount(response.data.count);
+    } catch {
+      // Silently ignore — user might not have notifications table yet
+    }
+  }, []);
+
+  // Fetch unread count on mount and on navigation
+  useEffect(() => {
+    fetchUnreadCount();
+  }, [fetchUnreadCount, location.pathname]);
+
+  // Poll for new notifications every 30 seconds
+  useEffect(() => {
+    const interval = setInterval(fetchUnreadCount, 30000);
+    return () => clearInterval(interval);
+  }, [fetchUnreadCount]);
+
+  // Fetch notifications when drawer opens
+  const handleOpenNotifDrawer = async () => {
+    setNotifDrawerOpen(true);
+    setNotifLoading(true);
+    try {
+      const response = await notificationsApi.listNotifications({ page: 1, page_size: 50 });
+      setNotifications(response.data.data);
+    } catch {
+      setNotifications([]);
+    } finally {
+      setNotifLoading(false);
+    }
+  };
+
+  const handleMarkAllRead = async () => {
+    try {
+      await notificationsApi.markAllRead();
+      setNotifications((prev) => prev.map((n) => ({ ...n, is_read: true })));
+      setUnreadCount(0);
+    } catch {
+      // ignore
+    }
+  };
+
+  const handleNotificationClick = async (notification: InAppNotification) => {
+    if (!notification.is_read) {
+      try {
+        await notificationsApi.markRead(notification.notification_id);
+        setNotifications((prev) =>
+          prev.map((n) =>
+            n.notification_id === notification.notification_id ? { ...n, is_read: true } : n,
+          ),
+        );
+        setUnreadCount((prev) => Math.max(0, prev - 1));
+      } catch {
+        // ignore
+      }
+    }
+    if (notification.link_url) {
+      setNotifDrawerOpen(false);
+      navigate(notification.link_url);
+    }
+  };
+
+  const formatTimeAgo = (dateStr: string): string => {
+    const date = new Date(dateStr);
+    const now = new Date();
+    const diffMs = now.getTime() - date.getTime();
+    const diffMin = Math.floor(diffMs / 60000);
+    if (diffMin < 1) return 'Just now';
+    if (diffMin < 60) return `${diffMin}m ago`;
+    const diffHours = Math.floor(diffMin / 60);
+    if (diffHours < 24) return `${diffHours}h ago`;
+    const diffDays = Math.floor(diffHours / 24);
+    if (diffDays < 7) return `${diffDays}d ago`;
+    return date.toLocaleDateString();
+  };
 
   // Derive selected key from current path
   const getSelectedKey = () => {
@@ -74,6 +203,8 @@ const AppLayout: React.FC = () => {
     if (path.startsWith('/lineage')) return '/lineage';
     if (path.startsWith('/applications')) return '/applications';
     if (path.startsWith('/processes')) return '/processes';
+    if (path === '/admin/users') return '/admin/users';
+    if (path === '/admin/notifications') return '/admin/notifications';
     return path;
   };
 
@@ -82,6 +213,7 @@ const AppLayout: React.FC = () => {
     const keys: string[] = [];
     if (location.pathname.startsWith('/data-dictionary')) keys.push('data-dictionary-group');
     if (location.pathname.startsWith('/data-quality')) keys.push('data-quality-group');
+    if (location.pathname.startsWith('/admin')) keys.push('admin-group');
     return keys;
   };
 
@@ -108,7 +240,7 @@ const AppLayout: React.FC = () => {
             <div style={{ fontSize: 12, color: '#6B7280' }}>{user?.email}</div>
             {user?.roles && user.roles.length > 0 && (
               <div style={{ marginTop: 6 }}>
-                {user.roles.map(role => (
+                {user.roles.map((role) => (
                   <Tag
                     key={role}
                     color={roleColors[role] || '#1B3A5C'}
@@ -196,8 +328,11 @@ const AppLayout: React.FC = () => {
             })}
           </Space>
           <Space size="large">
-            <Badge count={0} showZero={false}>
-              <BellOutlined style={{ fontSize: 18, cursor: 'pointer' }} />
+            <Badge count={unreadCount} showZero={false}>
+              <BellOutlined
+                style={{ fontSize: 18, cursor: 'pointer' }}
+                onClick={handleOpenNotifDrawer}
+              />
             </Badge>
             <Dropdown menu={userMenu} placement="bottomRight" trigger={['click']}>
               <Space style={{ cursor: 'pointer' }}>
@@ -217,6 +352,65 @@ const AppLayout: React.FC = () => {
           <Outlet />
         </Content>
       </Layout>
+
+      <Drawer
+        title="Notifications"
+        placement="right"
+        onClose={() => setNotifDrawerOpen(false)}
+        open={notifDrawerOpen}
+        width={400}
+        extra={
+          unreadCount > 0 ? (
+            <Button type="link" size="small" onClick={handleMarkAllRead}>
+              Mark all as read
+            </Button>
+          ) : null
+        }
+      >
+        {notifications.length === 0 && !notifLoading ? (
+          <Empty description="No notifications" />
+        ) : (
+          <List
+            loading={notifLoading}
+            dataSource={notifications}
+            renderItem={(item) => (
+              <List.Item
+                onClick={() => handleNotificationClick(item)}
+                style={{
+                  cursor: item.link_url ? 'pointer' : 'default',
+                  backgroundColor: item.is_read ? 'transparent' : '#F0F5FF',
+                  padding: '12px 16px',
+                  borderRadius: 6,
+                  marginBottom: 4,
+                }}
+              >
+                <List.Item.Meta
+                  title={
+                    <span
+                      style={{
+                        fontWeight: item.is_read ? 400 : 600,
+                        fontSize: 14,
+                      }}
+                    >
+                      {item.title}
+                    </span>
+                  }
+                  description={
+                    <div>
+                      <div style={{ fontSize: 13, color: '#4B5563', marginBottom: 4 }}>
+                        {item.message}
+                      </div>
+                      <div style={{ fontSize: 12, color: '#9CA3AF' }}>
+                        {formatTimeAgo(item.created_at)}
+                      </div>
+                    </div>
+                  }
+                />
+              </List.Item>
+            )}
+          />
+        )}
+      </Drawer>
     </Layout>
   );
 };

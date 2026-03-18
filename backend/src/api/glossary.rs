@@ -6,6 +6,7 @@ use uuid::Uuid;
 
 use crate::auth::Claims;
 use crate::db::AppState;
+use crate::domain::ai::{AiEnrichRequest, AiEnrichResponse};
 use crate::domain::glossary::*;
 use crate::error::{AppError, AppResult};
 use crate::workflow;
@@ -371,20 +372,28 @@ pub async fn list_categories(
     path = "/api/v1/glossary/terms/{term_id}/ai-enrich",
     params(("term_id" = Uuid, Path, description = "Term ID")),
     responses(
-        (status = 200, description = "AI enrichment suggestions generated")
+        (status = 200, description = "AI enrichment suggestions generated", body = AiEnrichResponse)
     ),
     security(("bearer_auth" = [])),
     tag = "glossary"
 )]
 pub async fn ai_enrich_term(
-    State(_state): State<AppState>,
-    Path(_term_id): Path<Uuid>,
-) -> AppResult<Json<serde_json::Value>> {
-    // TODO: Call AI service to generate suggestions for this term
-    Ok(Json(serde_json::json!({
-        "status": "not_implemented",
-        "message": "AI enrichment will be available once AI integration is configured"
-    })))
+    State(state): State<AppState>,
+    Extension(claims): Extension<Claims>,
+    Path(term_id): Path<Uuid>,
+) -> AppResult<Json<AiEnrichResponse>> {
+    // Delegate to the generic AI enrich handler
+    let request = AiEnrichRequest {
+        entity_type: "glossary_term".to_string(),
+        entity_id: term_id,
+    };
+    let result = super::ai::enrich(
+        State(state),
+        Extension(claims),
+        Json(request),
+    )
+    .await?;
+    Ok(result)
 }
 
 // ---------------------------------------------------------------------------

@@ -1,7 +1,7 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
-use utoipa::ToSchema;
+use utoipa::{IntoParams, ToSchema};
 use uuid::Uuid;
 
 #[derive(Debug, Clone, Serialize, Deserialize, FromRow, ToSchema)]
@@ -19,6 +19,20 @@ pub struct User {
     pub last_login_at: Option<DateTime<Utc>>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
+}
+
+/// List view of a user with role names joined for display
+#[derive(Debug, Clone, Serialize, FromRow, ToSchema)]
+pub struct UserListItem {
+    pub user_id: Uuid,
+    pub username: String,
+    pub email: String,
+    pub display_name: String,
+    pub department: Option<String>,
+    pub job_title: Option<String>,
+    pub is_active: bool,
+    pub last_login_at: Option<DateTime<Utc>>,
+    pub created_at: DateTime<Utc>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, FromRow, ToSchema)]
@@ -55,5 +69,27 @@ pub struct UpdateUserRequest {
     pub department: Option<String>,
     pub job_title: Option<String>,
     pub is_active: Option<bool>,
-    pub role_ids: Option<Vec<Uuid>>,
+}
+
+#[derive(Debug, Deserialize, IntoParams, ToSchema)]
+pub struct SearchUsersParams {
+    pub query: Option<String>,
+    pub role_code: Option<String>,
+    pub is_active: Option<bool>,
+    pub page: Option<i64>,
+    pub page_size: Option<i64>,
+}
+
+#[derive(Debug, Deserialize, ToSchema)]
+pub struct AssignRoleRequest {
+    pub role_id: Uuid,
+}
+
+/// Concrete paginated type for OpenAPI schema generation.
+#[derive(Debug, Serialize, ToSchema)]
+pub struct PaginatedUsers {
+    pub data: Vec<UserListItem>,
+    pub total_count: i64,
+    pub page: i64,
+    pub page_size: i64,
 }

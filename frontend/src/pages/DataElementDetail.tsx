@@ -40,6 +40,7 @@ import { workflowApi } from '../services/glossaryApi';
 import type { DataElementFullView, TechnicalColumn } from '../services/dataDictionaryApi';
 import type { WorkflowInstanceView } from '../services/glossaryApi';
 import { useAuth } from '../hooks/useAuth';
+import AiEnrichmentPanel from '../components/AiEnrichmentPanel';
 
 const { Title, Text } = Typography;
 
@@ -571,6 +572,12 @@ const DataElementDetail: React.FC = () => {
           />
         </Card>
       )}
+
+      <AiEnrichmentPanel
+        entityType="data_element"
+        entityId={id!}
+        onSuggestionApplied={fetchElement}
+      />
 
       {workflowInstance && (
         <Card title="Workflow" style={{ marginBottom: 24 }}>

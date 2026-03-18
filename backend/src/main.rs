@@ -98,8 +98,23 @@ use metadata_tool::db::{self, AppState};
         api::workflow::complete_task,
         api::users::list_users,
         api::users::get_user,
+        api::users::update_user,
+        api::users::assign_role,
+        api::users::remove_role,
         api::users::list_roles,
+        // Notifications
+        api::notifications::list_notifications,
+        api::notifications::mark_read,
+        api::notifications::mark_all_read,
+        api::notifications::unread_count,
+        api::notifications::get_preferences,
+        api::notifications::update_preferences,
+        // AI
         api::ai::enrich,
+        api::ai::list_suggestions,
+        api::ai::accept_suggestion,
+        api::ai::reject_suggestion,
+        api::ai::submit_feedback,
     ),
     tags(
         (name = "health", description = "Health check"),
@@ -112,6 +127,7 @@ use metadata_tool::db::{self, AppState};
         (name = "processes", description = "Business Process Registry"),
         (name = "workflow", description = "Workflow engine & task management"),
         (name = "users", description = "User & role management"),
+        (name = "notifications", description = "Notification management"),
         (name = "ai", description = "AI-powered metadata enrichment"),
     ),
     components(
@@ -120,9 +136,14 @@ use metadata_tool::db::{self, AppState};
             api::auth::DevLoginRequest,
             api::auth::TokenResponse,
             api::auth::MeResponse,
-            api::ai::AiEnrichRequest,
-            api::ai::AiEnrichResponse,
-            api::ai::AiSuggestion,
+            metadata_tool::domain::ai::AiEnrichRequest,
+            metadata_tool::domain::ai::AiEnrichResponse,
+            metadata_tool::domain::ai::AiSuggestionResponse,
+            metadata_tool::domain::ai::AiSuggestion,
+            metadata_tool::domain::ai::AcceptSuggestionRequest,
+            metadata_tool::domain::ai::RejectSuggestionRequest,
+            metadata_tool::domain::ai::FeedbackRequest,
+            metadata_tool::domain::ai::FeedbackResponse,
         )
     ),
     modifiers(&SecurityAddon)
@@ -247,10 +268,22 @@ async fn main() -> anyhow::Result<()> {
         .route("/api/v1/workflow/tasks/{task_id}/complete", post(api::workflow::complete_task))
         // Users
         .route("/api/v1/users", get(api::users::list_users))
-        .route("/api/v1/users/{user_id}", get(api::users::get_user))
+        .route("/api/v1/users/{user_id}", get(api::users::get_user).put(api::users::update_user))
+        .route("/api/v1/users/{user_id}/roles", post(api::users::assign_role))
+        .route("/api/v1/users/{user_id}/roles/{role_id}", delete(api::users::remove_role))
         .route("/api/v1/roles", get(api::users::list_roles))
+        // Notifications
+        .route("/api/v1/notifications", get(api::notifications::list_notifications))
+        .route("/api/v1/notifications/read-all", post(api::notifications::mark_all_read))
+        .route("/api/v1/notifications/unread-count", get(api::notifications::unread_count))
+        .route("/api/v1/notifications/preferences", get(api::notifications::get_preferences).put(api::notifications::update_preferences))
+        .route("/api/v1/notifications/{notification_id}/read", post(api::notifications::mark_read))
         // AI
         .route("/api/v1/ai/enrich", post(api::ai::enrich))
+        .route("/api/v1/ai/suggestions/{entity_type}/{entity_id}", get(api::ai::list_suggestions))
+        .route("/api/v1/ai/suggestions/{suggestion_id}/accept", post(api::ai::accept_suggestion))
+        .route("/api/v1/ai/suggestions/{suggestion_id}/reject", post(api::ai::reject_suggestion))
+        .route("/api/v1/ai/suggestions/{suggestion_id}/feedback", post(api::ai::submit_feedback))
         // Apply auth middleware to all protected routes
         .layer(middleware::from_fn_with_state(state.clone(), require_auth));
 

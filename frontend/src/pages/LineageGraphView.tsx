@@ -27,9 +27,7 @@ import {
   NodeIndexOutlined,
   BranchesOutlined,
   ThunderboltOutlined,
-  DeleteOutlined,
   InfoCircleOutlined,
-  FullscreenOutlined,
 } from '@ant-design/icons';
 import {
   ReactFlow,
@@ -47,8 +45,7 @@ import type {
   Connection,
   Node,
   Edge,
-  NodeChange,
-  NodeDragHandler,
+  OnNodeDrag,
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 
@@ -146,8 +143,8 @@ const LineageGraphViewPage: React.FC = () => {
   const [nodeTypesList, setNodeTypesList] = useState<LineageNodeType[]>([]);
 
   // React Flow state
-  const [nodes, setNodes, onNodesChange] = useNodesState([]);
-  const [edges, setEdges, onEdgesChange] = useEdgesState([]);
+  const [nodes, setNodes, onNodesChange] = useNodesState<Node>([] as Node[]);
+  const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([] as Edge[]);
 
   // Impact analysis state
   const [impactResult, setImpactResult] = useState<ImpactAnalysis | null>(null);
@@ -211,7 +208,7 @@ const LineageGraphViewPage: React.FC = () => {
   // Node drag -> persist position (debounced)
   // -------------------------------------------------------------------------
 
-  const onNodeDragStop: NodeDragHandler = useCallback(
+  const onNodeDragStop: OnNodeDrag = useCallback(
     (_event, node) => {
       if (positionTimerRef.current) {
         clearTimeout(positionTimerRef.current);

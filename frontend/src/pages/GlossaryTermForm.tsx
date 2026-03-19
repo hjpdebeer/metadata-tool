@@ -145,8 +145,9 @@ const GlossaryTermForm: React.FC = () => {
 
   useEffect(() => {
     if (isEditing) {
-      fetchReferenceData();
-      fetchExistingTerm();
+      // Load lookups FIRST so Select options exist, THEN load term values.
+      // Without this order, Selects show raw UUIDs because options aren't loaded yet.
+      fetchReferenceData().then(() => fetchExistingTerm());
     }
   }, [isEditing, fetchReferenceData, fetchExistingTerm]);
 

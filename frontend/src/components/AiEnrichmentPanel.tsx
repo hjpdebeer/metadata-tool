@@ -27,8 +27,13 @@ import {
 } from '@ant-design/icons';
 import { aiApi } from '../services/aiApi';
 import type { AiSuggestion } from '../services/aiApi';
+import { glossaryApi } from '../services/glossaryApi';
 
 const { Text, Paragraph } = Typography;
+
+// Lookup fields where AI returns UUIDs (Section 15.6).
+// We resolve these to display names for the user.
+const LOOKUP_FIELDS = ['domain', 'category', 'data_classification', 'term_type', 'unit_of_measure'];
 
 interface AiEnrichmentPanelProps {
   entityType: string; // "glossary_term" or "data_element"
@@ -77,6 +82,8 @@ const AiEnrichmentPanel: React.FC<AiEnrichmentPanelProps> = ({
   const [suggestions, setSuggestions] = useState<AiSuggestion[]>([]);
   const [loading, setLoading] = useState(false);
   const [enriching, setEnriching] = useState(false);
+  // UUID → display name map for lookup fields (Section 15.6)
+  const [lookupNames, setLookupNames] = useState<Record<string, string>>({});
   const [initialLoaded, setInitialLoaded] = useState(false);
 
   // Modify modal state
@@ -93,6 +100,29 @@ const AiEnrichmentPanel: React.FC<AiEnrichmentPanelProps> = ({
   const [feedbackText, setFeedbackText] = useState('');
   const [feedbackLoading, setFeedbackLoading] = useState(false);
 
+  // Fetch lookup tables to resolve UUIDs → display names for lookup field suggestions
+  const fetchLookupNames = useCallback(async () => {
+    if (entityType !== 'glossary_term') return;
+    try {
+      const [domains, categories, classifications, termTypes, units] = await Promise.allSettled([
+        glossaryApi.listDomains(),
+        glossaryApi.listCategories(),
+        glossaryApi.listClassifications(),
+        glossaryApi.listTermTypes(),
+        glossaryApi.listUnitsOfMeasure(),
+      ]);
+      const map: Record<string, string> = {};
+      if (domains.status === 'fulfilled') domains.value.data.forEach((d) => { map[d.domain_id] = d.domain_name; });
+      if (categories.status === 'fulfilled') categories.value.data.forEach((c) => { map[c.category_id] = c.category_name; });
+      if (classifications.status === 'fulfilled') classifications.value.data.forEach((c) => { map[c.classification_id] = c.classification_name; });
+      if (termTypes.status === 'fulfilled') termTypes.value.data.forEach((t) => { map[t.term_type_id] = t.type_name; });
+      if (units.status === 'fulfilled') units.value.data.forEach((u) => { map[u.unit_id] = u.unit_name; });
+      setLookupNames(map);
+    } catch {
+      // Non-critical
+    }
+  }, [entityType]);
+
   const fetchSuggestions = useCallback(async () => {
     if (!entityId) return;
     setLoading(true);
@@ -108,8 +138,9 @@ const AiEnrichmentPanel: React.FC<AiEnrichmentPanelProps> = ({
   }, [entityType, entityId]);
 
   useEffect(() => {
+    fetchLookupNames();
     fetchSuggestions();
-  }, [fetchSuggestions]);
+  }, [fetchLookupNames, fetchSuggestions]);
 
   const handleEnrich = async () => {
     setEnriching(true);
@@ -264,7 +295,11 @@ const AiEnrichmentPanel: React.FC<AiEnrichmentPanelProps> = ({
               marginBottom: 8,
             }}
           >
-            <Text style={{ whiteSpace: 'pre-wrap' }}>{suggestion.suggested_value}</Text>
+            <Text style={{ whiteSpace: 'pre-wrap' }}>
+              {LOOKUP_FIELDS.includes(suggestion.field_name) && lookupNames[suggestion.suggested_value]
+                ? lookupNames[suggestion.suggested_value]
+                : suggestion.suggested_value}
+            </Text>
           </div>
 
           {suggestion.rationale && (

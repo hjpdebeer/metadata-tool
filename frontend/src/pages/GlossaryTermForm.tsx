@@ -677,17 +677,7 @@ const GlossaryTermForm: React.FC = () => {
                 <Input placeholder="Authoritative source system" />
               </Form.Item>
             </Col>
-            <Col xs={24} md={8}>
-              <Form.Item name="confidence_level_id" label="Confidence Level">
-                <Select
-                  placeholder="Select level"
-                  options={confidenceOptions}
-                  allowClear
-                  showSearch
-                  optionFilterProp="label"
-                />
-              </Form.Item>
-            </Col>
+            {/* Confidence Level is managed by the Data Quality module, not edited here */}
           </Row>
         </Card>
 

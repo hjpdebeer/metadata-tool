@@ -418,35 +418,35 @@ export const glossaryApi = {
   // ----- New lookup endpoints -----
 
   listTermTypes(): Promise<AxiosResponse<GlossaryTermType[]>> {
-    return api.get('/glossary/lookups/term-types');
+    return api.get('/glossary/term-types');
   },
 
   listReviewFrequencies(): Promise<AxiosResponse<GlossaryReviewFrequency[]>> {
-    return api.get('/glossary/lookups/review-frequencies');
+    return api.get('/glossary/review-frequencies');
   },
 
   listConfidenceLevels(): Promise<AxiosResponse<GlossaryConfidenceLevel[]>> {
-    return api.get('/glossary/lookups/confidence-levels');
+    return api.get('/glossary/confidence-levels');
   },
 
   listVisibilityLevels(): Promise<AxiosResponse<GlossaryVisibilityLevel[]>> {
-    return api.get('/glossary/lookups/visibility-levels');
+    return api.get('/glossary/visibility-levels');
   },
 
   listUnitsOfMeasure(): Promise<AxiosResponse<GlossaryUnitOfMeasure[]>> {
-    return api.get('/glossary/lookups/units-of-measure');
+    return api.get('/glossary/units-of-measure');
   },
 
   listRegulatoryTags(): Promise<AxiosResponse<GlossaryRegulatoryTag[]>> {
-    return api.get('/glossary/lookups/regulatory-tags');
+    return api.get('/glossary/regulatory-tags');
   },
 
   listSubjectAreas(): Promise<AxiosResponse<GlossarySubjectArea[]>> {
-    return api.get('/glossary/lookups/subject-areas');
+    return api.get('/glossary/subject-areas');
   },
 
   listLanguages(): Promise<AxiosResponse<GlossaryLanguage[]>> {
-    return api.get('/glossary/lookups/languages');
+    return api.get('/glossary/languages');
   },
 
   listClassifications(): Promise<AxiosResponse<DataClassificationRef[]>> {

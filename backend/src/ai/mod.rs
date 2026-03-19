@@ -137,14 +137,27 @@ Suggest values for ONLY these text fields (never suggest ID fields, FK fields, o
 - used_in_policies: policies referencing this term
 - golden_source: authoritative source system for this term's data
 
-For each suggestion provide: field_name, suggested_value (non-null string), confidence (0.0-1.0), rationale.
+RESPONSE FORMAT — you MUST respond with a JSON array conforming to this schema:
+[
+  {{
+    "field_name": "string — exact field name from the list above, max 64 chars",
+    "suggested_value": "string — max 2000 chars for text fields, max 50 chars for abbreviation, max 200 chars for comma-separated lists (tags, subject_areas, regulatory_tags)",
+    "confidence": 0.85,
+    "rationale": "string — max 500 chars, cite standards (DAMA DMBOK, BCBS 239, ISO 8000) where applicable"
+  }}
+]
 
-IMPORTANT:
+ALLOWED VALUES for dropdown fields (suggest the DISPLAY NAME, not an ID):
+- term_type: "KPI / Financial Metric", "Business Concept", "Regulatory Term", "Technical Term", "Process Term", "Product Term", "Risk Term", "Compliance Term"
+- unit_of_measure: "Percentage", "Currency", "Count", "Ratio", "Days", "Months", "Years", "Basis Points", "Boolean", "Text", "Date", "Volume", "Weight", "Rate"
+
+RULES:
 - Never suggest values for fields ending in _id, _at, or _by
 - Never suggest owner, steward, approver, organisational_unit, or domain_owner
-- For dropdown fields (unit_of_measure, term_type), suggest the DISPLAY NAME not an ID
 - Only suggest for fields that are empty or missing — skip fields in the "already have values" list
-- Return a JSON array of objects. Return [] if no suggestions are needed."#,
+- Every suggested_value MUST be a non-null, non-empty string
+- Return [] if no suggestions are needed
+- Return ONLY the JSON array — no markdown, no explanation text"#,
         entity_json = serde_json::to_string_pretty(entity_data).unwrap_or_default(),
         existing_list = existing_list,
     )
@@ -371,12 +384,66 @@ fn parse_suggestions(text: &str) -> Result<Vec<RawAiSuggestion>, AppError> {
         AppError::AiService(format!("Failed to parse AI suggestions as JSON: {e}"))
     })?;
 
-    // Clamp confidence values to [0.0, 1.0]
+    // Validate and clean each suggestion per CODING_STANDARDS Section 15.2
     let suggestions = suggestions
         .into_iter()
-        .map(|mut s| {
+        .filter_map(|mut s| {
+            // 1. Field allow-list: drop suggestions for disallowed fields
+            if s.field_name.is_empty()
+                || s.field_name.ends_with("_id")
+                || s.field_name.ends_with("_at")
+                || s.field_name.ends_with("_by")
+            {
+                return None;
+            }
+
+            // 2. Drop empty suggestions
+            if s.suggested_value.trim().is_empty() {
+                return None;
+            }
+
+            // 3. Content cleaning: strip control chars and excessive whitespace
+            s.suggested_value = s.suggested_value
+                .chars()
+                .filter(|c| !c.is_control() || *c == '\n')
+                .collect::<String>()
+                .trim()
+                .to_string();
+            s.rationale = s.rationale
+                .chars()
+                .filter(|c| !c.is_control() || *c == '\n')
+                .collect::<String>()
+                .trim()
+                .to_string();
+
+            // 4. Length enforcement: truncate to max column lengths
+            let max_len = match s.field_name.as_str() {
+                "abbreviation" => 50,
+                "tags" | "subject_areas" | "regulatory_tags" | "related_terms"
+                | "parent_term" => 500,
+                "rationale" => 500,
+                _ => 2000, // TEXT fields
+            };
+            if s.suggested_value.len() > max_len {
+                // Truncate at a word boundary
+                if let Some(pos) = s.suggested_value[..max_len].rfind(' ') {
+                    s.suggested_value.truncate(pos);
+                } else {
+                    s.suggested_value.truncate(max_len);
+                }
+            }
+            if s.rationale.len() > 500 {
+                if let Some(pos) = s.rationale[..500].rfind(' ') {
+                    s.rationale.truncate(pos);
+                } else {
+                    s.rationale.truncate(500);
+                }
+            }
+
+            // 5. Confidence clamping
             s.confidence = s.confidence.clamp(0.0, 1.0);
-            s
+
+            Some(s)
         })
         .collect();
 

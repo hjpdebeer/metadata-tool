@@ -22,6 +22,7 @@ This is an enterprise metadata lifecycle management platform for financial insti
 12. [API Design Conventions](#12-api-design-conventions)
 13. [Git Conventions](#13-git-conventions)
 14. [Pre-Commit Verification Checklist](#14-pre-commit-verification-checklist)
+15. [AI Integration Standards](#15-ai-integration-standards)
 
 ---
 
@@ -1087,3 +1088,68 @@ Before committing any change, verify every applicable item. This checklist appli
 - [ ] New functionality has corresponding tests
 - [ ] Bug fixes include a regression test
 - [ ] All existing tests still pass
+
+---
+
+## 15. AI Integration Standards
+
+### 15.1 Structured Response Schema
+
+All AI prompts MUST request responses in a strict JSON schema with defined data types and length constraints. Never rely on AI to infer the correct format — specify it explicitly.
+
+Every AI prompt that expects structured data MUST include:
+1. The exact JSON schema with field names, types, and constraints
+2. Maximum character lengths matching the target database column types
+3. Allowed values for enum/dropdown fields
+4. Explicit instructions on what NOT to include
+
+Example prompt schema block:
+```
+Respond with a JSON array. Each object must conform to this schema:
+{
+  "field_name": "string — exact field name from the list above",
+  "suggested_value": "string — max 2000 characters for TEXT fields, max 50 for abbreviation",
+  "confidence": "number — between 0.0 and 1.0 inclusive",
+  "rationale": "string — max 500 characters, cite standards where applicable"
+}
+```
+
+### 15.2 Backend Validation of AI Responses
+
+AI responses MUST be validated before storage. The backend MUST:
+
+1. **Schema validation**: Verify the response is valid JSON matching the expected structure. Reject malformed responses with `AppError::AiService`.
+2. **Field allow-list**: Only accept suggestions for fields explicitly listed in the allow-list. Silently drop suggestions for unlisted fields (e.g., `_id`, `_at`, `_by` fields).
+3. **Length enforcement**: Truncate or reject `suggested_value` entries that exceed the target column's maximum length. Never let a database `VARCHAR` overflow error reach the user.
+4. **Type coercion**: Handle AI returning `null` where a string is expected (use `#[serde(default)]` or custom deserializers). Handle confidence values outside 0.0–1.0 (clamp, don't reject).
+5. **Content filtering**: Strip control characters, excessive whitespace, and markdown formatting artifacts from suggested values before storage.
+
+### 15.3 Prompt Design Rules
+
+1. **Never expose internal IDs**: AI prompts must only contain human-readable text fields. Never send UUID primary keys, foreign keys, status IDs, or user IDs to the AI.
+2. **Never request ID suggestions**: The prompt must explicitly instruct the AI to never suggest values for fields ending in `_id`, `_at`, or `_by`, or for ownership fields (owner, steward, approver).
+3. **Dropdown fields**: When a field maps to a lookup table (dropdown), the prompt must list the allowed display values and instruct the AI to suggest a display name — the backend maps it to the ID.
+4. **Idempotent enrichment**: Calling enrichment multiple times on the same entity must not create duplicate suggestions. Check for existing PENDING suggestions before creating new ones, or replace them.
+5. **Financial services context**: All prompts must reference industry standards (DAMA DMBOK, BCBS 239, ISO 8000) to ground suggestions in authoritative sources rather than generic knowledge.
+
+### 15.4 AI Suggestion Lifecycle (Principle 6)
+
+AI suggestions MUST follow this lifecycle — no exceptions:
+
+```
+AI generates → Stored as PENDING → User reviews → ACCEPTED / MODIFIED / REJECTED
+```
+
+1. AI NEVER auto-publishes metadata (Principle 6: AI-Assisted, Human-Governed).
+2. All suggestions are stored in `ai_suggestions` table with PENDING status for audit trail (Principle 9: Audit Everything).
+3. Accepted suggestions are applied to the entity and the suggestion status is updated to ACCEPTED (or MODIFIED if the user edited the value).
+4. Rejected suggestions are marked REJECTED but never deleted — they remain in the audit trail.
+5. Users may optionally provide feedback (1–5 rating) on suggestions for quality tracking.
+
+### 15.5 Error Handling for AI Calls
+
+1. **Timeout**: AI API calls must have a connect timeout (10s) and a total timeout (90s). Log timeouts as warnings, not errors.
+2. **Fallback**: If the primary provider (Claude) fails, fall back to the secondary (OpenAI). If both fail, return a clear error message to the user — never silently fail.
+3. **Rate limiting**: Respect provider rate limits. If rate-limited, return a user-friendly message suggesting they retry in a few minutes.
+4. **Cost awareness**: Log the provider and model used for each enrichment call. Monitor usage to prevent unexpected costs.
+5. **Network**: Use `native-tls` (OS certificate store) for AI API calls to avoid DNS/IPv6 issues with `rustls`. Force IPv4 via `local_address(Ipv4Addr::UNSPECIFIED)` if the network does not support IPv6.

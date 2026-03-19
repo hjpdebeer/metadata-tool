@@ -40,6 +40,7 @@ use metadata_tool::db::{self, AppState};
         api::glossary::list_regulatory_tags,
         api::glossary::list_subject_areas,
         api::glossary::list_languages,
+        api::glossary::list_organisational_units,
         api::glossary::attach_regulatory_tag,
         api::glossary::detach_regulatory_tag,
         api::glossary::attach_subject_area,
@@ -262,6 +263,7 @@ async fn main() -> anyhow::Result<()> {
         .route("/api/v1/glossary/regulatory-tags", get(api::glossary::list_regulatory_tags))
         .route("/api/v1/glossary/subject-areas", get(api::glossary::list_subject_areas))
         .route("/api/v1/glossary/languages", get(api::glossary::list_languages))
+        .route("/api/v1/glossary/organisational-units", get(api::glossary::list_organisational_units))
         // Dashboard
         .route("/api/v1/stats", get(api::glossary::get_stats))
         // Data Dictionary

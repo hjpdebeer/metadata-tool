@@ -243,6 +243,15 @@ pub struct GlossaryTermDetail {
     pub aliases: Vec<GlossaryAliasItem>,
 }
 
+/// Organisational unit for ownership assignment dropdown
+#[derive(Debug, Clone, Serialize, Deserialize, FromRow, ToSchema)]
+pub struct OrganisationalUnit {
+    pub unit_id: Uuid,
+    pub unit_code: String,
+    pub unit_name: String,
+    pub description: Option<String>,
+}
+
 /// Alias/synonym attached to a term (from glossary_term_aliases)
 #[derive(Debug, Clone, Serialize, FromRow, ToSchema)]
 pub struct GlossaryAliasItem {

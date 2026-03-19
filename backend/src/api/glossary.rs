@@ -781,6 +781,36 @@ pub async fn list_languages(
     Ok(Json(rows))
 }
 
+// ---------------------------------------------------------------------------
+// list_organisational_units — GET /api/v1/glossary/organisational-units
+// ---------------------------------------------------------------------------
+
+/// List organisational units for dropdown selection.
+#[utoipa::path(
+    get,
+    path = "/api/v1/glossary/organisational-units",
+    responses(
+        (status = 200, description = "List organisational units", body = Vec<OrganisationalUnit>)
+    ),
+    security(("bearer_auth" = [])),
+    tag = "glossary"
+)]
+pub async fn list_organisational_units(
+    State(state): State<AppState>,
+) -> AppResult<Json<Vec<OrganisationalUnit>>> {
+    let rows = sqlx::query_as::<_, OrganisationalUnit>(
+        r#"
+        SELECT unit_id, unit_code, unit_name, description
+        FROM organisational_units
+        ORDER BY display_order ASC
+        "#,
+    )
+    .fetch_all(&state.pool)
+    .await?;
+
+    Ok(Json(rows))
+}
+
 // ===========================================================================
 // JUNCTION MANAGEMENT ENDPOINTS
 // ===========================================================================

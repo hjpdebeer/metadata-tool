@@ -41,6 +41,7 @@ import type {
   GlossarySubjectArea,
   WorkflowInstanceView,
 } from '../services/glossaryApi';
+import type { OrganisationalUnit } from '../services/glossaryApi';
 import { useAuth } from '../hooks/useAuth';
 import { usersApi } from '../services/usersApi';
 import type { UserListItem } from '../services/usersApi';
@@ -97,11 +98,13 @@ const GlossaryTermDetail: React.FC = () => {
 
   // Ownership assignment state
   const [allUsers, setAllUsers] = useState<UserListItem[]>([]);
+  const [allOrgUnits, setAllOrgUnits] = useState<OrganisationalUnit[]>([]);
   const [ownershipLoading, setOwnershipLoading] = useState(false);
   const [ownerUserId, setOwnerUserId] = useState<string | undefined>();
   const [stewardUserId, setStewardUserId] = useState<string | undefined>();
   const [domainOwnerUserId, setDomainOwnerUserId] = useState<string | undefined>();
   const [approverUserId, setApproverUserId] = useState<string | undefined>();
+  const [orgUnit, setOrgUnit] = useState<string | undefined>();
 
   // Tag management state
   const [allRegulatoryTags, setAllRegulatoryTags] = useState<GlossaryRegulatoryTag[]>([]);
@@ -129,10 +132,11 @@ const GlossaryTermDetail: React.FC = () => {
   }, [id, navigate]);
 
   const fetchLookups = useCallback(async () => {
-    const [regRes, areaRes, usersRes] = await Promise.allSettled([
+    const [regRes, areaRes, usersRes, orgRes] = await Promise.allSettled([
       glossaryApi.listRegulatoryTags(),
       glossaryApi.listSubjectAreas(),
       usersApi.listUsers({ page_size: 500, is_active: true }),
+      glossaryApi.listOrganisationalUnits(),
     ]);
     if (regRes.status === 'fulfilled') setAllRegulatoryTags(regRes.value.data);
     if (areaRes.status === 'fulfilled') setAllSubjectAreas(areaRes.value.data);
@@ -140,6 +144,7 @@ const GlossaryTermDetail: React.FC = () => {
       const data = usersRes.value.data;
       setAllUsers(Array.isArray(data) ? data : (data as unknown as { data: UserListItem[] }).data || []);
     }
+    if (orgRes.status === 'fulfilled') setAllOrgUnits(orgRes.value.data);
   }, []);
 
   useEffect(() => {
@@ -154,6 +159,7 @@ const GlossaryTermDetail: React.FC = () => {
       setStewardUserId(detail.steward_user_id || undefined);
       setDomainOwnerUserId(detail.domain_owner_user_id || undefined);
       setApproverUserId(detail.approver_user_id || undefined);
+      setOrgUnit(detail.organisational_unit || undefined);
     }
   }, [detail]);
 
@@ -168,6 +174,7 @@ const GlossaryTermDetail: React.FC = () => {
         steward_user_id: stewardUserId || undefined,
         domain_owner_user_id: domainOwnerUserId || undefined,
         approver_user_id: approverUserId || undefined,
+        organisational_unit: orgUnit || undefined,
       } as Record<string, unknown>);
       message.success('Ownership updated successfully.');
       fetchDetail();
@@ -1101,6 +1108,23 @@ const GlossaryTermDetail: React.FC = () => {
                 onChange={(val) => setApproverUserId(val)}
                 options={allUsers.map((u) => ({ value: u.user_id, label: `${u.display_name} (${u.email})` }))}
                 placeholder="Select approver..."
+                showSearch
+                optionFilterProp="label"
+                allowClear
+              />
+            </Col>
+          </Row>
+          <Row gutter={[16, 16]} style={{ marginTop: 16 }}>
+            <Col xs={24} md={12}>
+              <div style={{ marginBottom: 4 }}>
+                <Text strong>Organisational Unit</Text>
+              </div>
+              <Select
+                style={{ width: '100%' }}
+                value={orgUnit}
+                onChange={(val) => setOrgUnit(val)}
+                options={allOrgUnits.map((u) => ({ value: u.unit_name, label: u.unit_name }))}
+                placeholder="Select organisational unit..."
                 showSearch
                 optionFilterProp="label"
                 allowClear

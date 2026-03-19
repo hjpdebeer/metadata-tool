@@ -67,6 +67,13 @@ export interface GlossaryLanguage {
   language_name: string;
 }
 
+export interface OrganisationalUnit {
+  unit_id: string;
+  unit_code: string;
+  unit_name: string;
+  description: string | null;
+}
+
 export interface GlossaryTag {
   tag_id: string;
   tag_name: string;
@@ -448,6 +455,10 @@ export const glossaryApi = {
 
   listLanguages(): Promise<AxiosResponse<GlossaryLanguage[]>> {
     return api.get('/glossary/languages');
+  },
+
+  listOrganisationalUnits(): Promise<AxiosResponse<OrganisationalUnit[]>> {
+    return api.get('/glossary/organisational-units');
   },
 
   listClassifications(): Promise<AxiosResponse<DataClassificationRef[]>> {

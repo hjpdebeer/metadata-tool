@@ -10,6 +10,7 @@ import {
   Modal,
   Progress,
   Rate,
+  Select,
   Space,
   Spin,
   Tag,
@@ -84,6 +85,8 @@ const AiEnrichmentPanel: React.FC<AiEnrichmentPanelProps> = ({
   const [enriching, setEnriching] = useState(false);
   // UUID → display name map for lookup fields (Section 15.6)
   const [lookupNames, setLookupNames] = useState<Record<string, string>>({});
+  // field_name → [{value: uuid, label: name}] for Select dropdowns in Modify modal
+  const [lookupOptions, setLookupOptions] = useState<Record<string, { value: string; label: string }[]>>({});
   const [initialLoaded, setInitialLoaded] = useState(false);
 
   // Modify modal state
@@ -112,12 +115,29 @@ const AiEnrichmentPanel: React.FC<AiEnrichmentPanelProps> = ({
         glossaryApi.listUnitsOfMeasure(),
       ]);
       const map: Record<string, string> = {};
-      if (domains.status === 'fulfilled') domains.value.data.forEach((d) => { map[d.domain_id] = d.domain_name; });
-      if (categories.status === 'fulfilled') categories.value.data.forEach((c) => { map[c.category_id] = c.category_name; });
-      if (classifications.status === 'fulfilled') classifications.value.data.forEach((c) => { map[c.classification_id] = c.classification_name; });
-      if (termTypes.status === 'fulfilled') termTypes.value.data.forEach((t) => { map[t.term_type_id] = t.type_name; });
-      if (units.status === 'fulfilled') units.value.data.forEach((u) => { map[u.unit_id] = u.unit_name; });
+      const opts: Record<string, { value: string; label: string }[]> = {};
+      if (domains.status === 'fulfilled') {
+        domains.value.data.forEach((d) => { map[d.domain_id] = d.domain_name; });
+        opts['domain'] = domains.value.data.map((d) => ({ value: d.domain_id, label: d.domain_name }));
+      }
+      if (categories.status === 'fulfilled') {
+        categories.value.data.forEach((c) => { map[c.category_id] = c.category_name; });
+        opts['category'] = categories.value.data.map((c) => ({ value: c.category_id, label: c.category_name }));
+      }
+      if (classifications.status === 'fulfilled') {
+        classifications.value.data.forEach((c) => { map[c.classification_id] = c.classification_name; });
+        opts['data_classification'] = classifications.value.data.map((c) => ({ value: c.classification_id, label: c.classification_name }));
+      }
+      if (termTypes.status === 'fulfilled') {
+        termTypes.value.data.forEach((t) => { map[t.term_type_id] = t.type_name; });
+        opts['term_type'] = termTypes.value.data.map((t) => ({ value: t.term_type_id, label: t.type_name }));
+      }
+      if (units.status === 'fulfilled') {
+        units.value.data.forEach((u) => { map[u.unit_id] = u.unit_name; });
+        opts['unit_of_measure'] = units.value.data.map((u) => ({ value: u.unit_id, label: u.unit_name }));
+      }
       setLookupNames(map);
+      setLookupOptions(opts);
     } catch {
       // Non-critical
     }
@@ -461,12 +481,25 @@ const AiEnrichmentPanel: React.FC<AiEnrichmentPanelProps> = ({
             the entity.
           </Text>
         </div>
-        <Input.TextArea
-          rows={6}
-          value={modifyValue}
-          onChange={(e) => setModifyValue(e.target.value)}
-          placeholder="Modified value..."
-        />
+        {LOOKUP_FIELDS.includes(modifyFieldName) && lookupOptions[modifyFieldName] ? (
+          <Select
+            style={{ width: '100%' }}
+            value={modifyValue || undefined}
+            onChange={(val) => setModifyValue(val)}
+            options={lookupOptions[modifyFieldName]}
+            placeholder={`Select ${modifyFieldName.replace(/_/g, ' ')}...`}
+            showSearch
+            optionFilterProp="label"
+            allowClear
+          />
+        ) : (
+          <Input.TextArea
+            rows={6}
+            value={modifyValue}
+            onChange={(e) => setModifyValue(e.target.value)}
+            placeholder="Modified value..."
+          />
+        )}
       </Modal>
 
       {/* Feedback Modal */}

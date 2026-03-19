@@ -466,7 +466,7 @@ const GlossaryTermForm: React.FC = () => {
               <Form.Item name="formula" label="Formula">
                 <Input
                   placeholder="e.g., (Interest Income - Interest Expense) / Average Earning Assets"
-                  style={{ fontFamily: "'SF Mono', 'Fira Code', 'Consolas', monospace" }}
+                  style={{}}
                 />
               </Form.Item>
             </Col>

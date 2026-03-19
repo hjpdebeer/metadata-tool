@@ -5,11 +5,13 @@ import {
   Breadcrumb,
   Button,
   Card,
+  Col,
   Collapse,
   Descriptions,
   Divider,
   Input,
   Modal,
+  Row,
   Select,
   Space,
   Spin,
@@ -30,6 +32,7 @@ import {
   SafetyCertificateOutlined,
   SendOutlined,
   UndoOutlined,
+  UserOutlined,
 } from '@ant-design/icons';
 import { glossaryApi, workflowApi } from '../services/glossaryApi';
 import type {
@@ -39,6 +42,8 @@ import type {
   WorkflowInstanceView,
 } from '../services/glossaryApi';
 import { useAuth } from '../hooks/useAuth';
+import { usersApi } from '../services/usersApi';
+import type { UserListItem } from '../services/usersApi';
 import AiEnrichmentPanel from '../components/AiEnrichmentPanel';
 
 const { Title, Text, Paragraph } = Typography;
@@ -90,6 +95,14 @@ const GlossaryTermDetail: React.FC = () => {
   const [transitionAction, setTransitionAction] = useState('');
   const [transitionComments, setTransitionComments] = useState('');
 
+  // Ownership assignment state
+  const [allUsers, setAllUsers] = useState<UserListItem[]>([]);
+  const [ownershipLoading, setOwnershipLoading] = useState(false);
+  const [ownerUserId, setOwnerUserId] = useState<string | undefined>();
+  const [stewardUserId, setStewardUserId] = useState<string | undefined>();
+  const [domainOwnerUserId, setDomainOwnerUserId] = useState<string | undefined>();
+  const [approverUserId, setApproverUserId] = useState<string | undefined>();
+
   // Tag management state
   const [allRegulatoryTags, setAllRegulatoryTags] = useState<GlossaryRegulatoryTag[]>([]);
   const [allSubjectAreas, setAllSubjectAreas] = useState<GlossarySubjectArea[]>([]);
@@ -116,18 +129,57 @@ const GlossaryTermDetail: React.FC = () => {
   }, [id, navigate]);
 
   const fetchLookups = useCallback(async () => {
-    const [regRes, areaRes] = await Promise.allSettled([
+    const [regRes, areaRes, usersRes] = await Promise.allSettled([
       glossaryApi.listRegulatoryTags(),
       glossaryApi.listSubjectAreas(),
+      usersApi.listUsers({ page_size: 500, is_active: true }),
     ]);
     if (regRes.status === 'fulfilled') setAllRegulatoryTags(regRes.value.data);
     if (areaRes.status === 'fulfilled') setAllSubjectAreas(areaRes.value.data);
+    if (usersRes.status === 'fulfilled') {
+      const data = usersRes.value.data;
+      setAllUsers(Array.isArray(data) ? data : (data as unknown as { data: UserListItem[] }).data || []);
+    }
   }, []);
 
   useEffect(() => {
     fetchDetail(true); // Initial load — show spinner
     fetchLookups();
   }, [fetchDetail, fetchLookups]);
+
+  // Sync ownership state when detail loads
+  useEffect(() => {
+    if (detail) {
+      setOwnerUserId(detail.owner_user_id || undefined);
+      setStewardUserId(detail.steward_user_id || undefined);
+      setDomainOwnerUserId(detail.domain_owner_user_id || undefined);
+      setApproverUserId(detail.approver_user_id || undefined);
+    }
+  }, [detail]);
+
+  // --- Ownership assignment ---
+
+  const handleSaveOwnership = async () => {
+    if (!id) return;
+    setOwnershipLoading(true);
+    try {
+      await glossaryApi.updateTerm(id, {
+        owner_user_id: ownerUserId || undefined,
+        steward_user_id: stewardUserId || undefined,
+        domain_owner_user_id: domainOwnerUserId || undefined,
+        approver_user_id: approverUserId || undefined,
+      } as Record<string, unknown>);
+      message.success('Ownership updated successfully.');
+      fetchDetail();
+    } catch {
+      message.error('Failed to update ownership.');
+    } finally {
+      setOwnershipLoading(false);
+    }
+  };
+
+  const ownershipComplete = !!(ownerUserId && stewardUserId && domainOwnerUserId && approverUserId);
+  const showOwnershipSection = detail && (detail.status_code === 'DRAFT' || detail.status_code === 'REVISED');
 
   // --- Junction management ---
 
@@ -960,6 +1012,113 @@ const GlossaryTermDetail: React.FC = () => {
         entityId={id!}
         onSuggestionApplied={fetchDetail}
       />
+
+      {/* --- Ownership Assignment (shown in DRAFT/REVISED status) --- */}
+      {showOwnershipSection && (
+        <Card
+          title={
+            <Space>
+              <UserOutlined />
+              <Text strong>Assign Ownership</Text>
+              {ownershipComplete ? (
+                <Tag color="success">Complete</Tag>
+              ) : (
+                <Tag color="warning">Required before submission</Tag>
+              )}
+            </Space>
+          }
+          style={{
+            marginBottom: 24,
+            border: ownershipComplete ? '1px solid #B7EB8F' : '1px solid #FFD591',
+            background: ownershipComplete ? '#F6FFED' : '#FFF7E6',
+          }}
+        >
+          {!ownershipComplete && (
+            <Alert
+              message="All ownership fields must be assigned before this term can be submitted for review."
+              type="warning"
+              showIcon
+              style={{ marginBottom: 16 }}
+            />
+          )}
+          <Row gutter={[16, 16]}>
+            <Col xs={24} md={12}>
+              <div style={{ marginBottom: 4 }}>
+                <Text strong>Business Term Owner</Text>
+                {!ownerUserId && <Text type="danger"> *</Text>}
+              </div>
+              <Select
+                style={{ width: '100%' }}
+                value={ownerUserId}
+                onChange={(val) => setOwnerUserId(val)}
+                options={allUsers.map((u) => ({ value: u.user_id, label: `${u.display_name} (${u.email})` }))}
+                placeholder="Select owner..."
+                showSearch
+                optionFilterProp="label"
+                allowClear
+              />
+            </Col>
+            <Col xs={24} md={12}>
+              <div style={{ marginBottom: 4 }}>
+                <Text strong>Data Steward</Text>
+                {!stewardUserId && <Text type="danger"> *</Text>}
+              </div>
+              <Select
+                style={{ width: '100%' }}
+                value={stewardUserId}
+                onChange={(val) => setStewardUserId(val)}
+                options={allUsers.map((u) => ({ value: u.user_id, label: `${u.display_name} (${u.email})` }))}
+                placeholder="Select steward..."
+                showSearch
+                optionFilterProp="label"
+                allowClear
+              />
+            </Col>
+            <Col xs={24} md={12}>
+              <div style={{ marginBottom: 4 }}>
+                <Text strong>Data Domain Owner</Text>
+                {!domainOwnerUserId && <Text type="danger"> *</Text>}
+              </div>
+              <Select
+                style={{ width: '100%' }}
+                value={domainOwnerUserId}
+                onChange={(val) => setDomainOwnerUserId(val)}
+                options={allUsers.map((u) => ({ value: u.user_id, label: `${u.display_name} (${u.email})` }))}
+                placeholder="Select domain owner..."
+                showSearch
+                optionFilterProp="label"
+                allowClear
+              />
+            </Col>
+            <Col xs={24} md={12}>
+              <div style={{ marginBottom: 4 }}>
+                <Text strong>Approver</Text>
+                {!approverUserId && <Text type="danger"> *</Text>}
+              </div>
+              <Select
+                style={{ width: '100%' }}
+                value={approverUserId}
+                onChange={(val) => setApproverUserId(val)}
+                options={allUsers.map((u) => ({ value: u.user_id, label: `${u.display_name} (${u.email})` }))}
+                placeholder="Select approver..."
+                showSearch
+                optionFilterProp="label"
+                allowClear
+              />
+            </Col>
+          </Row>
+          <div style={{ marginTop: 16, textAlign: 'right' }}>
+            <Button
+              type="primary"
+              onClick={handleSaveOwnership}
+              loading={ownershipLoading}
+              disabled={!ownerUserId && !stewardUserId && !domainOwnerUserId && !approverUserId}
+            >
+              Save Ownership
+            </Button>
+          </div>
+        </Card>
+      )}
 
       {/* --- 9-Section Collapse --- */}
       <Card style={{ marginBottom: 24 }}>

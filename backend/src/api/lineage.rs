@@ -15,6 +15,7 @@ use crate::error::{AppError, AppResult};
 // Query parameter types
 // ---------------------------------------------------------------------------
 
+/// Query parameters for impact analysis traversal direction and depth.
 #[derive(Debug, Deserialize, IntoParams, ToSchema)]
 pub struct ImpactAnalysisQuery {
     /// Direction: UPSTREAM or DOWNSTREAM
@@ -23,6 +24,7 @@ pub struct ImpactAnalysisQuery {
     pub max_depth: Option<i32>,
 }
 
+/// Query parameters for filtering lineage graphs by type.
 #[derive(Debug, Deserialize, IntoParams, ToSchema)]
 pub struct ListGraphsQuery {
     /// Filter by graph type: BUSINESS or TECHNICAL

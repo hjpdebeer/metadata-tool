@@ -367,8 +367,8 @@ const GlossaryTermDetail: React.FC = () => {
   // Available tags/areas not yet attached
   const attachedRegTagIds = new Set(detail.regulatory_tags.map((t) => t.tag_id));
   const availableRegTags = allRegulatoryTags.filter((t) => !attachedRegTagIds.has(t.tag_id));
-  const attachedAreaIds = new Set(detail.subject_areas.map((a: { subject_area_id: string }) => a.subject_area_id));
-  const availableSubjectAreas = allSubjectAreas.filter((a) => !attachedAreaIds.has(a.subject_area_id || a.area_id));
+  const attachedAreaIds = new Set(detail.subject_areas.map((a) => a.subject_area_id));
+  const availableSubjectAreas = allSubjectAreas.filter((a) => !attachedAreaIds.has(a.subject_area_id));
 
   const renderTermLinks = (terms: { term_id: string; term_name: string }[]) => {
     if (terms.length === 0) return <EmptyValue text="None" />;
@@ -575,7 +575,7 @@ const GlossaryTermDetail: React.FC = () => {
                   showSearch
                   optionFilterProp="label"
                   options={availableSubjectAreas.map((a) => ({
-                    value: a.subject_area_id || a.area_id,
+                    value: a.subject_area_id,
                     label: a.area_name,
                   }))}
                   onChange={handleAttachSubjectArea}
@@ -625,11 +625,9 @@ const GlossaryTermDetail: React.FC = () => {
         <Descriptions column={{ xs: 1, sm: 2 }} bordered size="small">
           <Descriptions.Item label="Created">
             {formatDate(term.created_at)}
-            {term.created_by_name ? <Text type="secondary"> by {term.created_by_name}</Text> : ''}
           </Descriptions.Item>
           <Descriptions.Item label="Last Modified">
             {formatDate(term.updated_at)}
-            {term.updated_by_name ? <Text type="secondary"> by {term.updated_by_name}</Text> : ''}
           </Descriptions.Item>
           <Descriptions.Item label="Approved Date">
             {formatDate(term.approved_at) || <EmptyValue text="Not yet approved" />}

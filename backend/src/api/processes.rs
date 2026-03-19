@@ -791,6 +791,8 @@ pub async fn list_process_elements(
 // link_application — POST /api/v1/processes/:process_id/applications
 // ---------------------------------------------------------------------------
 
+/// Link an application to a business process with an optional role description.
+/// Requires authentication.
 #[utoipa::path(
     post,
     path = "/api/v1/processes/{process_id}/applications",
@@ -867,6 +869,8 @@ pub async fn link_application(
 // list_process_applications — GET /api/v1/processes/:process_id/applications
 // ---------------------------------------------------------------------------
 
+/// List applications linked to a business process.
+/// Requires authentication.
 #[utoipa::path(
     get,
     path = "/api/v1/processes/{process_id}/applications",

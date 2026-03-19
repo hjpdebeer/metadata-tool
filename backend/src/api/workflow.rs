@@ -9,6 +9,8 @@ use crate::domain::workflow::*;
 use crate::error::AppResult;
 use crate::workflow::service;
 
+/// List pending workflow tasks assigned to the current user or their roles.
+/// Requires authentication.
 #[utoipa::path(
     get,
     path = "/api/v1/workflow/tasks/pending",
@@ -26,6 +28,8 @@ pub async fn my_pending_tasks(
     Ok(Json(tasks))
 }
 
+/// Retrieve a workflow instance with its current state, tasks, and transition history.
+/// Requires authentication.
 #[utoipa::path(
     get,
     path = "/api/v1/workflow/instances/{instance_id}",
@@ -44,6 +48,8 @@ pub async fn get_instance(
     Ok(Json(view))
 }
 
+/// Perform a workflow state transition (e.g. SUBMIT, APPROVE, REJECT) on an instance (Principle 5).
+/// Requires authentication.
 #[utoipa::path(
     post,
     path = "/api/v1/workflow/instances/{instance_id}/transition",
@@ -74,6 +80,8 @@ pub async fn transition(
     Ok(Json(instance))
 }
 
+/// Complete a workflow task with a decision (APPROVE, REJECT, or REVISE).
+/// Requires authentication.
 #[utoipa::path(
     post,
     path = "/api/v1/workflow/tasks/{task_id}/complete",

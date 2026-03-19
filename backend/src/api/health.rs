@@ -5,6 +5,7 @@ use utoipa::ToSchema;
 
 use crate::db::AppState;
 
+/// Health check response indicating service and database status.
 #[derive(Serialize, ToSchema)]
 pub struct HealthResponse {
     pub status: String,
@@ -12,6 +13,8 @@ pub struct HealthResponse {
     pub database: String,
 }
 
+/// Check service health and database connectivity.
+/// No authentication required.
 #[utoipa::path(
     get,
     path = "/api/v1/health",

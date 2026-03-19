@@ -27,6 +27,8 @@ fn require_admin(claims: &Claims) -> AppResult<()> {
 // list_users — GET /api/v1/users
 // ---------------------------------------------------------------------------
 
+/// List users with optional filtering and pagination.
+/// Requires ADMIN role.
 #[utoipa::path(
     get,
     path = "/api/v1/users",
@@ -104,6 +106,8 @@ pub async fn list_users(
 // get_user — GET /api/v1/users/{user_id}
 // ---------------------------------------------------------------------------
 
+/// Retrieve a user's profile and assigned roles.
+/// Requires ADMIN role.
 #[utoipa::path(
     get,
     path = "/api/v1/users/{user_id}",
@@ -156,6 +160,8 @@ pub async fn get_user(
 // update_user — PUT /api/v1/users/{user_id}
 // ---------------------------------------------------------------------------
 
+/// Update a user's profile. Only provided fields are changed.
+/// Requires ADMIN role.
 #[utoipa::path(
     put,
     path = "/api/v1/users/{user_id}",
@@ -206,6 +212,8 @@ pub async fn update_user(
 // assign_role — POST /api/v1/users/{user_id}/roles
 // ---------------------------------------------------------------------------
 
+/// Assign an RBAC role to a user.
+/// Requires ADMIN role.
 #[utoipa::path(
     post,
     path = "/api/v1/users/{user_id}/roles",
@@ -284,6 +292,8 @@ pub async fn assign_role(
 // remove_role — DELETE /api/v1/users/{user_id}/roles/{role_id}
 // ---------------------------------------------------------------------------
 
+/// Remove a role assignment from a user.
+/// Requires ADMIN role.
 #[utoipa::path(
     delete,
     path = "/api/v1/users/{user_id}/roles/{role_id}",
@@ -327,6 +337,8 @@ pub async fn remove_role(
 // list_roles — GET /api/v1/roles
 // ---------------------------------------------------------------------------
 
+/// List all available roles.
+/// Requires authentication (no admin check).
 #[utoipa::path(
     get,
     path = "/api/v1/roles",

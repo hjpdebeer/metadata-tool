@@ -56,7 +56,6 @@ export interface GlossaryRegulatoryTag {
 
 export interface GlossarySubjectArea {
   subject_area_id: string;
-  area_id?: string; // deprecated alias — use subject_area_id
   area_code: string;
   area_name: string;
   description: string | null;

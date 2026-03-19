@@ -1,6 +1,6 @@
 # ADR-0006: Standardised Data Access Patterns
 
-**Status**: Proposed
+**Status**: Accepted
 **Date**: 2026-03-19
 **Context**: The glossary enhancement revealed inconsistent patterns for reading and writing data. Different endpoints return different response shapes, AI suggestion acceptance uses ad-hoc field matching, and lookup resolution is inconsistent. This creates bugs, makes the codebase harder to maintain, and violates Principle 13 (AI-Maintained Codebase).
 

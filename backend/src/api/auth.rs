@@ -8,18 +8,21 @@ use crate::auth::Claims;
 use crate::db::AppState;
 use crate::error::{AppError, AppResult};
 
+/// Query parameters received from the Entra ID OAuth callback.
 #[derive(Deserialize)]
 pub struct AuthCallback {
     pub code: String,
     pub state: Option<String>,
 }
 
+/// Request body for dev-mode login with email and password.
 #[derive(Debug, Deserialize, ToSchema)]
 pub struct DevLoginRequest {
     pub email: String,
     pub password: String,
 }
 
+/// JWT token response returned on successful authentication.
 #[derive(Serialize, ToSchema)]
 pub struct TokenResponse {
     pub access_token: String,
@@ -27,6 +30,7 @@ pub struct TokenResponse {
     pub expires_in: u64,
 }
 
+/// Response containing the authenticated user's identity and roles.
 #[derive(Serialize, ToSchema)]
 pub struct MeResponse {
     pub user_id: uuid::Uuid,

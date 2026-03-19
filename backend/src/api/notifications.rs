@@ -14,6 +14,8 @@ use crate::error::{AppError, AppResult};
 // list_notifications — GET /api/v1/notifications
 // ---------------------------------------------------------------------------
 
+/// List in-app notifications for the current user with pagination.
+/// Requires authentication.
 #[utoipa::path(
     get,
     path = "/api/v1/notifications",
@@ -70,6 +72,8 @@ pub async fn list_notifications(
 // mark_read — POST /api/v1/notifications/{id}/read
 // ---------------------------------------------------------------------------
 
+/// Mark a single notification as read for the current user.
+/// Requires authentication.
 #[utoipa::path(
     post,
     path = "/api/v1/notifications/{notification_id}/read",
@@ -121,6 +125,8 @@ pub async fn mark_read(
 // mark_all_read — POST /api/v1/notifications/read-all
 // ---------------------------------------------------------------------------
 
+/// Mark all unread notifications as read for the current user.
+/// Requires authentication.
 #[utoipa::path(
     post,
     path = "/api/v1/notifications/read-all",
@@ -150,6 +156,8 @@ pub async fn mark_all_read(
 // unread_count — GET /api/v1/notifications/unread-count
 // ---------------------------------------------------------------------------
 
+/// Get the count of unread notifications for the current user.
+/// Requires authentication.
 #[utoipa::path(
     get,
     path = "/api/v1/notifications/unread-count",
@@ -177,6 +185,8 @@ pub async fn unread_count(
 // get_preferences — GET /api/v1/notifications/preferences
 // ---------------------------------------------------------------------------
 
+/// Get the current user's notification delivery preferences.
+/// Requires authentication.
 #[utoipa::path(
     get,
     path = "/api/v1/notifications/preferences",
@@ -213,6 +223,8 @@ pub async fn get_preferences(
 // update_preferences — PUT /api/v1/notifications/preferences
 // ---------------------------------------------------------------------------
 
+/// Bulk-update the current user's notification preferences via upsert.
+/// Requires authentication.
 #[utoipa::path(
     put,
     path = "/api/v1/notifications/preferences",

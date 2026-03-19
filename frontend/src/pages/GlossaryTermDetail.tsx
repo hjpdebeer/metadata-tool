@@ -481,17 +481,7 @@ const GlossaryTermDetail: React.FC = () => {
             </Descriptions.Item>
             <Descriptions.Item label={<>Formula <AiHint /></>} span={2}>
               {term.formula ? (
-                <code
-                  style={{
-                    fontFamily: "'SF Mono', 'Fira Code', 'Consolas', monospace",
-                    backgroundColor: '#F5F5F5',
-                    padding: '4px 8px',
-                    borderRadius: 4,
-                    display: 'inline-block',
-                  }}
-                >
-                  {term.formula}
-                </code>
+                <div style={{ whiteSpace: 'pre-wrap' }}>{term.formula}</div>
               ) : (
                 <EmptyValue />
               )}

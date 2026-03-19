@@ -4,12 +4,26 @@ use axum::Extension;
 use axum::Json;
 use uuid::Uuid;
 
+use sqlx::PgPool;
+
 use crate::auth::Claims;
 use crate::db::AppState;
 use crate::domain::ai::{AiEnrichRequest, AiEnrichResponse};
 use crate::domain::glossary::*;
 use crate::error::{AppError, AppResult};
 use crate::workflow;
+
+/// Resolve a single display name from a lookup table by optional UUID FK.
+/// Returns None if the FK is None or the lookup row doesn't exist.
+async fn resolve_name(pool: &PgPool, query: &str, id: Option<Uuid>) -> Option<String> {
+    let id = id?;
+    sqlx::query_scalar::<_, String>(query)
+        .bind(id)
+        .fetch_optional(pool)
+        .await
+        .ok()
+        .flatten()
+}
 
 // ---------------------------------------------------------------------------
 // list_terms — GET /api/v1/glossary/terms
@@ -218,8 +232,39 @@ pub async fn get_term(
     .fetch_all(&state.pool)
     .await?;
 
+    // Resolve all lookup FK names
+    let pool = &state.pool;
+    let domain_name = resolve_name(pool, "SELECT domain_name FROM glossary_domains WHERE domain_id = $1", term.domain_id).await;
+    let category_name = resolve_name(pool, "SELECT category_name FROM glossary_categories WHERE category_id = $1", term.category_id).await;
+    let term_type_name = resolve_name(pool, "SELECT type_name FROM glossary_term_types WHERE term_type_id = $1", term.term_type_id).await;
+    let unit_of_measure_name = resolve_name(pool, "SELECT unit_name FROM glossary_units_of_measure WHERE unit_id = $1", term.unit_of_measure_id).await;
+    let classification_name = resolve_name(pool, "SELECT classification_name FROM data_classifications WHERE classification_id = $1", term.classification_id).await;
+    let review_frequency_name = resolve_name(pool, "SELECT frequency_name FROM glossary_review_frequencies WHERE frequency_id = $1", term.review_frequency_id).await;
+    let confidence_level_name = resolve_name(pool, "SELECT level_name FROM glossary_confidence_levels WHERE confidence_id = $1", term.confidence_level_id).await;
+    let visibility_name = resolve_name(pool, "SELECT visibility_name FROM glossary_visibility_levels WHERE visibility_id = $1", term.visibility_id).await;
+    let language_name = resolve_name(pool, "SELECT language_name FROM glossary_languages WHERE language_id = $1", term.language_id).await;
+    let parent_term_name = resolve_name(pool, "SELECT term_name FROM glossary_terms WHERE term_id = $1", term.parent_term_id).await;
+    let owner_name = resolve_name(pool, "SELECT display_name FROM users WHERE user_id = $1", term.owner_user_id).await;
+    let steward_name = resolve_name(pool, "SELECT display_name FROM users WHERE user_id = $1", term.steward_user_id).await;
+    let domain_owner_name = resolve_name(pool, "SELECT display_name FROM users WHERE user_id = $1", term.domain_owner_user_id).await;
+    let approver_name = resolve_name(pool, "SELECT display_name FROM users WHERE user_id = $1", term.approver_user_id).await;
+
     Ok(Json(GlossaryTermDetailView {
         term,
+        domain_name,
+        category_name,
+        term_type_name,
+        unit_of_measure_name,
+        classification_name,
+        review_frequency_name,
+        confidence_level_name,
+        visibility_name,
+        language_name,
+        parent_term_name,
+        owner_name,
+        steward_name,
+        domain_owner_name,
+        approver_name,
         regulatory_tags,
         subject_areas,
         tags,

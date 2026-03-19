@@ -101,11 +101,27 @@ pub struct GlossaryTerm {
 // Detail view — term plus junction data
 // ---------------------------------------------------------------------------
 
-/// Full detail view of a glossary term with all junction data
+/// Full detail view of a glossary term with resolved lookup names and junction data
 #[derive(Debug, Serialize, ToSchema)]
 pub struct GlossaryTermDetailView {
     #[serde(flatten)]
     pub term: GlossaryTerm,
+    // Resolved lookup display names
+    pub domain_name: Option<String>,
+    pub category_name: Option<String>,
+    pub term_type_name: Option<String>,
+    pub unit_of_measure_name: Option<String>,
+    pub classification_name: Option<String>,
+    pub review_frequency_name: Option<String>,
+    pub confidence_level_name: Option<String>,
+    pub visibility_name: Option<String>,
+    pub language_name: Option<String>,
+    pub parent_term_name: Option<String>,
+    pub owner_name: Option<String>,
+    pub steward_name: Option<String>,
+    pub domain_owner_name: Option<String>,
+    pub approver_name: Option<String>,
+    // Junction data
     pub regulatory_tags: Vec<GlossaryRegulatoryTagItem>,
     pub subject_areas: Vec<GlossarySubjectAreaItem>,
     pub tags: Vec<GlossaryTagItem>,

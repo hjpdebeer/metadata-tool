@@ -331,14 +331,21 @@ pub async fn create_term(
     .fetch_one(&state.pool)
     .await?;
 
-    // Insert the new glossary term — minimal fields, all new columns default to NULL
+    // Default review frequency to ANNUAL (next_review_date calculated by DB trigger)
+    let annual_frequency_id = sqlx::query_scalar::<_, Uuid>(
+        "SELECT frequency_id FROM glossary_review_frequencies WHERE frequency_code = 'ANNUAL'",
+    )
+    .fetch_optional(&state.pool)
+    .await?;
+
+    // Insert the new glossary term — minimal fields + review frequency default
     let insert_query = format!(
         r#"
         INSERT INTO glossary_terms (
             term_name, definition, domain_id, category_id, status_id,
-            version_number, is_current_version, created_by
+            review_frequency_id, version_number, is_current_version, created_by
         )
-        VALUES ($1, $2, $3, $4, $5, 1, TRUE, $6)
+        VALUES ($1, $2, $3, $4, $5, $6, 1, TRUE, $7)
         RETURNING {cols}
         "#,
         cols = GLOSSARY_TERM_COLUMNS,
@@ -349,6 +356,7 @@ pub async fn create_term(
         .bind(body.domain_id)
         .bind(body.category_id)
         .bind(draft_status_id)
+        .bind(annual_frequency_id)
         .bind(claims.sub)
         .fetch_one(&state.pool)
         .await?;

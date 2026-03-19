@@ -8,7 +8,10 @@ use crate::domain::workflow::{
 use crate::error::{AppError, AppResult};
 use crate::notifications;
 
-use super::{ACTION_APPROVE, ACTION_REJECT, ACTION_REVISE, STATE_UNDER_REVIEW};
+use super::{
+    ACTION_APPROVE, ACTION_REJECT, ACTION_REVISE, STATE_DRAFT, STATE_UNDER_REVIEW,
+    TASK_STATUS_CANCELLED, TASK_STATUS_COMPLETED, TASK_STATUS_PENDING,
+};
 
 // ---------------------------------------------------------------------------
 // Internal row types for queries that don't map to domain structs directly
@@ -134,8 +137,9 @@ pub async fn initiate_workflow(
     let draft_state = sqlx::query_as::<_, StateRow>(
         "SELECT state_id, state_code, is_terminal
          FROM workflow_states
-         WHERE state_code = 'DRAFT' AND is_initial = TRUE",
+         WHERE state_code = $1 AND is_initial = TRUE",
     )
+    .bind(STATE_DRAFT)
     .fetch_optional(pool)
     .await?
     .ok_or_else(|| AppError::Workflow("DRAFT workflow state not found".into()))?;
@@ -276,10 +280,12 @@ pub async fn transition_workflow(
     if new_state.is_terminal {
         sqlx::query(
             "UPDATE workflow_tasks
-             SET status = 'CANCELLED', updated_at = CURRENT_TIMESTAMP
-             WHERE instance_id = $1 AND status = 'PENDING'",
+             SET status = $1, updated_at = CURRENT_TIMESTAMP
+             WHERE instance_id = $2 AND status = $3",
         )
+        .bind(TASK_STATUS_CANCELLED)
         .bind(instance_id)
+        .bind(TASK_STATUS_PENDING)
         .execute(pool)
         .await?;
 
@@ -373,10 +379,11 @@ pub async fn get_pending_tasks(
          JOIN workflow_definitions wd ON wd.workflow_def_id = wi.workflow_def_id
          JOIN workflow_entity_types wet ON wet.entity_type_id = wi.entity_type_id
          JOIN users u ON u.user_id = wi.initiated_by
-         WHERE t.status = 'PENDING'
-           AND (t.assigned_to_user_id = $1 OR t.assigned_to_role_id = ANY($2))
+         WHERE t.status = $1
+           AND (t.assigned_to_user_id = $2 OR t.assigned_to_role_id = ANY($3))
          ORDER BY t.due_date ASC NULLS LAST, t.created_at ASC",
     )
+    .bind(TASK_STATUS_PENDING)
     .bind(user_id)
     .bind(&role_ids)
     .fetch_all(pool)
@@ -443,21 +450,21 @@ pub async fn complete_task(
     .await?
     .ok_or_else(|| AppError::NotFound(format!("workflow task not found: {task_id}")))?;
 
-    if task.status != "PENDING" {
+    if task.status != TASK_STATUS_PENDING {
         return Err(AppError::Workflow(format!(
             "task is not pending (current status: {})",
             task.status
         )));
     }
 
-    // Validate decision
+    // Validate decision — use workflow constants (CS-003)
     let action_code = match decision {
-        "APPROVE" => ACTION_APPROVE,
-        "REJECT" => ACTION_REJECT,
-        "REVISE" => ACTION_REVISE,
+        ACTION_APPROVE => ACTION_APPROVE,
+        ACTION_REJECT => ACTION_REJECT,
+        ACTION_REVISE => ACTION_REVISE,
         _ => {
             return Err(AppError::Validation(format!(
-                "invalid decision: '{decision}'. Must be APPROVE, REJECT, or REVISE"
+                "invalid decision: '{decision}'. Must be {ACTION_APPROVE}, {ACTION_REJECT}, or {ACTION_REVISE}"
             )));
         }
     };
@@ -465,17 +472,18 @@ pub async fn complete_task(
     // Mark task as completed
     let updated_task = sqlx::query_as::<_, WorkflowTask>(
         "UPDATE workflow_tasks
-         SET status = 'COMPLETED',
+         SET status = $1,
              completed_at = CURRENT_TIMESTAMP,
-             completed_by = $1,
-             decision = $2,
-             comments = $3,
+             completed_by = $2,
+             decision = $3,
+             comments = $4,
              updated_at = CURRENT_TIMESTAMP
-         WHERE task_id = $4
+         WHERE task_id = $5
          RETURNING task_id, instance_id, task_type, task_name, description,
                    assigned_to_user_id, assigned_to_role_id, status,
                    due_date, completed_at, completed_by, decision, comments",
     )
+    .bind(TASK_STATUS_COMPLETED)
     .bind(completed_by)
     .bind(decision)
     .bind(comments)
@@ -622,13 +630,15 @@ async fn create_approval_tasks(
             "INSERT INTO workflow_tasks
                  (instance_id, task_type, task_name, description,
                   assigned_to_user_id, assigned_to_role_id, status, due_date)
-             VALUES ($1, 'APPROVE', $2, $3, $4, $5, 'PENDING', $6)",
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8)",
         )
         .bind(instance.instance_id)
+        .bind(ACTION_APPROVE)
         .bind(format!("Review and approve entity {}", instance.entity_id))
         .bind(Some("Review the submitted entity and approve, reject, or request revision."))
         .bind(approver.approver_user_id)
         .bind(approver.approver_role_id)
+        .bind(TASK_STATUS_PENDING)
         .bind(due_date)
         .execute(pool)
         .await?;

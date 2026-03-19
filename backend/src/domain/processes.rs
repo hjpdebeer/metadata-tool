@@ -108,7 +108,7 @@ pub struct ProcessStep {
 // ---------------------------------------------------------------------------
 
 /// Request body for creating a new business process.
-#[derive(Debug, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Deserialize, ToSchema)]
 pub struct CreateBusinessProcessRequest {
     pub process_name: String,
     pub process_code: String,
@@ -125,7 +125,7 @@ pub struct CreateBusinessProcessRequest {
 }
 
 /// Request body for partially updating a business process. All fields are optional.
-#[derive(Debug, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Deserialize, ToSchema)]
 pub struct UpdateBusinessProcessRequest {
     pub process_name: Option<String>,
     pub description: Option<String>,
@@ -141,7 +141,7 @@ pub struct UpdateBusinessProcessRequest {
 }
 
 /// Query parameters for searching and filtering business processes with pagination.
-#[derive(Debug, Deserialize, IntoParams, ToSchema)]
+#[derive(Debug, Clone, Deserialize, IntoParams, ToSchema)]
 pub struct SearchProcessesRequest {
     pub query: Option<String>,
     pub category_id: Option<Uuid>,
@@ -169,7 +169,7 @@ pub struct ProcessCategory {
 // ---------------------------------------------------------------------------
 
 /// Request body for linking a data element to a business process.
-#[derive(Debug, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Deserialize, ToSchema)]
 pub struct LinkProcessDataElementRequest {
     pub element_id: Uuid,
     pub usage_type: Option<String>,
@@ -197,7 +197,7 @@ pub struct ProcessDataElementLink {
 // ---------------------------------------------------------------------------
 
 /// Request body for linking an application to a business process.
-#[derive(Debug, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Deserialize, ToSchema)]
 pub struct LinkProcessApplicationRequest {
     pub application_id: Uuid,
     pub role_in_process: Option<String>,
@@ -222,7 +222,7 @@ pub struct ProcessApplicationLink {
 // ---------------------------------------------------------------------------
 
 /// Request body for adding a step to a business process.
-#[derive(Debug, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Deserialize, ToSchema)]
 pub struct CreateProcessStepRequest {
     pub step_number: i32,
     pub step_name: String,

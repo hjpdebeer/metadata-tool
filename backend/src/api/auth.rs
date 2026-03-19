@@ -16,7 +16,7 @@ pub struct AuthCallback {
 }
 
 /// Request body for dev-mode login with email and password.
-#[derive(Debug, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Deserialize, ToSchema)]
 pub struct DevLoginRequest {
     pub email: String,
     pub password: String,

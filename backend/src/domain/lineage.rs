@@ -76,6 +76,19 @@ pub struct LineageGraphListItem {
 }
 
 // ---------------------------------------------------------------------------
+// Paginated response
+// ---------------------------------------------------------------------------
+
+/// Concrete paginated type for OpenAPI schema generation.
+#[derive(Debug, Clone, Serialize, ToSchema)]
+pub struct PaginatedLineageGraphs {
+    pub data: Vec<LineageGraphListItem>,
+    pub total_count: i64,
+    pub page: i64,
+    pub page_size: i64,
+}
+
+// ---------------------------------------------------------------------------
 // Node type (seeded in migration 006)
 // ---------------------------------------------------------------------------
 
@@ -120,7 +133,7 @@ pub struct LineageNodeView {
 // ---------------------------------------------------------------------------
 
 /// Request body for creating a new lineage graph.
-#[derive(Debug, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Deserialize, ToSchema)]
 pub struct CreateLineageGraphRequest {
     pub graph_name: String,
     pub graph_type: String,
@@ -130,14 +143,14 @@ pub struct CreateLineageGraphRequest {
 }
 
 /// Request body for partially updating a lineage graph.
-#[derive(Debug, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Deserialize, ToSchema)]
 pub struct UpdateLineageGraphRequest {
     pub graph_name: Option<String>,
     pub description: Option<String>,
 }
 
 /// Request body for adding a new node to a lineage graph.
-#[derive(Debug, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Deserialize, ToSchema)]
 pub struct AddLineageNodeRequest {
     pub node_type_id: Uuid,
     pub node_name: String,
@@ -152,7 +165,7 @@ pub struct AddLineageNodeRequest {
 }
 
 /// Request body for adding a directed edge between two nodes in a lineage graph.
-#[derive(Debug, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Deserialize, ToSchema)]
 pub struct AddLineageEdgeRequest {
     pub source_node_id: Uuid,
     pub target_node_id: Uuid,
@@ -162,7 +175,7 @@ pub struct AddLineageEdgeRequest {
 }
 
 /// Request body for updating a node's position in the React Flow canvas.
-#[derive(Debug, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Deserialize, ToSchema)]
 pub struct UpdateNodePositionRequest {
     pub node_id: Uuid,
     pub position_x: f64,
@@ -170,7 +183,7 @@ pub struct UpdateNodePositionRequest {
 }
 
 /// Query parameters for searching and filtering lineage graphs with pagination.
-#[derive(Debug, Deserialize, IntoParams, ToSchema)]
+#[derive(Debug, Clone, Deserialize, IntoParams, ToSchema)]
 pub struct SearchGraphsRequest {
     pub query: Option<String>,
     pub graph_type: Option<String>,

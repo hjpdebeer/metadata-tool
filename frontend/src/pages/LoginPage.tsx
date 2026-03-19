@@ -76,10 +76,11 @@ const LoginPage: React.FC = () => {
           onFinish={onFinish}
           layout="vertical"
           size="large"
-          initialValues={{
-            email: 'admin@example.com',
-            password: 'metadata123',
-          }}
+          initialValues={
+            import.meta.env.DEV
+              ? { email: 'admin@example.com', password: 'metadata123' }
+              : undefined
+          }
         >
           <Form.Item
             name="email"
@@ -113,12 +114,14 @@ const LoginPage: React.FC = () => {
           </Form.Item>
         </Form>
 
-        <Text
-          type="secondary"
-          style={{ display: 'block', textAlign: 'center', fontSize: 12, marginTop: 12 }}
-        >
-          Development mode — pre-filled credentials for convenience
-        </Text>
+        {import.meta.env.DEV && (
+          <Text
+            type="secondary"
+            style={{ display: 'block', textAlign: 'center', fontSize: 12, marginTop: 12 }}
+          >
+            Development mode — pre-filled credentials for convenience
+          </Text>
+        )}
       </Card>
     </div>
   );

@@ -87,7 +87,7 @@ pub struct NotificationPreference {
 // ---------------------------------------------------------------------------
 
 /// Query parameters for paginating in-app notifications.
-#[derive(Debug, Deserialize, IntoParams, ToSchema)]
+#[derive(Debug, Clone, Deserialize, IntoParams, ToSchema)]
 pub struct ListNotificationsParams {
     pub page: Option<i64>,
     pub page_size: Option<i64>,
@@ -100,7 +100,7 @@ pub struct UnreadCountResponse {
 }
 
 /// A single notification preference setting for one event type.
-#[derive(Debug, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Deserialize, ToSchema)]
 pub struct UpdatePreferenceRequest {
     pub event_type: String,
     pub email_enabled: bool,
@@ -108,7 +108,7 @@ pub struct UpdatePreferenceRequest {
 }
 
 /// Request body for bulk-updating notification preferences.
-#[derive(Debug, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Deserialize, ToSchema)]
 pub struct UpdatePreferencesRequest {
     pub preferences: Vec<UpdatePreferenceRequest>,
 }

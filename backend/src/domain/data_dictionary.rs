@@ -95,7 +95,7 @@ pub struct DataElementFullView {
 // ---------------------------------------------------------------------------
 
 /// Request body for creating a new data element.
-#[derive(Debug, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Deserialize, ToSchema)]
 pub struct CreateDataElementRequest {
     pub element_name: String,
     pub element_code: String,
@@ -114,7 +114,7 @@ pub struct CreateDataElementRequest {
 }
 
 /// Request body for partially updating a data element. All fields are optional.
-#[derive(Debug, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Deserialize, ToSchema)]
 pub struct UpdateDataElementRequest {
     pub element_name: Option<String>,
     pub element_code: Option<String>,
@@ -133,7 +133,7 @@ pub struct UpdateDataElementRequest {
 }
 
 /// Query parameters for searching and filtering data elements with pagination.
-#[derive(Debug, Deserialize, IntoParams, ToSchema)]
+#[derive(Debug, Clone, Deserialize, IntoParams, ToSchema)]
 pub struct SearchDataElementsRequest {
     pub query: Option<String>,
     pub domain_id: Option<Uuid>,
@@ -146,7 +146,7 @@ pub struct SearchDataElementsRequest {
 }
 
 /// Request body for designating or removing Critical Data Element (CDE) status (Principle 12).
-#[derive(Debug, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Deserialize, ToSchema)]
 pub struct CdeDesignationRequest {
     pub is_cde: bool,
     pub cde_rationale: Option<String>,
@@ -168,7 +168,7 @@ pub struct SourceSystem {
 }
 
 /// Request body for registering a new source system.
-#[derive(Debug, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Deserialize, ToSchema)]
 pub struct CreateSourceSystemRequest {
     pub system_name: String,
     pub system_code: String,
@@ -204,7 +204,7 @@ pub struct TechnicalSchema {
 }
 
 /// Request body for creating a new technical schema under a source system.
-#[derive(Debug, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Deserialize, ToSchema)]
 pub struct CreateTechnicalSchemaRequest {
     pub schema_name: String,
     pub description: Option<String>,
@@ -223,7 +223,7 @@ pub struct TechnicalTable {
 }
 
 /// Request body for creating a new technical table under a schema.
-#[derive(Debug, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Deserialize, ToSchema)]
 pub struct CreateTechnicalTableRequest {
     pub table_name: String,
     pub table_type: Option<String>,
@@ -251,7 +251,7 @@ pub struct TechnicalColumn {
 }
 
 /// Request body for creating a new column under a technical table.
-#[derive(Debug, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Deserialize, ToSchema)]
 pub struct CreateTechnicalColumnRequest {
     pub column_name: String,
     pub ordinal_position: i32,

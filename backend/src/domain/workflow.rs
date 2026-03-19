@@ -59,14 +59,14 @@ pub struct WorkflowTask {
 }
 
 /// Request body for triggering a workflow state transition.
-#[derive(Debug, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Deserialize, ToSchema)]
 pub struct WorkflowTransitionRequest {
     pub action: String, // SUBMIT, APPROVE, REJECT, REVISE, WITHDRAW
     pub comments: Option<String>,
 }
 
 /// Request body for completing a workflow task with a decision.
-#[derive(Debug, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Deserialize, ToSchema)]
 pub struct CompleteTaskRequest {
     pub decision: String, // APPROVE, REJECT, REVISE
     pub comments: Option<String>,

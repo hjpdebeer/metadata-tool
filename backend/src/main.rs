@@ -1,7 +1,7 @@
 use axum::middleware;
 use axum::routing::{delete, get, post, put};
 use axum::Router;
-use tower_http::cors::{Any, CorsLayer};
+use tower_http::cors::CorsLayer;
 use tower_http::trace::TraceLayer;
 use tracing_subscriber::EnvFilter;
 use utoipa::OpenApi;
@@ -213,8 +213,23 @@ async fn main() -> anyhow::Result<()> {
                     anyhow::anyhow!("invalid FRONTEND_URL '{}': {e}", config.frontend_url)
                 })?,
         )
-        .allow_methods(Any)
-        .allow_headers(Any);
+        .allow_methods([
+            axum::http::Method::GET,
+            axum::http::Method::POST,
+            axum::http::Method::PUT,
+            axum::http::Method::DELETE,
+            axum::http::Method::OPTIONS,
+        ])
+        .allow_headers([
+            axum::http::header::AUTHORIZATION,
+            axum::http::header::CONTENT_TYPE,
+            axum::http::header::ACCEPT,
+        ]);
+
+    // TODO(SEC-006): Add rate limiting to auth endpoints.
+    // tower-governor 0.4 is incompatible with axum 0.8; evaluate tower-governor 0.5+
+    // or implement a custom middleware using std::sync::Arc<tokio::sync::Semaphore>.
+    // Target: 2 req/s sustained, burst of 5, per IP on auth endpoints.
 
     // Public routes (no auth required)
     let public_routes = Router::new()

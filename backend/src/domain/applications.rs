@@ -91,7 +91,7 @@ pub struct ApplicationFullView {
 // ---------------------------------------------------------------------------
 
 /// Request body for creating a new application.
-#[derive(Debug, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Deserialize, ToSchema)]
 pub struct CreateApplicationRequest {
     pub application_name: String,
     pub application_code: String,
@@ -108,7 +108,7 @@ pub struct CreateApplicationRequest {
 }
 
 /// Request body for partially updating an application. All fields are optional.
-#[derive(Debug, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Deserialize, ToSchema)]
 pub struct UpdateApplicationRequest {
     pub application_name: Option<String>,
     pub description: Option<String>,
@@ -124,7 +124,7 @@ pub struct UpdateApplicationRequest {
 }
 
 /// Query parameters for searching and filtering applications with pagination.
-#[derive(Debug, Deserialize, IntoParams, ToSchema)]
+#[derive(Debug, Clone, Deserialize, IntoParams, ToSchema)]
 pub struct SearchApplicationsRequest {
     pub query: Option<String>,
     pub classification_id: Option<Uuid>,
@@ -153,7 +153,7 @@ pub struct ApplicationClassification {
 // ---------------------------------------------------------------------------
 
 /// Request body for linking a data element to an application.
-#[derive(Debug, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Deserialize, ToSchema)]
 pub struct LinkDataElementRequest {
     pub element_id: Uuid,
     pub usage_type: Option<String>,

@@ -55,7 +55,7 @@ pub struct UserWithRoles {
 }
 
 /// Request body for creating a new user with initial role assignments.
-#[derive(Debug, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Deserialize, ToSchema)]
 pub struct CreateUserRequest {
     pub username: String,
     pub email: String,
@@ -68,7 +68,7 @@ pub struct CreateUserRequest {
 }
 
 /// Request body for partially updating a user's profile. All fields are optional.
-#[derive(Debug, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Deserialize, ToSchema)]
 pub struct UpdateUserRequest {
     pub display_name: Option<String>,
     pub department: Option<String>,
@@ -77,7 +77,7 @@ pub struct UpdateUserRequest {
 }
 
 /// Query parameters for searching and filtering users with pagination.
-#[derive(Debug, Deserialize, IntoParams, ToSchema)]
+#[derive(Debug, Clone, Deserialize, IntoParams, ToSchema)]
 pub struct SearchUsersParams {
     pub query: Option<String>,
     pub role_code: Option<String>,
@@ -87,7 +87,7 @@ pub struct SearchUsersParams {
 }
 
 /// Request body for assigning a role to a user.
-#[derive(Debug, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Deserialize, ToSchema)]
 pub struct AssignRoleRequest {
     pub role_id: Uuid,
 }

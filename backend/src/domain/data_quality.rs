@@ -179,7 +179,7 @@ pub struct ElementQualityOverview {
 // ---------------------------------------------------------------------------
 
 /// Request body for creating a new quality rule.
-#[derive(Debug, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Deserialize, ToSchema)]
 pub struct CreateQualityRuleRequest {
     pub rule_name: String,
     pub rule_code: String,
@@ -194,7 +194,7 @@ pub struct CreateQualityRuleRequest {
 }
 
 /// Request body for partially updating a quality rule. All fields are optional.
-#[derive(Debug, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Deserialize, ToSchema)]
 pub struct UpdateQualityRuleRequest {
     pub rule_name: Option<String>,
     pub rule_code: Option<String>,
@@ -211,7 +211,7 @@ pub struct UpdateQualityRuleRequest {
 }
 
 /// Request body for recording a quality assessment result.
-#[derive(Debug, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Deserialize, ToSchema)]
 pub struct CreateAssessmentRequest {
     pub rule_id: Uuid,
     pub records_assessed: i64,
@@ -222,7 +222,7 @@ pub struct CreateAssessmentRequest {
 }
 
 /// Query parameters for searching and filtering quality rules with pagination.
-#[derive(Debug, Deserialize, IntoParams, ToSchema)]
+#[derive(Debug, Clone, Deserialize, IntoParams, ToSchema)]
 pub struct SearchQualityRulesRequest {
     pub query: Option<String>,
     pub dimension_id: Option<Uuid>,

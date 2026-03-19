@@ -62,7 +62,7 @@ pub struct AiSuggestionResponse {
 // ---------------------------------------------------------------------------
 
 /// Request body for POST /api/v1/ai/enrich
-#[derive(Debug, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Deserialize, ToSchema)]
 pub struct AiEnrichRequest {
     /// Entity type: "glossary_term", "data_element", etc.
     pub entity_type: String,
@@ -71,20 +71,20 @@ pub struct AiEnrichRequest {
 }
 
 /// Request body for accepting a suggestion (optional modified value)
-#[derive(Debug, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Deserialize, ToSchema)]
 pub struct AcceptSuggestionRequest {
     /// If provided, use this value instead of the original suggestion
     pub modified_value: Option<String>,
 }
 
 /// Request body for rejecting a suggestion (optional reason)
-#[derive(Debug, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Deserialize, ToSchema)]
 pub struct RejectSuggestionRequest {
     pub reason: Option<String>,
 }
 
 /// Request body for submitting feedback on a suggestion
-#[derive(Debug, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Deserialize, ToSchema)]
 pub struct FeedbackRequest {
     /// Rating from 1 to 5
     pub rating: Option<i32>,

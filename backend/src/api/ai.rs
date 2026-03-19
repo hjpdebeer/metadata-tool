@@ -191,72 +191,101 @@ async fn apply_suggestion_to_entity(
     value: &str,
     user_id: Uuid,
 ) -> Result<(), AppError> {
+    // SEC-001: All SQL strings are compile-time constants — no format!() with user input.
+    // Each allowed column gets its own static query to prevent SQL injection.
     match entity_type {
         "glossary_term" => {
-            // ADR-0006 Pattern 3: Categorised field handling for AI suggestion application.
-            // Text columns — direct column update
-            const TEXT_COLUMNS: &[&str] = &[
-                "definition", "business_context", "examples", "abbreviation",
-                "source_reference", "regulatory_reference",
-                "definition_notes", "counter_examples", "formula",
-                "used_in_reports", "used_in_policies", "regulatory_reporting_usage",
-                "golden_source", "external_reference", "organisational_unit",
-            ];
-
-            if TEXT_COLUMNS.contains(&field_name) {
-                let query = format!(
-                    r#"UPDATE glossary_terms
-                       SET {column} = $1, updated_by = $2, updated_at = CURRENT_TIMESTAMP
-                       WHERE term_id = $3 AND deleted_at IS NULL"#,
-                    column = field_name,
-                );
-                sqlx::query(&query)
-                    .bind(value)
-                    .bind(user_id)
-                    .bind(entity_id)
-                    .execute(pool)
-                    .await?;
-                return Ok(());
-            }
-
-            // Lookup columns — resolve display name or UUID to FK ID (ADR-0006 Pattern 2)
-            let lookup_mapping: Option<(&str, &str)> = match field_name {
-                "term_type" => Some((
-                    "term_type_id",
-                    "SELECT term_type_id FROM glossary_term_types WHERE type_name ILIKE $1 LIMIT 1",
-                )),
-                "unit_of_measure" => Some((
-                    "unit_of_measure_id",
-                    "SELECT unit_id FROM glossary_units_of_measure WHERE unit_name ILIKE $1 LIMIT 1",
-                )),
-                "parent_term" => Some((
-                    "parent_term_id",
-                    "SELECT term_id FROM glossary_terms WHERE term_name ILIKE $1 AND is_current_version = TRUE AND deleted_at IS NULL LIMIT 1",
-                )),
-                _ => None,
-            };
-
-            if let Some((fk_column, lookup_query)) = lookup_mapping {
-                if let Some(resolved_id) = crate::db::resolve_lookup(pool, value, lookup_query).await {
-                    let query = format!(
-                        r#"UPDATE glossary_terms
-                           SET {column} = $1, updated_by = $2, updated_at = CURRENT_TIMESTAMP
-                           WHERE term_id = $3 AND deleted_at IS NULL"#,
-                        column = fk_column,
-                    );
-                    sqlx::query(&query)
-                        .bind(resolved_id)
-                        .bind(user_id)
-                        .bind(entity_id)
-                        .execute(pool)
-                        .await?;
-                }
-                // If resolution fails, suggestion is accepted but not applied (value doesn't match)
-                return Ok(());
-            }
-
-            // Junction columns — parse comma-separated, resolve each, insert junction rows
             match field_name {
+                // --- Text columns: direct column update ---
+                "definition" => {
+                    sqlx::query("UPDATE glossary_terms SET definition = $1, updated_by = $2, updated_at = CURRENT_TIMESTAMP WHERE term_id = $3 AND deleted_at IS NULL")
+                        .bind(value).bind(user_id).bind(entity_id).execute(pool).await?;
+                }
+                "business_context" => {
+                    sqlx::query("UPDATE glossary_terms SET business_context = $1, updated_by = $2, updated_at = CURRENT_TIMESTAMP WHERE term_id = $3 AND deleted_at IS NULL")
+                        .bind(value).bind(user_id).bind(entity_id).execute(pool).await?;
+                }
+                "examples" => {
+                    sqlx::query("UPDATE glossary_terms SET examples = $1, updated_by = $2, updated_at = CURRENT_TIMESTAMP WHERE term_id = $3 AND deleted_at IS NULL")
+                        .bind(value).bind(user_id).bind(entity_id).execute(pool).await?;
+                }
+                "abbreviation" => {
+                    sqlx::query("UPDATE glossary_terms SET abbreviation = $1, updated_by = $2, updated_at = CURRENT_TIMESTAMP WHERE term_id = $3 AND deleted_at IS NULL")
+                        .bind(value).bind(user_id).bind(entity_id).execute(pool).await?;
+                }
+                "source_reference" => {
+                    sqlx::query("UPDATE glossary_terms SET source_reference = $1, updated_by = $2, updated_at = CURRENT_TIMESTAMP WHERE term_id = $3 AND deleted_at IS NULL")
+                        .bind(value).bind(user_id).bind(entity_id).execute(pool).await?;
+                }
+                "regulatory_reference" => {
+                    sqlx::query("UPDATE glossary_terms SET regulatory_reference = $1, updated_by = $2, updated_at = CURRENT_TIMESTAMP WHERE term_id = $3 AND deleted_at IS NULL")
+                        .bind(value).bind(user_id).bind(entity_id).execute(pool).await?;
+                }
+                "definition_notes" => {
+                    sqlx::query("UPDATE glossary_terms SET definition_notes = $1, updated_by = $2, updated_at = CURRENT_TIMESTAMP WHERE term_id = $3 AND deleted_at IS NULL")
+                        .bind(value).bind(user_id).bind(entity_id).execute(pool).await?;
+                }
+                "counter_examples" => {
+                    sqlx::query("UPDATE glossary_terms SET counter_examples = $1, updated_by = $2, updated_at = CURRENT_TIMESTAMP WHERE term_id = $3 AND deleted_at IS NULL")
+                        .bind(value).bind(user_id).bind(entity_id).execute(pool).await?;
+                }
+                "formula" => {
+                    sqlx::query("UPDATE glossary_terms SET formula = $1, updated_by = $2, updated_at = CURRENT_TIMESTAMP WHERE term_id = $3 AND deleted_at IS NULL")
+                        .bind(value).bind(user_id).bind(entity_id).execute(pool).await?;
+                }
+                "used_in_reports" => {
+                    sqlx::query("UPDATE glossary_terms SET used_in_reports = $1, updated_by = $2, updated_at = CURRENT_TIMESTAMP WHERE term_id = $3 AND deleted_at IS NULL")
+                        .bind(value).bind(user_id).bind(entity_id).execute(pool).await?;
+                }
+                "used_in_policies" => {
+                    sqlx::query("UPDATE glossary_terms SET used_in_policies = $1, updated_by = $2, updated_at = CURRENT_TIMESTAMP WHERE term_id = $3 AND deleted_at IS NULL")
+                        .bind(value).bind(user_id).bind(entity_id).execute(pool).await?;
+                }
+                "regulatory_reporting_usage" => {
+                    sqlx::query("UPDATE glossary_terms SET regulatory_reporting_usage = $1, updated_by = $2, updated_at = CURRENT_TIMESTAMP WHERE term_id = $3 AND deleted_at IS NULL")
+                        .bind(value).bind(user_id).bind(entity_id).execute(pool).await?;
+                }
+                "golden_source" => {
+                    sqlx::query("UPDATE glossary_terms SET golden_source = $1, updated_by = $2, updated_at = CURRENT_TIMESTAMP WHERE term_id = $3 AND deleted_at IS NULL")
+                        .bind(value).bind(user_id).bind(entity_id).execute(pool).await?;
+                }
+                "external_reference" => {
+                    sqlx::query("UPDATE glossary_terms SET external_reference = $1, updated_by = $2, updated_at = CURRENT_TIMESTAMP WHERE term_id = $3 AND deleted_at IS NULL")
+                        .bind(value).bind(user_id).bind(entity_id).execute(pool).await?;
+                }
+                "organisational_unit" => {
+                    sqlx::query("UPDATE glossary_terms SET organisational_unit = $1, updated_by = $2, updated_at = CURRENT_TIMESTAMP WHERE term_id = $3 AND deleted_at IS NULL")
+                        .bind(value).bind(user_id).bind(entity_id).execute(pool).await?;
+                }
+                // --- Lookup columns: resolve display name to FK ID (ADR-0006 Pattern 2) ---
+                "term_type" => {
+                    if let Some(id) = crate::db::resolve_lookup(
+                        pool, value,
+                        "SELECT term_type_id FROM glossary_term_types WHERE type_name ILIKE $1 LIMIT 1",
+                    ).await {
+                        sqlx::query("UPDATE glossary_terms SET term_type_id = $1, updated_by = $2, updated_at = CURRENT_TIMESTAMP WHERE term_id = $3 AND deleted_at IS NULL")
+                            .bind(id).bind(user_id).bind(entity_id).execute(pool).await?;
+                    }
+                }
+                "unit_of_measure" => {
+                    if let Some(id) = crate::db::resolve_lookup(
+                        pool, value,
+                        "SELECT unit_id FROM glossary_units_of_measure WHERE unit_name ILIKE $1 LIMIT 1",
+                    ).await {
+                        sqlx::query("UPDATE glossary_terms SET unit_of_measure_id = $1, updated_by = $2, updated_at = CURRENT_TIMESTAMP WHERE term_id = $3 AND deleted_at IS NULL")
+                            .bind(id).bind(user_id).bind(entity_id).execute(pool).await?;
+                    }
+                }
+                "parent_term" => {
+                    if let Some(id) = crate::db::resolve_lookup(
+                        pool, value,
+                        "SELECT term_id FROM glossary_terms WHERE term_name ILIKE $1 AND is_current_version = TRUE AND deleted_at IS NULL LIMIT 1",
+                    ).await {
+                        sqlx::query("UPDATE glossary_terms SET parent_term_id = $1, updated_by = $2, updated_at = CURRENT_TIMESTAMP WHERE term_id = $3 AND deleted_at IS NULL")
+                            .bind(id).bind(user_id).bind(entity_id).execute(pool).await?;
+                    }
+                }
+                // --- Junction columns: parse comma-separated, resolve each, insert junction rows ---
                 "regulatory_tags" => {
                     for tag_name in value.split(',').map(|s| s.trim()).filter(|s| !s.is_empty()) {
                         if let Some(id) = crate::db::resolve_lookup(
@@ -283,7 +312,6 @@ async fn apply_suggestion_to_entity(
                 }
                 "tags" => {
                     for tag_name in value.split(',').map(|s| s.trim()).filter(|s| !s.is_empty()) {
-                        // Upsert the tag
                         let tag_id = sqlx::query_scalar::<_, Uuid>(
                             "INSERT INTO glossary_tags (tag_name) VALUES ($1) ON CONFLICT (tag_name) DO UPDATE SET tag_name = $1 RETURNING tag_id"
                         ).bind(tag_name).fetch_one(pool).await?;
@@ -303,31 +331,42 @@ async fn apply_suggestion_to_entity(
             }
         }
         "data_element" => {
-            let column = match field_name {
-                "description" | "business_definition" | "business_rules" | "format_pattern"
-                | "sensitivity_level" | "default_value" => field_name,
+            // SEC-001: Each allowed column gets its own static SQL query.
+            match field_name {
+                "description" => {
+                    sqlx::query("UPDATE data_elements SET description = $1, updated_by = $2, updated_at = CURRENT_TIMESTAMP WHERE element_id = $3 AND deleted_at IS NULL")
+                        .bind(value).bind(user_id).bind(entity_id).execute(pool).await?;
+                }
+                "business_definition" => {
+                    sqlx::query("UPDATE data_elements SET business_definition = $1, updated_by = $2, updated_at = CURRENT_TIMESTAMP WHERE element_id = $3 AND deleted_at IS NULL")
+                        .bind(value).bind(user_id).bind(entity_id).execute(pool).await?;
+                }
+                "business_rules" => {
+                    sqlx::query("UPDATE data_elements SET business_rules = $1, updated_by = $2, updated_at = CURRENT_TIMESTAMP WHERE element_id = $3 AND deleted_at IS NULL")
+                        .bind(value).bind(user_id).bind(entity_id).execute(pool).await?;
+                }
+                "format_pattern" => {
+                    sqlx::query("UPDATE data_elements SET format_pattern = $1, updated_by = $2, updated_at = CURRENT_TIMESTAMP WHERE element_id = $3 AND deleted_at IS NULL")
+                        .bind(value).bind(user_id).bind(entity_id).execute(pool).await?;
+                }
+                "sensitivity_level" => {
+                    sqlx::query("UPDATE data_elements SET sensitivity_level = $1, updated_by = $2, updated_at = CURRENT_TIMESTAMP WHERE element_id = $3 AND deleted_at IS NULL")
+                        .bind(value).bind(user_id).bind(entity_id).execute(pool).await?;
+                }
+                "default_value" => {
+                    sqlx::query("UPDATE data_elements SET default_value = $1, updated_by = $2, updated_at = CURRENT_TIMESTAMP WHERE element_id = $3 AND deleted_at IS NULL")
+                        .bind(value).bind(user_id).bind(entity_id).execute(pool).await?;
+                }
                 _ => {
                     return Err(AppError::Validation(format!(
-                        "Cannot auto-apply suggestion to field '{field_name}' on data_element"
+                        "cannot apply suggestion to field '{field_name}' on data_element"
                     )));
                 }
-            };
-            let query = format!(
-                r#"UPDATE data_elements
-                   SET {column} = $1, updated_by = $2, updated_at = CURRENT_TIMESTAMP
-                   WHERE element_id = $3 AND deleted_at IS NULL"#,
-                column = column,
-            );
-            sqlx::query(&query)
-                .bind(value)
-                .bind(user_id)
-                .bind(entity_id)
-                .execute(pool)
-                .await?;
+            }
         }
         _ => {
             return Err(AppError::Validation(format!(
-                "Cannot apply suggestion to unsupported entity type: {entity_type}"
+                "cannot apply suggestion to unsupported entity type: {entity_type}"
             )));
         }
     }

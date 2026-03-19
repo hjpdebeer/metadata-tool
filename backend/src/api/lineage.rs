@@ -16,7 +16,7 @@ use crate::error::{AppError, AppResult};
 // ---------------------------------------------------------------------------
 
 /// Query parameters for impact analysis traversal direction and depth.
-#[derive(Debug, Deserialize, IntoParams, ToSchema)]
+#[derive(Debug, Clone, Deserialize, IntoParams, ToSchema)]
 pub struct ImpactAnalysisQuery {
     /// Direction: UPSTREAM or DOWNSTREAM
     pub direction: Option<String>,
@@ -24,34 +24,46 @@ pub struct ImpactAnalysisQuery {
     pub max_depth: Option<i32>,
 }
 
-/// Query parameters for filtering lineage graphs by type.
-#[derive(Debug, Deserialize, IntoParams, ToSchema)]
-pub struct ListGraphsQuery {
-    /// Filter by graph type: BUSINESS or TECHNICAL
-    pub graph_type: Option<String>,
-}
-
 // ---------------------------------------------------------------------------
 // list_graphs -- GET /api/v1/lineage/graphs
 // ---------------------------------------------------------------------------
 
 /// List lineage graphs with node/edge counts, optionally filtered by graph type.
+/// Uses page/page_size pagination consistent with all other list endpoints (CS-002).
 /// Requires authentication.
 #[utoipa::path(
     get,
     path = "/api/v1/lineage/graphs",
-    params(ListGraphsQuery),
+    params(SearchGraphsRequest),
     responses(
-        (status = 200, description = "List lineage graphs with counts",
-         body = Vec<LineageGraphListItem>)
+        (status = 200, description = "Paginated lineage graphs with counts",
+         body = PaginatedLineageGraphs)
     ),
     security(("bearer_auth" = [])),
     tag = "lineage"
 )]
 pub async fn list_graphs(
     State(state): State<AppState>,
-    Query(params): Query<ListGraphsQuery>,
-) -> AppResult<Json<Vec<LineageGraphListItem>>> {
+    Query(params): Query<SearchGraphsRequest>,
+) -> AppResult<Json<PaginatedLineageGraphs>> {
+    let page = params.page.unwrap_or(1).max(1);
+    let page_size = params.page_size.unwrap_or(20).clamp(1, 100);
+    let offset = (page - 1) * page_size;
+
+    let total_count = sqlx::query_scalar::<_, i64>(
+        r#"
+        SELECT COUNT(*)
+        FROM lineage_graphs g
+        WHERE g.deleted_at IS NULL
+          AND ($1::TEXT IS NULL OR g.graph_type = $1)
+          AND ($2::TEXT IS NULL OR g.graph_name ILIKE '%' || $2 || '%')
+        "#,
+    )
+    .bind(params.graph_type.as_deref())
+    .bind(params.query.as_deref())
+    .fetch_one(&state.pool)
+    .await?;
+
     let graphs = sqlx::query_as::<_, LineageGraphListItem>(
         r#"
         SELECT
@@ -69,14 +81,24 @@ pub async fn list_graphs(
         LEFT JOIN users u ON u.user_id = g.created_by
         WHERE g.deleted_at IS NULL
           AND ($1::TEXT IS NULL OR g.graph_type = $1)
+          AND ($2::TEXT IS NULL OR g.graph_name ILIKE '%' || $2 || '%')
         ORDER BY g.graph_name ASC
+        LIMIT $3 OFFSET $4
         "#,
     )
     .bind(params.graph_type.as_deref())
+    .bind(params.query.as_deref())
+    .bind(page_size)
+    .bind(offset)
     .fetch_all(&state.pool)
     .await?;
 
-    Ok(Json(graphs))
+    Ok(Json(PaginatedLineageGraphs {
+        data: graphs,
+        total_count,
+        page,
+        page_size,
+    }))
 }
 
 // ---------------------------------------------------------------------------

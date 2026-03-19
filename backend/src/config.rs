@@ -50,11 +50,25 @@ impl AppConfig {
             anyhow::anyhow!("JWT_EXPIRY_HOURS must be a valid u64, got '{expiry_str}'")
         })?;
 
+        // SEC-002: Validate JWT secret at startup
+        let jwt_secret = env::var("JWT_SECRET")?;
+        if jwt_secret.len() < 32 {
+            return Err(anyhow::anyhow!(
+                "JWT_SECRET must be at least 32 characters (got {}). Generate with: openssl rand -base64 48",
+                jwt_secret.len()
+            ));
+        }
+        if jwt_secret == "change-this-to-a-secure-random-string" {
+            return Err(anyhow::anyhow!(
+                "JWT_SECRET must be changed from the default. Generate with: openssl rand -base64 48"
+            ));
+        }
+
         Ok(Self {
             database_url: env::var("DATABASE_URL")?,
             host: env::var("HOST").unwrap_or_else(|_| "0.0.0.0".into()),
             port,
-            jwt_secret: env::var("JWT_SECRET")?,
+            jwt_secret,
             jwt_expiry_hours,
             entra: EntraConfig {
                 tenant_id: env::var("ENTRA_TENANT_ID")?,

@@ -60,3 +60,12 @@ pub const ACTION_WITHDRAW: &str = "WITHDRAW";
 
 /// Action to deprecate an accepted entity (ACCEPTED -> DEPRECATED).
 pub const ACTION_DEPRECATE: &str = "DEPRECATE";
+
+/// Task status: awaiting action.
+pub const TASK_STATUS_PENDING: &str = "PENDING";
+
+/// Task status: action completed.
+pub const TASK_STATUS_COMPLETED: &str = "COMPLETED";
+
+/// Task status: cancelled (e.g. when workflow reaches terminal state).
+pub const TASK_STATUS_CANCELLED: &str = "CANCELLED";

@@ -240,6 +240,15 @@ pub struct GlossaryTermDetail {
     pub subject_areas: Vec<GlossarySubjectAreaItem>,
     pub tags: Vec<GlossaryTagItem>,
     pub linked_processes: Vec<GlossaryLinkedProcess>,
+    pub aliases: Vec<GlossaryAliasItem>,
+}
+
+/// Alias/synonym attached to a term (from glossary_term_aliases)
+#[derive(Debug, Clone, Serialize, FromRow, ToSchema)]
+pub struct GlossaryAliasItem {
+    pub alias_id: Uuid,
+    pub alias_name: String,
+    pub alias_type: Option<String>,
 }
 
 impl GlossaryTermDetail {
@@ -250,6 +259,7 @@ impl GlossaryTermDetail {
         subject_areas: Vec<GlossarySubjectAreaItem>,
         tags: Vec<GlossaryTagItem>,
         linked_processes: Vec<GlossaryLinkedProcess>,
+        aliases: Vec<GlossaryAliasItem>,
     ) -> Self {
         Self {
             term_id: row.term_id,
@@ -315,6 +325,7 @@ impl GlossaryTermDetail {
             subject_areas,
             tags,
             linked_processes,
+            aliases,
         }
     }
 }

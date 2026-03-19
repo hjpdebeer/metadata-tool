@@ -269,6 +269,19 @@ pub async fn get_term(
     .fetch_all(&state.pool)
     .await?;
 
+    // Fetch aliases/synonyms
+    let aliases = sqlx::query_as::<_, GlossaryAliasItem>(
+        r#"
+        SELECT DISTINCT ON (alias_name) alias_id, alias_name, alias_type
+        FROM glossary_term_aliases
+        WHERE term_id = $1
+        ORDER BY alias_name, alias_id
+        "#,
+    )
+    .bind(term_id)
+    .fetch_all(&state.pool)
+    .await?;
+
     // Construct the flat response (ADR-0006 Pattern 1)
     Ok(Json(GlossaryTermDetail::from_row_and_junctions(
         row,
@@ -276,6 +289,7 @@ pub async fn get_term(
         subject_areas,
         tags,
         linked_processes,
+        aliases,
     )))
 }
 

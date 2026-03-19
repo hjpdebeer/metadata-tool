@@ -229,6 +229,7 @@ export interface GlossaryTermDetailView {
   subject_areas: { subject_area_id: string; area_code: string; area_name: string; is_primary: boolean }[];
   tags: { tag_id: string; tag_name: string }[];
   linked_processes: { process_id: string; process_name: string; usage_context: string | null }[];
+  aliases: { alias_id: string; alias_name: string; alias_type: string | null }[];
 }
 
 export interface CreateGlossaryTermRequest {

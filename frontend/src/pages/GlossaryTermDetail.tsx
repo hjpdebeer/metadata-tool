@@ -660,8 +660,18 @@ const GlossaryTermDetail: React.FC = () => {
             <Descriptions.Item label="Child Terms">
               {renderTermLinks(childTerms)}
             </Descriptions.Item>
-            <Descriptions.Item label="Synonyms">
-              {renderTermLinks(synonyms)}
+            <Descriptions.Item label="Synonyms / Aliases">
+              {(detail.aliases && detail.aliases.length > 0) ? (
+                <Space wrap size={[4, 8]}>
+                  {detail.aliases.map((a) => (
+                    <Tag key={a.alias_id} color="cyan">{a.alias_name}</Tag>
+                  ))}
+                </Space>
+              ) : synonyms.length > 0 ? (
+                renderTermLinks(synonyms)
+              ) : (
+                <EmptyValue />
+              )}
             </Descriptions.Item>
             <Descriptions.Item label="Related Terms">
               {renderTermLinks(relatedTerms)}

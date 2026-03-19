@@ -210,6 +210,21 @@ const GlossaryTermDetail: React.FC = () => {
       message.error('No active workflow for this term.');
       return;
     }
+    // Pre-flight check: warn user about missing ownership before opening modal
+    if (action === 'SUBMIT') {
+      const missing: string[] = [];
+      if (!detail.owner_user_id) missing.push('Business Term Owner');
+      if (!detail.steward_user_id) missing.push('Data Steward');
+      if (!detail.domain_owner_user_id) missing.push('Data Domain Owner');
+      if (!detail.approver_user_id) missing.push('Approver');
+      if (missing.length > 0) {
+        message.warning(
+          `Please assign all ownership fields before submitting: ${missing.join(', ')}. Use the Edit button to assign owners.`,
+          8,
+        );
+        return;
+      }
+    }
     setTransitionAction(action);
     setTransitionComments('');
     setTransitionModalOpen(true);
@@ -227,8 +242,11 @@ const GlossaryTermDetail: React.FC = () => {
       message.success(`Workflow action "${transitionAction}" completed successfully.`);
       setTransitionModalOpen(false);
       fetchDetail();
-    } catch {
-      message.error(`Failed to perform action "${transitionAction}".`);
+    } catch (error: unknown) {
+      // Show specific validation messages from the backend (e.g., ownership missing)
+      const apiMsg = (error as { response?: { data?: { error?: { message?: string } } } })
+        ?.response?.data?.error?.message;
+      message.error(apiMsg || `Failed to perform action "${transitionAction}".`, 8);
     } finally {
       setActionLoading(false);
     }

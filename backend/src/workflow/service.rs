@@ -222,6 +222,12 @@ pub async fn transition_workflow(
 
     let new_state_id = transition.to_state_id;
 
+    // Governance validation: when submitting for review (SUBMIT action),
+    // all mandatory ownership fields must be populated.
+    if action_code == super::ACTION_SUBMIT {
+        validate_ownership_before_submit(pool, &instance).await?;
+    }
+
     // Look up the new state to check if it is terminal
     let new_state = sqlx::query_as::<_, StateRow>(
         "SELECT state_id, state_code, is_terminal
@@ -817,4 +823,66 @@ async fn resolve_entity_name(
     };
 
     Ok(name.unwrap_or_else(|| format!("(unknown entity {entity_id})")))
+}
+
+/// Validate that all mandatory ownership fields are populated before
+/// a term can be submitted for review. This is a data governance
+/// requirement — every term must have clear accountability before
+/// entering the approval workflow.
+async fn validate_ownership_before_submit(
+    pool: &PgPool,
+    instance: &WorkflowInstance,
+) -> AppResult<()> {
+    // Resolve the entity type
+    let entity_type = sqlx::query_scalar::<_, String>(
+        "SELECT table_name FROM workflow_entity_types WHERE entity_type_id = $1",
+    )
+    .bind(instance.entity_type_id)
+    .fetch_one(pool)
+    .await?;
+
+    match entity_type.as_str() {
+        "glossary_terms" => {
+            #[derive(sqlx::FromRow)]
+            struct OwnershipCheck {
+                owner_user_id: Option<Uuid>,
+                steward_user_id: Option<Uuid>,
+                domain_owner_user_id: Option<Uuid>,
+                approver_user_id: Option<Uuid>,
+            }
+
+            let row = sqlx::query_as::<_, OwnershipCheck>(
+                "SELECT owner_user_id, steward_user_id, domain_owner_user_id, approver_user_id FROM glossary_terms WHERE term_id = $1 AND deleted_at IS NULL",
+            )
+            .bind(instance.entity_id)
+            .fetch_optional(pool)
+            .await?
+            .ok_or_else(|| AppError::NotFound("entity not found for ownership check".into()))?;
+
+            let mut missing = Vec::new();
+            if row.owner_user_id.is_none() {
+                missing.push("Business Term Owner");
+            }
+            if row.steward_user_id.is_none() {
+                missing.push("Data Steward");
+            }
+            if row.domain_owner_user_id.is_none() {
+                missing.push("Data Domain Owner");
+            }
+            if row.approver_user_id.is_none() {
+                missing.push("Approver");
+            }
+
+            if !missing.is_empty() {
+                return Err(AppError::Validation(format!(
+                    "cannot submit for review — the following ownership fields must be assigned: {}",
+                    missing.join(", ")
+                )));
+            }
+        }
+        // Other entity types can add ownership checks as needed
+        _ => {}
+    }
+
+    Ok(())
 }

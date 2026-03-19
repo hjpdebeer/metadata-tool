@@ -256,7 +256,7 @@ ALTER TABLE glossary_terms
     -- Section 4: Ownership
     ADD COLUMN IF NOT EXISTS domain_owner_user_id UUID REFERENCES users(user_id),
     ADD COLUMN IF NOT EXISTS approver_user_id UUID REFERENCES users(user_id),
-    ADD COLUMN IF NOT EXISTS organisational_unit VARCHAR(256),
+    ADD COLUMN IF NOT EXISTS organisational_unit TEXT,
 
     -- Section 5: Lifecycle
     ADD COLUMN IF NOT EXISTS approved_at TIMESTAMPTZ,
@@ -274,7 +274,7 @@ ALTER TABLE glossary_terms
 
     -- Section 8: Quality
     ADD COLUMN IF NOT EXISTS is_cde BOOLEAN NOT NULL DEFAULT FALSE,
-    ADD COLUMN IF NOT EXISTS golden_source VARCHAR(256),
+    ADD COLUMN IF NOT EXISTS golden_source TEXT,
     ADD COLUMN IF NOT EXISTS confidence_level_id UUID REFERENCES glossary_confidence_levels(confidence_id),
 
     -- Section 9: Discoverability

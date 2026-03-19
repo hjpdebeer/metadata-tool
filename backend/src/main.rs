@@ -113,6 +113,7 @@ use metadata_tool::db::{self, AppState};
         // Workflow
         api::workflow::my_pending_tasks,
         api::workflow::get_instance,
+        api::workflow::get_instance_by_entity,
         api::workflow::transition,
         api::workflow::complete_task,
         api::users::list_users,
@@ -344,6 +345,7 @@ async fn main() -> anyhow::Result<()> {
         .route("/api/v1/processes/{process_id}/applications", get(api::processes::list_process_applications).post(api::processes::link_application))
         // Workflow
         .route("/api/v1/workflow/tasks/pending", get(api::workflow::my_pending_tasks))
+        .route("/api/v1/workflow/instances/by-entity/{entity_id}", get(api::workflow::get_instance_by_entity))
         .route("/api/v1/workflow/instances/{instance_id}", get(api::workflow::get_instance))
         .route("/api/v1/workflow/instances/{instance_id}/transition", post(api::workflow::transition))
         .route("/api/v1/workflow/tasks/{task_id}/complete", post(api::workflow::complete_task))

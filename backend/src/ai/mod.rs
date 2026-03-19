@@ -263,7 +263,7 @@ Fields that already have values: {existing_list}
 IMPORTANT: Only suggest values for TEXT fields shown above. NEVER suggest values for:
 - Any field ending in _id (domain_id, category_id, owner_user_id, steward_user_id, classification_id, glossary_term_id, etc.)
 - Any field ending in _at (timestamps)
-- System fields like status_id, created_by, updated_by, version_number, is_current_version, is_cde, is_nullable
+- System fields like status_id, created_by, updated_by, version_number, is_current_version, is_cbt, is_nullable
 
 For each empty or improvable text field, provide:
 1. field_name: the exact field name from the entity

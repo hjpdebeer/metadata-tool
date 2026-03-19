@@ -81,7 +81,7 @@ pub struct GlossaryTerm {
     pub regulatory_reporting_usage: Option<String>,
 
     // Section 8: Quality
-    pub is_cde: bool,
+    pub is_cbt: bool,
     pub golden_source: Option<String>,
     pub confidence_level_id: Option<Uuid>,
 
@@ -139,7 +139,7 @@ pub struct GlossaryTermDetailRow {
     pub used_in_reports: Option<String>,
     pub used_in_policies: Option<String>,
     pub regulatory_reporting_usage: Option<String>,
-    pub is_cde: bool,
+    pub is_cbt: bool,
     pub golden_source: Option<String>,
     pub confidence_level_id: Option<Uuid>,
     pub visibility_id: Option<Uuid>,
@@ -207,7 +207,7 @@ pub struct GlossaryTermDetail {
     pub used_in_reports: Option<String>,
     pub used_in_policies: Option<String>,
     pub regulatory_reporting_usage: Option<String>,
-    pub is_cde: bool,
+    pub is_cbt: bool,
     pub golden_source: Option<String>,
     pub confidence_level_id: Option<Uuid>,
     pub visibility_id: Option<Uuid>,
@@ -312,7 +312,7 @@ impl GlossaryTermDetail {
             used_in_reports: row.used_in_reports,
             used_in_policies: row.used_in_policies,
             regulatory_reporting_usage: row.regulatory_reporting_usage,
-            is_cde: row.is_cde,
+            is_cbt: row.is_cbt,
             golden_source: row.golden_source,
             confidence_level_id: row.confidence_level_id,
             visibility_id: row.visibility_id,
@@ -401,7 +401,7 @@ pub struct GlossaryTermListItem {
     pub status_name: String,
     pub owner_name: Option<String>,
     pub steward_name: Option<String>,
-    pub is_cde: bool,
+    pub is_cbt: bool,
     pub version_number: i32,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
@@ -464,7 +464,7 @@ pub struct UpdateGlossaryTermRequest {
     pub regulatory_reporting_usage: Option<String>,
 
     // Quality
-    pub is_cde: Option<bool>,
+    pub is_cbt: Option<bool>,
     pub golden_source: Option<String>,
     pub confidence_level_id: Option<Uuid>,
 
@@ -481,7 +481,7 @@ pub struct SearchGlossaryTermsRequest {
     pub category_id: Option<Uuid>,
     pub status: Option<String>,
     pub term_type_id: Option<Uuid>,
-    pub is_cde: Option<bool>,
+    pub is_cbt: Option<bool>,
     pub page: Option<i64>,
     pub page_size: Option<i64>,
 }

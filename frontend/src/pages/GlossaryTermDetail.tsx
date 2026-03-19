@@ -42,10 +42,10 @@ import type {
   WorkflowInstanceView,
 } from '../services/glossaryApi';
 import type { OrganisationalUnit } from '../services/glossaryApi';
-import { useAuth } from '../hooks/useAuth';
 import { usersApi } from '../services/usersApi';
 import type { UserListItem } from '../services/usersApi';
 import AiEnrichmentPanel from '../components/AiEnrichmentPanel';
+import { useAuth } from '../hooks/useAuth';
 
 const { Title, Text, Paragraph } = Typography;
 
@@ -53,6 +53,7 @@ const statusColors: Record<string, string> = {
   DRAFT: 'default',
   PROPOSED: 'processing',
   UNDER_REVIEW: 'warning',
+  PENDING_APPROVAL: 'processing',
   REVISED: 'orange',
   ACCEPTED: 'success',
   REJECTED: 'error',
@@ -63,6 +64,7 @@ const statusLabels: Record<string, string> = {
   DRAFT: 'Draft',
   PROPOSED: 'Proposed',
   UNDER_REVIEW: 'Under Review',
+  PENDING_APPROVAL: 'Pending Approval',
   REVISED: 'Revised',
   ACCEPTED: 'Accepted',
   REJECTED: 'Rejected',
@@ -87,7 +89,7 @@ const GlossaryTermDetail: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const { user } = useAuth();
-
+  const currentUserId = user?.user_id;
   const [detail, setDetail] = useState<GlossaryTermDetailView | null>(null);
   const [workflowInstance, setWorkflowInstance] = useState<WorkflowInstanceView | null>(null);
   const [loading, setLoading] = useState(true);
@@ -113,8 +115,6 @@ const GlossaryTermDetail: React.FC = () => {
   const [addingSubjectArea, setAddingSubjectArea] = useState(false);
   const [newTagInput, setNewTagInput] = useState('');
   const [addingFreeTag, setAddingFreeTag] = useState(false);
-
-  const isSteward = user?.roles?.includes('data_steward') || user?.roles?.includes('admin');
 
   const fetchDetail = useCallback(async (showSpinner = false) => {
     if (!id) return;
@@ -147,10 +147,22 @@ const GlossaryTermDetail: React.FC = () => {
     if (orgRes.status === 'fulfilled') setAllOrgUnits(orgRes.value.data);
   }, []);
 
+  const fetchWorkflowInstance = useCallback(async () => {
+    if (!id) return;
+    try {
+      const response = await workflowApi.getInstanceByEntity(id);
+      setWorkflowInstance(response.data);
+    } catch {
+      // No workflow instance for this entity — not an error for the UI
+      setWorkflowInstance(null);
+    }
+  }, [id]);
+
   useEffect(() => {
     fetchDetail(true); // Initial load — show spinner
     fetchLookups();
-  }, [fetchDetail, fetchLookups]);
+    fetchWorkflowInstance();
+  }, [fetchDetail, fetchLookups, fetchWorkflowInstance]);
 
   // Sync ownership state when detail loads
   useEffect(() => {
@@ -186,7 +198,7 @@ const GlossaryTermDetail: React.FC = () => {
   };
 
   const ownershipComplete = !!(ownerUserId && stewardUserId && domainOwnerUserId && approverUserId);
-  const showOwnershipSection = detail && (detail.status_code === 'DRAFT' || detail.status_code === 'REVISED');
+  const showOwnershipSection = detail && allUsers.length > 0 && (detail.status_code === 'DRAFT' || detail.status_code === 'REVISED');
 
   // --- Junction management ---
 
@@ -301,6 +313,7 @@ const GlossaryTermDetail: React.FC = () => {
       message.success(`Workflow action "${transitionAction}" completed successfully.`);
       setTransitionModalOpen(false);
       fetchDetail();
+      fetchWorkflowInstance();
     } catch (error: unknown) {
       // Show specific validation messages from the backend (e.g., ownership missing)
       const apiMsg = (error as { response?: { data?: { error?: { message?: string } } } })
@@ -367,6 +380,11 @@ const GlossaryTermDetail: React.FC = () => {
       );
     }
 
+    // Under Review: only the assigned Data Steward (or admin) can act
+    const isAdmin = user?.roles?.includes('admin') || user?.roles?.includes('ADMIN');
+    const isSteward = currentUserId === detail?.steward_user_id || isAdmin;
+    const isOwner = currentUserId === detail?.owner_user_id || isAdmin;
+
     if (status === 'UNDER_REVIEW' && isSteward) {
       buttons.push(
         <Button
@@ -376,7 +394,7 @@ const GlossaryTermDetail: React.FC = () => {
           style={{ backgroundColor: '#52C41A', borderColor: '#52C41A' }}
           onClick={() => handleWorkflowAction('APPROVE')}
         >
-          Approve
+          Approve (Steward)
         </Button>,
         <Button
           key="reject"
@@ -392,6 +410,36 @@ const GlossaryTermDetail: React.FC = () => {
           onClick={() => handleWorkflowAction('REVISE')}
         >
           Request Revision
+        </Button>,
+      );
+    }
+
+    // Pending Approval: only the assigned Business Term Owner (or admin) can act
+    if (status === 'PENDING_APPROVAL' && isOwner) {
+      buttons.push(
+        <Button
+          key="final-approve"
+          type="primary"
+          icon={<CheckOutlined />}
+          style={{ backgroundColor: '#52C41A', borderColor: '#52C41A' }}
+          onClick={() => handleWorkflowAction('APPROVE')}
+        >
+          Final Approval (Owner)
+        </Button>,
+        <Button
+          key="reject"
+          danger
+          icon={<CloseOutlined />}
+          onClick={() => handleWorkflowAction('REJECT')}
+        >
+          Reject
+        </Button>,
+        <Button
+          key="revise"
+          icon={<UndoOutlined />}
+          onClick={() => handleWorkflowAction('REVISE')}
+        >
+          Return to Steward
         </Button>,
       );
     }
@@ -827,10 +875,10 @@ const GlossaryTermDetail: React.FC = () => {
       label: <Text strong>Quality</Text>,
       children: (
         <div>
-          {term.is_cde && (
+          {term.is_cbt && (
             <Alert
-              message="Critical Data Element"
-              description="This term has been designated as a Critical Data Element (CDE). CDEs require heightened governance, quality monitoring, and stewardship oversight."
+              message="Critical Business Term"
+              description="This term has been designated as a Critical Business Term (CBT). CBTs require heightened governance, quality monitoring, and stewardship oversight. Linked data elements automatically inherit CDE status."
               type="error"
               showIcon
               icon={<SafetyCertificateOutlined />}
@@ -838,13 +886,13 @@ const GlossaryTermDetail: React.FC = () => {
             />
           )}
           <Descriptions column={{ xs: 1, sm: 2 }} bordered size="small">
-            <Descriptions.Item label="CDE Designation">
-              {term.is_cde ? (
+            <Descriptions.Item label="CBT Designation">
+              {term.is_cbt ? (
                 <Tag color="red">
-                  <SafetyCertificateOutlined /> Critical Data Element
+                  <SafetyCertificateOutlined /> Critical Business Term
                 </Tag>
               ) : (
-                <Tag color="default">Not CDE</Tag>
+                <Tag color="default">Not CBT</Tag>
               )}
             </Descriptions.Item>
             <Descriptions.Item label={<>Golden Source <AiHint /></>}>
@@ -988,9 +1036,9 @@ const GlossaryTermDetail: React.FC = () => {
           >
             {statusLabels[status] || status}
           </Tag>
-          {term.is_cde && (
+          {term.is_cbt && (
             <Tag color="red">
-              <SafetyCertificateOutlined /> CDE
+              <SafetyCertificateOutlined /> CBT
             </Tag>
           )}
           {detail.term_type_name && (
@@ -1000,11 +1048,11 @@ const GlossaryTermDetail: React.FC = () => {
         <Space wrap>{renderActionButtons()}</Space>
       </div>
 
-      {/* --- CDE Banner --- */}
-      {term.is_cde && (
+      {/* --- CBT Banner --- */}
+      {term.is_cbt && (
         <Alert
-          message="Critical Data Element"
-          description="This term is flagged as a Critical Data Element (CDE). It requires enhanced governance, quality controls, and regular review."
+          message="Critical Business Term"
+          description="This term is flagged as a Critical Business Term (CBT). It requires enhanced governance, quality controls, and regular review. Linked data elements inherit CDE status."
           type="error"
           showIcon
           icon={<SafetyCertificateOutlined />}

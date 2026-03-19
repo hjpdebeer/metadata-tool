@@ -48,6 +48,27 @@ pub async fn get_instance(
     Ok(Json(view))
 }
 
+/// Look up the workflow instance for a given entity (e.g. glossary term) by its entity_id.
+/// Requires authentication.
+#[utoipa::path(
+    get,
+    path = "/api/v1/workflow/instances/by-entity/{entity_id}",
+    params(("entity_id" = Uuid, Path, description = "Entity ID (e.g. term_id)")),
+    responses(
+        (status = 200, description = "Workflow instance for entity", body = WorkflowInstanceView),
+        (status = 404, description = "No workflow instance found for entity")
+    ),
+    security(("bearer_auth" = [])),
+    tag = "workflow"
+)]
+pub async fn get_instance_by_entity(
+    State(state): State<AppState>,
+    Path(entity_id): Path<Uuid>,
+) -> AppResult<Json<WorkflowInstanceView>> {
+    let view = service::get_workflow_instance_by_entity(&state.pool, entity_id).await?;
+    Ok(Json(view))
+}
+
 /// Perform a workflow state transition (e.g. SUBMIT, APPROVE, REJECT) on an instance (Principle 5).
 /// Requires authentication.
 #[utoipa::path(

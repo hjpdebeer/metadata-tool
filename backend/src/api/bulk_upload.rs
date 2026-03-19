@@ -807,8 +807,8 @@ async fn process_row(
         None
     };
 
-    // Parse CDE flag
-    let is_cde = cde_flag_str
+    // Parse CBT (Critical Business Term) flag
+    let is_cbt = cde_flag_str
         .as_deref()
         .map(|s| s.eq_ignore_ascii_case("true"))
         .unwrap_or(false);
@@ -833,7 +833,7 @@ async fn process_row(
             approver_user_id, organisational_unit, parent_term_id,
             source_reference, regulatory_reference, external_reference,
             business_context, examples, used_in_reports, used_in_policies,
-            regulatory_reporting_usage, is_cde, golden_source,
+            regulatory_reporting_usage, is_cbt, golden_source,
             status_id, version_number, is_current_version, created_by
         )
         VALUES (
@@ -874,7 +874,7 @@ async fn process_row(
     .bind(used_in_reports.as_deref())       // $27
     .bind(used_in_policies.as_deref())      // $28
     .bind(regulatory_reporting_usage.as_deref()) // $29
-    .bind(is_cde)                           // $30
+    .bind(is_cbt)                           // $30
     .bind(golden_source.as_deref())         // $31
     .bind(ctx.draft_status_id)               // $32
     .bind(ctx.user_id)                      // $33

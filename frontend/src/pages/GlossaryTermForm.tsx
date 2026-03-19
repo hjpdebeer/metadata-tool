@@ -142,7 +142,7 @@ const GlossaryTermForm: React.FC = () => {
         approver_user_id: detail.approver_user_id || undefined,
         organisational_unit: detail.organisational_unit || undefined,
         review_frequency_id: detail.review_frequency_id || undefined,
-        is_cde: detail.is_cde,
+        is_cbt: detail.is_cbt,
         golden_source: detail.golden_source || undefined,
         confidence_level_id: detail.confidence_level_id || undefined,
         visibility_id: detail.visibility_id || undefined,
@@ -232,8 +232,8 @@ const GlossaryTermForm: React.FC = () => {
       }
 
       // Handle boolean field separately
-      if (values.is_cde !== existingTerm?.is_cde) {
-        updateData.is_cde = values.is_cde as boolean;
+      if (values.is_cbt !== existingTerm?.is_cbt) {
+        updateData.is_cbt = values.is_cbt as boolean;
       }
 
       const response = await glossaryApi.updateTerm(id, updateData);
@@ -440,7 +440,7 @@ const GlossaryTermForm: React.FC = () => {
         layout="vertical"
         onFinish={handleEditSubmit}
         scrollToFirstError
-        initialValues={{ is_cde: false }}
+        initialValues={{ is_cbt: false }}
       >
         {/* Section 1: Core Identity */}
         <Card
@@ -789,8 +789,8 @@ const GlossaryTermForm: React.FC = () => {
         >
           <Row gutter={16} align="middle">
             <Col xs={24} md={6}>
-              <Form.Item name="is_cde" label="Critical Data Element" valuePropName="checked">
-                <Switch checkedChildren="CDE" unCheckedChildren="No" />
+              <Form.Item name="is_cbt" label="Critical Business Term" valuePropName="checked">
+                <Switch checkedChildren="CBT" unCheckedChildren="No" />
               </Form.Item>
             </Col>
             <Col xs={24} md={10}>

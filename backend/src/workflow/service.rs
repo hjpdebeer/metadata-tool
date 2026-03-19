@@ -10,7 +10,7 @@ use crate::notifications;
 
 use super::{
     ACTION_APPROVE, ACTION_REJECT, ACTION_REVISE, STATE_DRAFT, STATE_UNDER_REVIEW,
-    TASK_STATUS_CANCELLED, TASK_STATUS_COMPLETED, TASK_STATUS_PENDING,
+    STATE_PENDING_APPROVAL, TASK_STATUS_CANCELLED, TASK_STATUS_COMPLETED, TASK_STATUS_PENDING,
 };
 
 // ---------------------------------------------------------------------------
@@ -38,12 +38,6 @@ struct TransitionRow {
 struct EntityTypeRow {
     entity_type_id: Uuid,
     table_name: String,
-}
-
-#[derive(sqlx::FromRow)]
-struct ApproverRow {
-    approver_user_id: Option<Uuid>,
-    approver_role_id: Option<Uuid>,
 }
 
 #[derive(sqlx::FromRow)]
@@ -276,9 +270,14 @@ pub async fn transition_workflow(
     .fetch_one(pool)
     .await?;
 
-    // If entering UNDER_REVIEW, create approval tasks
+    // If entering UNDER_REVIEW, create review task for Data Steward
     if new_state.state_code == STATE_UNDER_REVIEW {
-        create_approval_tasks(pool, &updated_instance).await?;
+        create_steward_review_task(pool, &updated_instance).await?;
+    }
+
+    // If entering PENDING_APPROVAL, create final approval task for Owner
+    if new_state.state_code == STATE_PENDING_APPROVAL {
+        create_owner_approval_task(pool, &updated_instance).await?;
     }
 
     // If terminal (ACCEPTED, REJECTED, DEPRECATED), cancel any remaining PENDING tasks
@@ -585,25 +584,59 @@ pub async fn get_workflow_instance(
 }
 
 // ---------------------------------------------------------------------------
+// 6. get_workflow_instance_by_entity
+// ---------------------------------------------------------------------------
+
+/// Look up the workflow instance for a given entity_id.
+/// Returns the full instance view (same as get_workflow_instance) or 404 if none exists.
+pub async fn get_workflow_instance_by_entity(
+    pool: &PgPool,
+    entity_id: Uuid,
+) -> AppResult<WorkflowInstanceView> {
+    let instance_id = sqlx::query_scalar::<_, Uuid>(
+        "SELECT instance_id FROM workflow_instances WHERE entity_id = $1 ORDER BY initiated_at DESC LIMIT 1",
+    )
+    .bind(entity_id)
+    .fetch_optional(pool)
+    .await?
+    .ok_or_else(|| {
+        AppError::NotFound(format!("no workflow instance found for entity: {entity_id}"))
+    })?;
+
+    get_workflow_instance(pool, instance_id).await
+}
+
+// ---------------------------------------------------------------------------
 // Internal helpers
 // ---------------------------------------------------------------------------
 
-/// Create approval tasks for the approvers configured on the workflow definition.
-/// After creating each task, sends an in-app notification to the assigned user.
-async fn create_approval_tasks(
+/// Create a review task assigned to the entity's Data Steward.
+/// Called when entering UNDER_REVIEW state.
+async fn create_steward_review_task(
     pool: &PgPool,
     instance: &WorkflowInstance,
 ) -> AppResult<()> {
-    let approvers = sqlx::query_as::<_, ApproverRow>(
-        "SELECT approver_user_id, approver_role_id
-         FROM workflow_approvers
-         WHERE workflow_def_id = $1
-         ORDER BY approval_order ASC",
-    )
-    .bind(instance.workflow_def_id)
-    .fetch_all(pool)
-    .await?;
+    create_task_for_entity_role(pool, instance, "steward_user_id", "REVIEW", "Review").await
+}
 
+/// Create a final approval task assigned to the entity's Business Term Owner.
+/// Called when entering PENDING_APPROVAL state.
+async fn create_owner_approval_task(
+    pool: &PgPool,
+    instance: &WorkflowInstance,
+) -> AppResult<()> {
+    create_task_for_entity_role(pool, instance, "owner_user_id", ACTION_APPROVE, "Final Approval").await
+}
+
+/// Generic helper: create a workflow task assigned to a specific user looked up
+/// from the entity's ownership column (e.g. steward_user_id, owner_user_id).
+async fn create_task_for_entity_role(
+    pool: &PgPool,
+    instance: &WorkflowInstance,
+    user_column: &str,
+    task_type: &str,
+    task_label: &str,
+) -> AppResult<()> {
     // Calculate due date from the workflow definition's SLA
     let sla_hours: i32 = sqlx::query_scalar::<_, Option<i32>>(
         "SELECT review_sla_hours FROM workflow_definitions WHERE workflow_def_id = $1",
@@ -627,46 +660,67 @@ async fn create_approval_tasks(
     .unwrap_or_else(|| "Entity".to_string());
 
     let entity_name = resolve_entity_name(pool, &entity_type_name, instance.entity_id).await?;
+
+    // Look up the assigned user from the entity's ownership column.
+    // Uses a safe static match to avoid SQL injection (Principle 10).
+    let assigned_user_id: Option<Uuid> = match user_column {
+        "steward_user_id" => {
+            sqlx::query_scalar("SELECT steward_user_id FROM glossary_terms WHERE term_id = $1 AND deleted_at IS NULL")
+                .bind(instance.entity_id)
+                .fetch_optional(pool)
+                .await?
+                .flatten()
+        }
+        "owner_user_id" => {
+            sqlx::query_scalar("SELECT owner_user_id FROM glossary_terms WHERE term_id = $1 AND deleted_at IS NULL")
+                .bind(instance.entity_id)
+                .fetch_optional(pool)
+                .await?
+                .flatten()
+        }
+        _ => None,
+    };
+
+    let task_name = format!("{} — {}", task_label, entity_name);
+    let description = format!(
+        "{} for {} '{}'.",
+        task_label, entity_type_name, entity_name,
+    );
     let due_date_str = due_date.format("%Y-%m-%d %H:%M UTC").to_string();
 
-    for approver in &approvers {
-        sqlx::query(
-            "INSERT INTO workflow_tasks
-                 (instance_id, task_type, task_name, description,
-                  assigned_to_user_id, assigned_to_role_id, status, due_date)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8)",
-        )
-        .bind(instance.instance_id)
-        .bind(ACTION_APPROVE)
-        .bind(format!("Review and approve entity {}", instance.entity_id))
-        .bind(Some("Review the submitted entity and approve, reject, or request revision."))
-        .bind(approver.approver_user_id)
-        .bind(approver.approver_role_id)
-        .bind(TASK_STATUS_PENDING)
-        .bind(due_date)
-        .execute(pool)
-        .await?;
+    sqlx::query(
+        "INSERT INTO workflow_tasks
+             (instance_id, task_type, task_name, description,
+              assigned_to_user_id, status, due_date)
+         VALUES ($1, $2, $3, $4, $5, $6, $7)",
+    )
+    .bind(instance.instance_id)
+    .bind(task_type)
+    .bind(&task_name)
+    .bind(&description)
+    .bind(assigned_user_id)
+    .bind(TASK_STATUS_PENDING)
+    .bind(due_date)
+    .execute(pool)
+    .await?;
 
-        // Send notification to the assigned user (if user-assigned, not role-only)
-        #[allow(clippy::collapsible_if)] // Intentionally separate: Some check vs Err check
-        if let Some(user_id) = approver.approver_user_id {
-            if let Err(e) = notifications::queue_workflow_task_notification(
-                pool,
-                user_id,
-                &entity_type_name,
-                &entity_name,
-                instance.entity_id,
-                Some(&due_date_str),
-            )
-            .await
-            {
-                // Log but don't fail the task creation if notification fails
-                tracing::warn!(
-                    user_id = %user_id,
-                    error = %e,
-                    "Failed to send task assignment notification"
-                );
-            }
+    // Notify the assigned user
+    if let Some(user_id) = assigned_user_id {
+        if let Err(e) = notifications::queue_workflow_task_notification(
+            pool,
+            user_id,
+            &entity_type_name,
+            &entity_name,
+            instance.entity_id,
+            Some(&due_date_str),
+        )
+        .await
+        {
+            tracing::warn!(
+                user_id = %user_id,
+                error = %e,
+                "failed to send task assignment notification"
+            );
         }
     }
 
@@ -715,13 +769,33 @@ async fn update_entity_status(
     // in queries (Principle 10 — parameterized queries only).
     match entity_type.table_name.as_str() {
         "glossary_terms" => {
-            sqlx::query(
-                "UPDATE glossary_terms SET status_id = $1, updated_at = CURRENT_TIMESTAMP WHERE term_id = $2",
-            )
-            .bind(status_id)
-            .bind(instance.entity_id)
-            .execute(pool)
-            .await?;
+            if state_code == super::STATE_ACCEPTED {
+                // Stamp approved_at and recalculate next_review_date from approval date
+                sqlx::query(
+                    "UPDATE glossary_terms
+                     SET status_id = $1,
+                         approved_at = CURRENT_TIMESTAMP,
+                         next_review_date = CURRENT_DATE + (
+                             SELECT COALESCE(grf.months_interval, 12) * INTERVAL '1 month'
+                             FROM glossary_review_frequencies grf
+                             WHERE grf.frequency_id = glossary_terms.review_frequency_id
+                         ),
+                         updated_at = CURRENT_TIMESTAMP
+                     WHERE term_id = $2",
+                )
+                .bind(status_id)
+                .bind(instance.entity_id)
+                .execute(pool)
+                .await?;
+            } else {
+                sqlx::query(
+                    "UPDATE glossary_terms SET status_id = $1, updated_at = CURRENT_TIMESTAMP WHERE term_id = $2",
+                )
+                .bind(status_id)
+                .bind(instance.entity_id)
+                .execute(pool)
+                .await?;
+            }
         }
         "data_elements" => {
             sqlx::query(

@@ -161,9 +161,9 @@ const GlossaryPage: React.FC = () => {
       render: (name: string, record: GlossaryTermListItem) => (
         <Space size={4}>
           <a onClick={() => navigate(`/glossary/${record.term_id}`)}>{name}</a>
-          {record.is_cde && (
+          {record.is_cbt && (
             <Tag color="red" style={{ fontSize: 10, lineHeight: '16px', padding: '0 4px' }}>
-              <SafetyCertificateOutlined /> CDE
+              <SafetyCertificateOutlined /> CBT
             </Tag>
           )}
         </Space>

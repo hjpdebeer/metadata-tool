@@ -101,7 +101,7 @@ export interface GlossaryTermListItem {
   category_name: string | null;
   term_type_id: string | null;
   term_type_name: string | null;
-  is_cde: boolean;
+  is_cbt: boolean;
   status_id: string;
   status_code: string;
   owner_user_id: string | null;
@@ -141,7 +141,7 @@ export interface GlossaryTerm {
   parent_term_id: string | null;
   version_number: number;
   is_current_version: boolean;
-  is_cde: boolean;
+  is_cbt: boolean;
   golden_source: string | null;
   used_in_reports: string | null;
   used_in_policies: string | null;
@@ -203,7 +203,7 @@ export interface GlossaryTermDetailView {
   used_in_reports: string | null;
   used_in_policies: string | null;
   regulatory_reporting_usage: string | null;
-  is_cde: boolean;
+  is_cbt: boolean;
   golden_source: string | null;
   confidence_level_id: string | null;
   visibility_id: string | null;
@@ -272,7 +272,7 @@ export interface UpdateGlossaryTermRequest {
   approver_user_id?: string;
   organisational_unit?: string;
   review_frequency_id?: string;
-  is_cde?: boolean;
+  is_cbt?: boolean;
   golden_source?: string;
   confidence_level_id?: string;
   visibility_id?: string;
@@ -306,7 +306,7 @@ export interface ListTermsParams {
   category_id?: string;
   term_type_id?: string;
   status?: string;
-  is_cde?: boolean;
+  is_cbt?: boolean;
   page?: number;
   page_size?: number;
 }
@@ -551,6 +551,10 @@ export const workflowApi = {
 
   getInstance(instanceId: string): Promise<AxiosResponse<WorkflowInstanceView>> {
     return api.get(`/workflow/instances/${instanceId}`);
+  },
+
+  getInstanceByEntity(entityId: string): Promise<AxiosResponse<WorkflowInstanceView>> {
+    return api.get(`/workflow/instances/by-entity/${entityId}`);
   },
 
   transitionWorkflow(

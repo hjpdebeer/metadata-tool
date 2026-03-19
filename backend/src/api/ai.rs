@@ -87,7 +87,7 @@ async fn fetch_entity_data(
                     approved_at, review_frequency_id, next_review_date,
                     parent_term_id, source_reference, regulatory_reference,
                     used_in_reports, used_in_policies, regulatory_reporting_usage,
-                    is_cde, golden_source, confidence_level_id,
+                    is_cbt, golden_source, confidence_level_id,
                     visibility_id, language_id, external_reference,
                     created_by, updated_by, created_at, updated_at
                 FROM glossary_terms
@@ -527,7 +527,7 @@ pub async fn enrich(
             || s.field_name.ends_with("_by")
             || matches!(
                 s.field_name.as_str(),
-                "status_id" | "version_number" | "is_current_version" | "is_cde"
+                "status_id" | "version_number" | "is_current_version" | "is_cbt" | "is_cde"
                     | "is_nullable" | "is_active" | "is_critical"
                     | "parent_term" | "child_terms" | "related_terms"
             )

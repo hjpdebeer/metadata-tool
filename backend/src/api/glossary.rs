@@ -28,14 +28,30 @@ use crate::workflow;
 )]
 pub async fn list_terms(
     State(state): State<AppState>,
+    Extension(claims): Extension<Claims>,
     Query(params): Query<SearchGlossaryTermsRequest>,
 ) -> AppResult<Json<PaginatedResponse<GlossaryTermListItem>>> {
     let page = params.page.unwrap_or(1).max(1);
     let page_size = params.page_size.unwrap_or(20).clamp(1, 100);
     let offset = (page - 1) * page_size;
+    let is_admin = claims.roles.iter().any(|r| r == "ADMIN" || r == "admin");
+
+    // Visibility filter: Accepted/Deprecated visible to all; others only to
+    // creator, assigned owners/steward/approver, or admins.
+    let visibility_clause = r#"
+          AND (
+              es.status_code IN ('ACCEPTED', 'DEPRECATED')
+              OR gt.created_by = $7
+              OR gt.owner_user_id = $7
+              OR gt.steward_user_id = $7
+              OR gt.domain_owner_user_id = $7
+              OR gt.approver_user_id = $7
+              OR $8::BOOLEAN = TRUE
+          )
+    "#;
 
     // Count query — mirrors the same WHERE conditions as the data query
-    let total_count = sqlx::query_scalar::<_, i64>(
+    let count_query = format!(
         r#"
         SELECT COUNT(*)
         FROM glossary_terms gt
@@ -47,20 +63,26 @@ pub async fn list_terms(
           AND ($3::UUID IS NULL OR gt.category_id = $3)
           AND ($4::TEXT IS NULL OR es.status_code = $4)
           AND ($5::UUID IS NULL OR gt.term_type_id = $5)
-          AND ($6::BOOLEAN IS NULL OR gt.is_cde = $6)
+          AND ($6::BOOLEAN IS NULL OR gt.is_cbt = $6)
+          {visibility}
         "#,
-    )
+        visibility = visibility_clause,
+    );
+
+    let total_count = sqlx::query_scalar::<_, i64>(&count_query)
     .bind(params.query.as_deref())
     .bind(params.domain_id)
     .bind(params.category_id)
     .bind(params.status.as_deref())
     .bind(params.term_type_id)
-    .bind(params.is_cde)
+    .bind(params.is_cbt)
+    .bind(claims.sub)
+    .bind(is_admin)
     .fetch_one(&state.pool)
     .await?;
 
     // Data query with joins for display fields
-    let items = sqlx::query_as::<_, GlossaryTermListItem>(
+    let data_query = format!(
         r#"
         SELECT
             gt.term_id,
@@ -75,7 +97,7 @@ pub async fn list_terms(
             es.status_name                AS status_name,
             uo.display_name               AS owner_name,
             us.display_name               AS steward_name,
-            gt.is_cde,
+            gt.is_cbt,
             gt.version_number,
             gt.created_at,
             gt.updated_at
@@ -93,18 +115,24 @@ pub async fn list_terms(
           AND ($3::UUID IS NULL OR gt.category_id = $3)
           AND ($4::TEXT IS NULL OR es.status_code = $4)
           AND ($5::UUID IS NULL OR gt.term_type_id = $5)
-          AND ($6::BOOLEAN IS NULL OR gt.is_cde = $6)
+          AND ($6::BOOLEAN IS NULL OR gt.is_cbt = $6)
+          {visibility}
         ORDER BY gt.term_name ASC
-        LIMIT $7
-        OFFSET $8
+        LIMIT $9
+        OFFSET $10
         "#,
-    )
+        visibility = visibility_clause,
+    );
+
+    let items = sqlx::query_as::<_, GlossaryTermListItem>(&data_query)
     .bind(params.query.as_deref())
     .bind(params.domain_id)
     .bind(params.category_id)
     .bind(params.status.as_deref())
     .bind(params.term_type_id)
-    .bind(params.is_cde)
+    .bind(params.is_cbt)
+    .bind(claims.sub)
+    .bind(is_admin)
     .bind(page_size)
     .bind(offset)
     .fetch_all(&state.pool)
@@ -134,7 +162,7 @@ const GLOSSARY_TERM_COLUMNS: &str = r#"
     approved_at, review_frequency_id, next_review_date,
     parent_term_id, source_reference, regulatory_reference,
     used_in_reports, used_in_policies, regulatory_reporting_usage,
-    is_cde, golden_source, confidence_level_id,
+    is_cbt, golden_source, confidence_level_id,
     visibility_id, language_id, external_reference,
     created_by, updated_by, created_at, updated_at
 "#;
@@ -152,6 +180,7 @@ const GLOSSARY_TERM_COLUMNS: &str = r#"
 )]
 pub async fn get_term(
     State(state): State<AppState>,
+    Extension(claims): Extension<Claims>,
     Path(term_id): Path<Uuid>,
 ) -> AppResult<Json<GlossaryTermDetail>> {
     // ADR-0006 Pattern 1: Single JOIN query resolves all FK lookups in one round-trip
@@ -171,7 +200,7 @@ pub async fn get_term(
             gt.parent_term_id, gt.source_reference, gt.regulatory_reference,
             gt.used_in_reports, gt.used_in_policies,
             gt.regulatory_reporting_usage,
-            gt.is_cde, gt.golden_source, gt.confidence_level_id,
+            gt.is_cbt, gt.golden_source, gt.confidence_level_id,
             gt.visibility_id, gt.language_id, gt.external_reference,
             gt.previous_version_id,
             gt.created_by, gt.updated_by, gt.created_at, gt.updated_at,
@@ -215,6 +244,20 @@ pub async fn get_term(
     .fetch_optional(&state.pool)
     .await?
     .ok_or_else(|| AppError::NotFound(format!("glossary term not found: {term_id}")))?;
+
+    // Visibility check: non-public terms visible only to involved users or admins
+    let status_code = row.status_code.as_deref().unwrap_or("DRAFT");
+    if !matches!(status_code, "ACCEPTED" | "DEPRECATED") {
+        let is_admin = claims.roles.iter().any(|r| r == "ADMIN" || r == "admin");
+        let is_involved = row.created_by == claims.sub
+            || row.owner_user_id == Some(claims.sub)
+            || row.steward_user_id == Some(claims.sub)
+            || row.domain_owner_user_id == Some(claims.sub)
+            || row.approver_user_id == Some(claims.sub);
+        if !is_admin && !is_involved {
+            return Err(AppError::NotFound(format!("glossary term not found: {term_id}")));
+        }
+    }
 
     // Fetch junction data (always arrays — cannot be part of the single-row JOIN)
     let regulatory_tags = sqlx::query_as::<_, GlossaryRegulatoryTagItem>(
@@ -501,7 +544,7 @@ pub async fn update_term(
             used_in_reports          = COALESCE($24, used_in_reports),
             used_in_policies         = COALESCE($25, used_in_policies),
             regulatory_reporting_usage = COALESCE($26, regulatory_reporting_usage),
-            is_cde                   = COALESCE($27, is_cde),
+            is_cbt                   = COALESCE($27, is_cbt),
             golden_source            = COALESCE($28, golden_source),
             confidence_level_id      = COALESCE($29, confidence_level_id),
             visibility_id            = COALESCE($30, visibility_id),
@@ -542,7 +585,7 @@ pub async fn update_term(
         .bind(body.used_in_reports.as_deref())
         .bind(body.used_in_policies.as_deref())
         .bind(body.regulatory_reporting_usage.as_deref())
-        .bind(body.is_cde)
+        .bind(body.is_cbt)
         .bind(body.golden_source.as_deref())
         .bind(body.confidence_level_id)
         .bind(body.visibility_id)

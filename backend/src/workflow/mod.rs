@@ -1,8 +1,8 @@
 //! Workflow engine for metadata entity lifecycle management (Principle 5).
 //!
-//! Implements a generic state machine: Draft -> Proposed -> Under Review ->
-//! Accepted/Revised/Rejected -> Deprecated. Supports all entity types via
-//! configurable workflow definitions, transitions, tasks, and approvers.
+//! Implements a two-stage review workflow:
+//!   Draft -> Under Review (Data Steward) -> Pending Approval (Owner) -> Accepted
+//! With revision loop: Revised -> Under Review (resubmit).
 //! State transitions are recorded in `workflow_history` for audit (Principle 9).
 
 pub mod service;
@@ -28,8 +28,11 @@ pub const STATE_DRAFT: &str = "DRAFT";
 /// State indicating an entity has been submitted for review.
 pub const STATE_PROPOSED: &str = "PROPOSED";
 
-/// State indicating an entity is actively being reviewed by approvers.
+/// State indicating an entity is actively being reviewed by the Data Steward.
 pub const STATE_UNDER_REVIEW: &str = "UNDER_REVIEW";
+
+/// State indicating the Data Steward approved; awaiting Owner final approval.
+pub const STATE_PENDING_APPROVAL: &str = "PENDING_APPROVAL";
 
 /// State indicating an entity has been sent back for revision.
 pub const STATE_REVISED: &str = "REVISED";
@@ -43,19 +46,19 @@ pub const STATE_REJECTED: &str = "REJECTED";
 /// Terminal state indicating an entity has been retired from active use.
 pub const STATE_DEPRECATED: &str = "DEPRECATED";
 
-/// Action to submit an entity for review (DRAFT -> PROPOSED).
+/// Action to submit an entity for review (DRAFT -> UNDER_REVIEW).
 pub const ACTION_SUBMIT: &str = "SUBMIT";
 
-/// Action to approve an entity (UNDER_REVIEW -> ACCEPTED).
+/// Action to approve an entity (UNDER_REVIEW -> PENDING_APPROVAL, or PENDING_APPROVAL -> ACCEPTED).
 pub const ACTION_APPROVE: &str = "APPROVE";
 
-/// Action to reject an entity (UNDER_REVIEW -> REJECTED).
+/// Action to reject an entity (UNDER_REVIEW/PENDING_APPROVAL -> REJECTED).
 pub const ACTION_REJECT: &str = "REJECT";
 
-/// Action to request revision (UNDER_REVIEW -> REVISED).
+/// Action to request revision (UNDER_REVIEW/PENDING_APPROVAL -> REVISED).
 pub const ACTION_REVISE: &str = "REVISE";
 
-/// Action to withdraw a submission (PROPOSED -> DRAFT).
+/// Action to withdraw a submission (legacy, kept for compatibility).
 pub const ACTION_WITHDRAW: &str = "WITHDRAW";
 
 /// Action to deprecate an accepted entity (ACCEPTED -> DEPRECATED).

@@ -285,6 +285,8 @@ async fn main() -> anyhow::Result<()> {
         .route("/api/v1/glossary/terms/{term_id}/subject-areas/{area_id}", delete(api::glossary::detach_subject_area))
         .route("/api/v1/glossary/terms/{term_id}/tags", post(api::glossary::attach_tag))
         .route("/api/v1/glossary/terms/{term_id}/tags/{tag_id}", delete(api::glossary::detach_tag))
+        .route("/api/v1/glossary/terms/{term_id}/aliases", post(api::glossary::add_alias))
+        .route("/api/v1/glossary/terms/{term_id}/aliases/{alias_id}", delete(api::glossary::remove_alias))
         .route("/api/v1/glossary/domains", get(api::glossary::list_domains))
         .route("/api/v1/glossary/categories", get(api::glossary::list_categories))
         .route("/api/v1/glossary/term-types", get(api::glossary::list_term_types))

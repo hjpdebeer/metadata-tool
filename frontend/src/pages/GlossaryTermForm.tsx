@@ -14,10 +14,11 @@ import {
   Space,
   Spin,
   Switch,
+  Tag,
   Typography,
   message,
 } from 'antd';
-import { ArrowLeftOutlined, RobotOutlined } from '@ant-design/icons';
+import { ArrowLeftOutlined, PlusOutlined, RobotOutlined } from '@ant-design/icons';
 import { glossaryApi } from '../services/glossaryApi';
 import { aiApi } from '../services/aiApi';
 import { usersApi } from '../services/usersApi';
@@ -30,6 +31,8 @@ import type {
   GlossaryLanguage,
   GlossaryReviewFrequency,
   GlossaryTerm,
+  GlossaryTermDetailView,
+  GlossaryTermListItem,
   GlossaryTermType,
   GlossaryUnitOfMeasure,
   GlossaryVisibilityLevel,
@@ -53,10 +56,15 @@ const GlossaryTermForm: React.FC = () => {
   const [unitsOfMeasure, setUnitsOfMeasure] = useState<GlossaryUnitOfMeasure[]>([]);
   const [classifications, setClassifications] = useState<DataClassificationRef[]>([]);
   const [reviewFrequencies, setReviewFrequencies] = useState<GlossaryReviewFrequency[]>([]);
-  const [confidenceLevels, setConfidenceLevels] = useState<GlossaryConfidenceLevel[]>([]);
+  const [, setConfidenceLevels] = useState<GlossaryConfidenceLevel[]>([]);
   const [visibilityLevels, setVisibilityLevels] = useState<GlossaryVisibilityLevel[]>([]);
   const [languages, setLanguages] = useState<GlossaryLanguage[]>([]);
   const [users, setUsers] = useState<UserListItem[]>([]);
+
+  const [allTerms, setAllTerms] = useState<GlossaryTermListItem[]>([]);
+  const [aliases, setAliases] = useState<{ alias_id: string; alias_name: string; alias_type: string | null }[]>([]);
+  const [addingAlias, setAddingAlias] = useState(false);
+  const [newAliasName, setNewAliasName] = useState('');
 
   const [loading, setLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -74,6 +82,7 @@ const GlossaryTermForm: React.FC = () => {
       glossaryApi.listVisibilityLevels(),
       glossaryApi.listLanguages(),
       usersApi.listUsers({ page_size: 500, is_active: true }),
+      glossaryApi.listTerms({ page_size: 500 }),
     ]);
 
     if (results[0].status === 'fulfilled') setDomains(results[0].value.data);
@@ -94,46 +103,57 @@ const GlossaryTermForm: React.FC = () => {
         setUsers((userData as unknown as { data: UserListItem[] }).data || []);
       }
     }
+    if (results[10].status === 'fulfilled') {
+      const termData = results[10].value.data;
+      if (Array.isArray(termData)) {
+        setAllTerms(termData);
+      } else {
+        setAllTerms((termData as unknown as { data: GlossaryTermListItem[] }).data || []);
+      }
+    }
   }, []);
 
   const fetchExistingTerm = useCallback(async () => {
     if (!id) return;
     setLoading(true);
     try {
-      const response = await glossaryApi.getTerm(id);
-      const t = response.data;
-      setExistingTerm(t);
+      const response = await glossaryApi.getTermDetail(id);
+      const detail: GlossaryTermDetailView = response.data;
+      // Also store as GlossaryTerm for change-diffing
+      setExistingTerm(detail as unknown as GlossaryTerm);
+      setAliases(detail.aliases || []);
       form.setFieldsValue({
-        term_name: t.term_name,
-        definition: t.definition,
-        definition_notes: t.definition_notes || undefined,
-        counter_examples: t.counter_examples || undefined,
-        formula: t.formula || undefined,
-        business_context: t.business_context || undefined,
-        examples: t.examples || undefined,
-        abbreviation: t.abbreviation || undefined,
-        domain_id: t.domain_id || undefined,
-        category_id: t.category_id || undefined,
-        term_type_id: t.term_type_id || undefined,
-        unit_of_measure_id: t.unit_of_measure_id || undefined,
-        classification_id: t.classification_id || undefined,
-        owner_user_id: t.owner_user_id || undefined,
-        steward_user_id: t.steward_user_id || undefined,
-        domain_owner_user_id: t.domain_owner_user_id || undefined,
-        approver_user_id: t.approver_user_id || undefined,
-        organisational_unit: t.organisational_unit || undefined,
-        review_frequency_id: t.review_frequency_id || undefined,
-        is_cde: t.is_cde,
-        golden_source: t.golden_source || undefined,
-        confidence_level_id: t.confidence_level_id || undefined,
-        visibility_id: t.visibility_id || undefined,
-        language_id: t.language_id || undefined,
-        used_in_reports: t.used_in_reports || undefined,
-        used_in_policies: t.used_in_policies || undefined,
-        regulatory_reporting_usage: t.regulatory_reporting_usage || undefined,
-        source_reference: t.source_reference || undefined,
-        regulatory_reference: t.regulatory_reference || undefined,
-        external_reference: t.external_reference || undefined,
+        term_name: detail.term_name,
+        definition: detail.definition,
+        definition_notes: detail.definition_notes || undefined,
+        counter_examples: detail.counter_examples || undefined,
+        formula: detail.formula || undefined,
+        business_context: detail.business_context || undefined,
+        examples: detail.examples || undefined,
+        abbreviation: detail.abbreviation || undefined,
+        domain_id: detail.domain_id || undefined,
+        category_id: detail.category_id || undefined,
+        term_type_id: detail.term_type_id || undefined,
+        unit_of_measure_id: detail.unit_of_measure_id || undefined,
+        classification_id: detail.classification_id || undefined,
+        owner_user_id: detail.owner_user_id || undefined,
+        steward_user_id: detail.steward_user_id || undefined,
+        domain_owner_user_id: detail.domain_owner_user_id || undefined,
+        approver_user_id: detail.approver_user_id || undefined,
+        organisational_unit: detail.organisational_unit || undefined,
+        review_frequency_id: detail.review_frequency_id || undefined,
+        is_cde: detail.is_cde,
+        golden_source: detail.golden_source || undefined,
+        confidence_level_id: detail.confidence_level_id || undefined,
+        visibility_id: detail.visibility_id || undefined,
+        language_id: detail.language_id || undefined,
+        used_in_reports: detail.used_in_reports || undefined,
+        used_in_policies: detail.used_in_policies || undefined,
+        regulatory_reporting_usage: detail.regulatory_reporting_usage || undefined,
+        source_reference: detail.source_reference || undefined,
+        regulatory_reference: detail.regulatory_reference || undefined,
+        external_reference: detail.external_reference || undefined,
+        parent_term_id: detail.parent_term_id || undefined,
       });
     } catch {
       message.error('Failed to load term for editing.');
@@ -200,6 +220,7 @@ const GlossaryTermForm: React.FC = () => {
         'golden_source', 'confidence_level_id', 'visibility_id', 'language_id',
         'used_in_reports', 'used_in_policies', 'regulatory_reporting_usage',
         'source_reference', 'regulatory_reference', 'external_reference',
+        'parent_term_id',
       ] as const;
 
       for (const field of allFields) {
@@ -347,10 +368,6 @@ const GlossaryTermForm: React.FC = () => {
     value: f.frequency_id,
     label: f.frequency_name,
   }));
-  const confidenceOptions = confidenceLevels.map((c) => ({
-    value: c.confidence_id,
-    label: c.level_name,
-  }));
   const visibilityOptions = visibilityLevels.map((v) => ({
     value: v.visibility_id,
     label: v.visibility_name,
@@ -363,6 +380,37 @@ const GlossaryTermForm: React.FC = () => {
     value: u.user_id,
     label: `${u.display_name} (${u.email})`,
   }));
+  // Exclude current term from parent term options to prevent self-reference
+  const parentTermOptions = allTerms
+    .filter((t) => t.term_id !== id)
+    .map((t) => ({ value: t.term_id, label: t.term_name }));
+
+  const handleAddAlias = async () => {
+    const name = newAliasName.trim();
+    if (!name || !id) return;
+    try {
+      await glossaryApi.addAlias(id, name);
+      // Re-fetch detail to get updated aliases with IDs
+      const response = await glossaryApi.getTermDetail(id);
+      setAliases(response.data.aliases || []);
+      setNewAliasName('');
+      setAddingAlias(false);
+      message.success('Alias added.');
+    } catch {
+      message.error('Failed to add alias.');
+    }
+  };
+
+  const handleRemoveAlias = async (aliasId: string) => {
+    if (!id) return;
+    try {
+      await glossaryApi.removeAlias(id, aliasId);
+      setAliases((prev) => prev.filter((a) => a.alias_id !== aliasId));
+      message.success('Alias removed.');
+    } catch {
+      message.error('Failed to remove alias.');
+    }
+  };
 
   return (
     <div>
@@ -633,7 +681,79 @@ const GlossaryTermForm: React.FC = () => {
           </Text>
         </Card>
 
-        {/* Section 6: Usage & Context */}
+        {/* Section 6: Relationships */}
+        <Card
+          title="Relationships"
+          size="small"
+          style={{ marginBottom: 16 }}
+          headStyle={{ backgroundColor: '#F8FAFC' }}
+        >
+          <Row gutter={16}>
+            <Col xs={24} md={12}>
+              <Form.Item name="parent_term_id" label="Parent Term">
+                <Select
+                  placeholder="Select parent term"
+                  options={parentTermOptions}
+                  allowClear
+                  showSearch
+                  optionFilterProp="label"
+                />
+              </Form.Item>
+            </Col>
+          </Row>
+
+          <div style={{ marginBottom: 8 }}>
+            <Text type="secondary" style={{ fontSize: 12, display: 'block', marginBottom: 8 }}>
+              Synonyms / Aliases
+            </Text>
+            <Space wrap size={[4, 8]}>
+              {aliases.map((a) => (
+                <Tag
+                  key={a.alias_id}
+                  color="cyan"
+                  closable
+                  onClose={(e) => {
+                    e.preventDefault();
+                    handleRemoveAlias(a.alias_id);
+                  }}
+                >
+                  {a.alias_name}
+                </Tag>
+              ))}
+              {aliases.length === 0 && !addingAlias && (
+                <Text type="secondary" style={{ fontSize: 12 }}>No aliases</Text>
+              )}
+              {addingAlias ? (
+                <Space size={4}>
+                  <Input
+                    size="small"
+                    placeholder="Alias name"
+                    value={newAliasName}
+                    onChange={(e) => setNewAliasName(e.target.value)}
+                    onPressEnter={handleAddAlias}
+                    style={{ width: 180 }}
+                    autoFocus
+                  />
+                  <Button size="small" type="primary" onClick={handleAddAlias}>
+                    Add
+                  </Button>
+                  <Button size="small" onClick={() => { setAddingAlias(false); setNewAliasName(''); }}>
+                    Cancel
+                  </Button>
+                </Space>
+              ) : (
+                <Tag
+                  style={{ borderStyle: 'dashed', cursor: 'pointer' }}
+                  onClick={() => setAddingAlias(true)}
+                >
+                  <PlusOutlined /> Add Alias
+                </Tag>
+              )}
+            </Space>
+          </div>
+        </Card>
+
+        {/* Section 7: Usage & Context */}
         <Card
           title="Usage & Context"
           size="small"

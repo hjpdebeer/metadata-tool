@@ -282,6 +282,21 @@ pub async fn get_term(
     .fetch_all(&state.pool)
     .await?;
 
+    // Fetch child terms (terms where parent_term_id = this term)
+    let child_terms = sqlx::query_as::<_, ChildTermRef>(
+        r#"
+        SELECT term_id, term_name
+        FROM glossary_terms
+        WHERE parent_term_id = $1
+          AND deleted_at IS NULL
+          AND is_current_version = TRUE
+        ORDER BY term_name
+        "#,
+    )
+    .bind(term_id)
+    .fetch_all(&state.pool)
+    .await?;
+
     // Construct the flat response (ADR-0006 Pattern 1)
     Ok(Json(GlossaryTermDetail::from_row_and_junctions(
         row,
@@ -290,6 +305,7 @@ pub async fn get_term(
         tags,
         linked_processes,
         aliases,
+        child_terms,
     )))
 }
 
@@ -1113,6 +1129,91 @@ pub async fn detach_tag(
 
     if result.rows_affected() == 0 {
         return Err(AppError::NotFound("tag attachment not found".into()));
+    }
+
+    Ok(StatusCode::NO_CONTENT)
+}
+
+// ---------------------------------------------------------------------------
+// add_alias — POST /api/v1/glossary/terms/:term_id/aliases
+// ---------------------------------------------------------------------------
+
+#[utoipa::path(
+    post,
+    path = "/api/v1/glossary/terms/{term_id}/aliases",
+    params(("term_id" = Uuid, Path, description = "Term ID")),
+    request_body = AddAliasRequest,
+    responses(
+        (status = 201, description = "Alias added"),
+        (status = 409, description = "Alias already exists")
+    ),
+    security(("bearer_auth" = [])),
+    tag = "glossary"
+)]
+pub async fn add_alias(
+    State(state): State<AppState>,
+    Path(term_id): Path<Uuid>,
+    Json(body): Json<AddAliasRequest>,
+) -> AppResult<StatusCode> {
+    let alias_name = body.alias_name.trim().to_string();
+    if alias_name.is_empty() {
+        return Err(AppError::Validation("alias_name is required".into()));
+    }
+
+    let alias_type = body
+        .alias_type
+        .as_deref()
+        .map(|s| s.trim().to_uppercase())
+        .filter(|s| !s.is_empty());
+
+    sqlx::query(
+        r#"
+        INSERT INTO glossary_term_aliases (term_id, alias_name, alias_type)
+        VALUES ($1, $2, $3)
+        ON CONFLICT DO NOTHING
+        "#,
+    )
+    .bind(term_id)
+    .bind(&alias_name)
+    .bind(alias_type.as_deref())
+    .execute(&state.pool)
+    .await?;
+
+    Ok(StatusCode::CREATED)
+}
+
+// ---------------------------------------------------------------------------
+// remove_alias — DELETE /api/v1/glossary/terms/:term_id/aliases/:alias_id
+// ---------------------------------------------------------------------------
+
+#[utoipa::path(
+    delete,
+    path = "/api/v1/glossary/terms/{term_id}/aliases/{alias_id}",
+    params(
+        ("term_id" = Uuid, Path, description = "Term ID"),
+        ("alias_id" = Uuid, Path, description = "Alias ID")
+    ),
+    responses(
+        (status = 204, description = "Alias removed"),
+        (status = 404, description = "Alias not found")
+    ),
+    security(("bearer_auth" = [])),
+    tag = "glossary"
+)]
+pub async fn remove_alias(
+    State(state): State<AppState>,
+    Path((term_id, alias_id)): Path<(Uuid, Uuid)>,
+) -> AppResult<StatusCode> {
+    let result = sqlx::query(
+        "DELETE FROM glossary_term_aliases WHERE term_id = $1 AND alias_id = $2",
+    )
+    .bind(term_id)
+    .bind(alias_id)
+    .execute(&state.pool)
+    .await?;
+
+    if result.rows_affected() == 0 {
+        return Err(AppError::NotFound("alias not found".into()));
     }
 
     Ok(StatusCode::NO_CONTENT)

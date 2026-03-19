@@ -423,12 +423,12 @@ const GlossaryTermDetail: React.FC = () => {
     return buttons;
   };
 
-  // Related terms — placeholder until term relationships are added to the detail response
+  // Child terms from backend (terms where parent_term_id = this term)
+  const childTerms = detail.child_terms || [];
+
+  // Related terms — placeholder until glossary_term_relationships junction is wired
   type RelatedTermRef = { term_id: string; term_name: string; relationship_type: string; relationship_type_name?: string };
   const allRelatedTerms: RelatedTermRef[] = [];
-  const childTerms = allRelatedTerms.filter(
-    (r) => r.relationship_type === 'CHILD' || r.relationship_type === 'HAS_PART',
-  );
   const synonyms = allRelatedTerms.filter((r) => r.relationship_type === 'SYNONYM');
   const relatedTerms = allRelatedTerms.filter((r) => r.relationship_type === 'RELATED');
   const conflicting = allRelatedTerms.filter((r) => r.relationship_type === 'CONFLICTING');

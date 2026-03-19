@@ -237,6 +237,7 @@ export interface GlossaryTermDetailView {
   tags: { tag_id: string; tag_name: string }[];
   linked_processes: { process_id: string; process_name: string; usage_context: string | null }[];
   aliases: { alias_id: string; alias_name: string; alias_type: string | null }[];
+  child_terms: { term_id: string; term_name: string }[];
 }
 
 export interface CreateGlossaryTermRequest {
@@ -282,6 +283,7 @@ export interface UpdateGlossaryTermRequest {
   source_reference?: string;
   regulatory_reference?: string;
   external_reference?: string;
+  parent_term_id?: string;
 }
 
 export interface GlossaryDomain {
@@ -531,6 +533,14 @@ export const glossaryApi = {
 
   detachTag(termId: string, tagId: string): Promise<AxiosResponse<void>> {
     return api.delete(`/glossary/terms/${termId}/tags/${tagId}`);
+  },
+
+  addAlias(termId: string, aliasName: string, aliasType?: string): Promise<AxiosResponse<void>> {
+    return api.post(`/glossary/terms/${termId}/aliases`, { alias_name: aliasName, alias_type: aliasType });
+  },
+
+  removeAlias(termId: string, aliasId: string): Promise<AxiosResponse<void>> {
+    return api.delete(`/glossary/terms/${termId}/aliases/${aliasId}`);
   },
 };
 

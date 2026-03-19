@@ -241,6 +241,7 @@ pub struct GlossaryTermDetail {
     pub tags: Vec<GlossaryTagItem>,
     pub linked_processes: Vec<GlossaryLinkedProcess>,
     pub aliases: Vec<GlossaryAliasItem>,
+    pub child_terms: Vec<ChildTermRef>,
 }
 
 /// Organisational unit for ownership assignment dropdown
@@ -260,6 +261,13 @@ pub struct GlossaryAliasItem {
     pub alias_type: Option<String>,
 }
 
+/// Child term reference (terms where parent_term_id = this term)
+#[derive(Debug, Clone, Serialize, FromRow, ToSchema)]
+pub struct ChildTermRef {
+    pub term_id: Uuid,
+    pub term_name: String,
+}
+
 impl GlossaryTermDetail {
     /// Construct from a `GlossaryTermDetailRow` (JOIN query result) and junction data.
     pub fn from_row_and_junctions(
@@ -269,6 +277,7 @@ impl GlossaryTermDetail {
         tags: Vec<GlossaryTagItem>,
         linked_processes: Vec<GlossaryLinkedProcess>,
         aliases: Vec<GlossaryAliasItem>,
+        child_terms: Vec<ChildTermRef>,
     ) -> Self {
         Self {
             term_id: row.term_id,
@@ -335,6 +344,7 @@ impl GlossaryTermDetail {
             tags,
             linked_processes,
             aliases,
+            child_terms,
         }
     }
 }
@@ -494,6 +504,12 @@ pub struct AttachSubjectAreaRequest {
 #[derive(Debug, Deserialize, ToSchema)]
 pub struct AttachTagRequest {
     pub tag_name: String,
+}
+
+#[derive(Debug, Deserialize, ToSchema)]
+pub struct AddAliasRequest {
+    pub alias_name: String,
+    pub alias_type: Option<String>,
 }
 
 // ---------------------------------------------------------------------------

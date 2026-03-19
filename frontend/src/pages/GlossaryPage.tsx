@@ -1,7 +1,8 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Button, Card, Input, Select, Space, Table, Tag, Typography, message } from 'antd';
-import { PlusOutlined, SafetyCertificateOutlined } from '@ant-design/icons';
+import { PlusOutlined, SafetyCertificateOutlined, UploadOutlined } from '@ant-design/icons';
+import BulkUploadModal from '../components/BulkUploadModal';
 import type { TablePaginationConfig } from 'antd';
 import { glossaryApi } from '../services/glossaryApi';
 import type {
@@ -47,6 +48,7 @@ const GlossaryPage: React.FC = () => {
   const [termTypes, setTermTypes] = useState<GlossaryTermType[]>([]);
   const [loading, setLoading] = useState(false);
   const [totalCount, setTotalCount] = useState(0);
+  const [bulkUploadOpen, setBulkUploadOpen] = useState(false);
 
   const [searchQuery, setSearchQuery] = useState(searchParams.get('query') || '');
   const [selectedDomain, setSelectedDomain] = useState<string | undefined>(
@@ -258,13 +260,21 @@ const GlossaryPage: React.FC = () => {
         <Title level={3} style={{ margin: 0 }}>
           Business Glossary
         </Title>
-        <Button
-          type="primary"
-          icon={<PlusOutlined />}
-          onClick={() => navigate('/glossary/new')}
-        >
-          New Term
-        </Button>
+        <Space>
+          <Button
+            icon={<UploadOutlined />}
+            onClick={() => setBulkUploadOpen(true)}
+          >
+            Bulk Upload
+          </Button>
+          <Button
+            type="primary"
+            icon={<PlusOutlined />}
+            onClick={() => navigate('/glossary/new')}
+          >
+            New Term
+          </Button>
+        </Space>
       </div>
       <Card>
         <Space wrap style={{ marginBottom: 16, width: '100%' }}>
@@ -318,6 +328,12 @@ const GlossaryPage: React.FC = () => {
           scroll={{ x: 1100 }}
         />
       </Card>
+
+      <BulkUploadModal
+        open={bulkUploadOpen}
+        onClose={() => setBulkUploadOpen(false)}
+        onSuccess={() => fetchTerms()}
+      />
     </div>
   );
 };

@@ -386,6 +386,22 @@ export interface RecentTerm {
   updated_at: string;
 }
 
+// --- Bulk upload types ---
+
+export interface BulkUploadError {
+  row: number;
+  field: string | null;
+  message: string;
+}
+
+export interface BulkUploadResult {
+  total_rows: number;
+  successful: number;
+  failed: number;
+  errors: BulkUploadError[];
+  created_term_ids: string[];
+}
+
 // --- API functions ---
 
 export const glossaryApi = {
@@ -463,6 +479,32 @@ export const glossaryApi = {
 
   listClassifications(): Promise<AxiosResponse<DataClassificationRef[]>> {
     return api.get('/data-dictionary/classifications');
+  },
+
+  // ----- Bulk upload -----
+
+  downloadBulkUploadTemplate(): Promise<void> {
+    return api.get('/glossary/terms/bulk-upload/template', {
+      responseType: 'blob',
+    }).then((response) => {
+      const url = window.URL.createObjectURL(new Blob([response.data]));
+      const link = document.createElement('a');
+      link.href = url;
+      link.setAttribute('download', 'glossary_term_template.xlsx');
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(url);
+    });
+  },
+
+  uploadBulkTerms(file: File): Promise<AxiosResponse<BulkUploadResult>> {
+    const formData = new FormData();
+    formData.append('file', file);
+    return api.post('/glossary/terms/bulk-upload', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+      timeout: 120000, // 2 minute timeout for large uploads
+    });
   },
 
   // ----- Junction endpoints (attach/detach) -----

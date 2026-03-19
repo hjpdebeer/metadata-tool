@@ -42,6 +42,17 @@ tracing-subscriber.workspace = true
 # Configuration
 dotenvy.workspace = true
 
+# Excel processing
+calamine.workspace = true
+rust_xlsxwriter.workspace = true
+
+# Encryption
+aes-gcm.workspace = true
+
+# File upload
+axum_typed_multipart.workspace = true
+tempfile.workspace = true
+
 # Utilities (alphabetical)
 anyhow.workspace = true
 chrono.workspace = true

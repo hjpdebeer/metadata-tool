@@ -598,6 +598,36 @@ pub struct GlossaryTag {
 }
 
 // ---------------------------------------------------------------------------
+// Bulk upload types
+// ---------------------------------------------------------------------------
+
+/// Result of a bulk upload operation — returned to the frontend.
+#[derive(Debug, Serialize, ToSchema)]
+pub struct BulkUploadResult {
+    /// Total number of data rows found in the file.
+    pub total_rows: usize,
+    /// Number of rows successfully inserted.
+    pub successful: usize,
+    /// Number of rows that failed validation or insertion.
+    pub failed: usize,
+    /// Per-row error details.
+    pub errors: Vec<BulkUploadError>,
+    /// UUIDs of the terms that were created successfully.
+    pub created_term_ids: Vec<Uuid>,
+}
+
+/// A single error encountered while processing a bulk upload row.
+#[derive(Debug, Serialize, ToSchema)]
+pub struct BulkUploadError {
+    /// 1-based row number in the Excel file (header = row 1, first data = row 2).
+    pub row: usize,
+    /// Column/field name that caused the error, if applicable.
+    pub field: Option<String>,
+    /// Human-readable error message.
+    pub message: String,
+}
+
+// ---------------------------------------------------------------------------
 // Dashboard statistics
 // ---------------------------------------------------------------------------
 

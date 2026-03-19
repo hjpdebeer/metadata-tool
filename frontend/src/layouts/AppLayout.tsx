@@ -30,7 +30,6 @@ import {
   MenuFoldOutlined,
   MenuUnfoldOutlined,
   WarningOutlined,
-  TeamOutlined,
 } from '@ant-design/icons';
 import { useAuth } from '../hooks/useAuth';
 import {
@@ -95,21 +94,7 @@ const AppLayout: React.FC = () => {
     { key: '/processes', icon: <PartitionOutlined />, label: 'Business Processes' },
     { key: '/workflow', icon: <CheckSquareOutlined />, label: 'My Tasks' },
     ...(isAdmin
-      ? [
-          {
-            key: 'admin-group',
-            icon: <SettingOutlined />,
-            label: 'Admin',
-            children: [
-              { key: '/admin/users', icon: <TeamOutlined />, label: 'User Management' },
-              {
-                key: '/admin/notifications',
-                icon: <BellOutlined />,
-                label: 'Notification Preferences',
-              },
-            ],
-          },
-        ]
+      ? [{ key: '/admin', icon: <SettingOutlined />, label: 'Admin Panel' }]
       : []),
   ];
 
@@ -203,8 +188,7 @@ const AppLayout: React.FC = () => {
     if (path.startsWith('/lineage')) return '/lineage';
     if (path.startsWith('/applications')) return '/applications';
     if (path.startsWith('/processes')) return '/processes';
-    if (path === '/admin/users') return '/admin/users';
-    if (path === '/admin/notifications') return '/admin/notifications';
+    if (path.startsWith('/admin')) return '/admin';
     return path;
   };
 
@@ -213,7 +197,7 @@ const AppLayout: React.FC = () => {
     const keys: string[] = [];
     if (location.pathname.startsWith('/data-dictionary')) keys.push('data-dictionary-group');
     if (location.pathname.startsWith('/data-quality')) keys.push('data-quality-group');
-    if (location.pathname.startsWith('/admin')) keys.push('admin-group');
+    // Admin is a single item now, no sub-menu to open
     return keys;
   };
 

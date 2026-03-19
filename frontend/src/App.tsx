@@ -29,8 +29,7 @@ import LineageGraphList from './pages/LineageGraphList';
 import LineageGraphCreate from './pages/LineageGraphCreate';
 import LineageGraphView from './pages/LineageGraphView';
 import LoginPage from './pages/LoginPage';
-import UserManagementPage from './pages/UserManagementPage';
-import NotificationPreferencesPage from './pages/NotificationPreferencesPage';
+import AdminPanel from './pages/AdminPanel';
 
 const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { isAuthenticated, isLoading } = useAuth();
@@ -135,8 +134,7 @@ const App: React.FC = () => {
               <Route path="processes/:id" element={<ProcessDetail />} />
               <Route path="processes/:id/edit" element={<ProcessForm />} />
               <Route path="workflow" element={<WorkflowTasksPage />} />
-              <Route path="admin/users" element={<UserManagementPage />} />
-              <Route path="admin/notifications" element={<NotificationPreferencesPage />} />
+              <Route path="admin" element={<AdminPanel />} />
             </Route>
           </Routes>
         </AuthProvider>

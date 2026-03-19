@@ -26,6 +26,8 @@ use metadata_tool::db::{self, AppState};
         api::auth::login,
         api::auth::callback,
         api::auth::me,
+        api::bulk_upload::download_template,
+        api::bulk_upload::bulk_upload,
         api::glossary::list_terms,
         api::glossary::get_term,
         api::glossary::create_term,
@@ -130,6 +132,16 @@ use metadata_tool::db::{self, AppState};
         api::ai::accept_suggestion,
         api::ai::reject_suggestion,
         api::ai::submit_feedback,
+        // Admin
+        api::admin::list_settings,
+        api::admin::update_setting,
+        api::admin::reveal_setting,
+        api::admin::test_connection,
+        api::admin::list_lookup,
+        api::admin::create_lookup,
+        api::admin::update_lookup,
+        api::admin::delete_lookup,
+        api::admin::get_lookup_usage_count,
     ),
     tags(
         (name = "health", description = "Health check"),
@@ -144,6 +156,7 @@ use metadata_tool::db::{self, AppState};
         (name = "users", description = "User & role management"),
         (name = "notifications", description = "Notification management"),
         (name = "ai", description = "AI-powered metadata enrichment"),
+        (name = "admin", description = "Admin panel — settings & lookup table management"),
     ),
     components(
         schemas(
@@ -151,6 +164,8 @@ use metadata_tool::db::{self, AppState};
             api::auth::DevLoginRequest,
             api::auth::TokenResponse,
             api::auth::MeResponse,
+            metadata_tool::domain::glossary::BulkUploadResult,
+            metadata_tool::domain::glossary::BulkUploadError,
             metadata_tool::domain::ai::AiEnrichRequest,
             metadata_tool::domain::ai::AiEnrichResponse,
             metadata_tool::domain::ai::AiSuggestionResponse,
@@ -159,6 +174,16 @@ use metadata_tool::db::{self, AppState};
             metadata_tool::domain::ai::RejectSuggestionRequest,
             metadata_tool::domain::ai::FeedbackRequest,
             metadata_tool::domain::ai::FeedbackResponse,
+            metadata_tool::settings::SystemSettingResponse,
+            metadata_tool::settings::UpdateSettingRequest,
+            metadata_tool::settings::UpdateSettingResponse,
+            metadata_tool::settings::TestConnectionResponse,
+            api::admin::SettingsListResponse,
+            api::admin::RevealSettingResponse,
+            api::admin::LookupRow,
+            api::admin::LookupRowRequest,
+            api::admin::LookupListResponse,
+            api::admin::UsageCountResponse,
         )
     ),
     modifiers(&SecurityAddon)
@@ -243,7 +268,9 @@ async fn main() -> anyhow::Result<()> {
     let protected_routes = Router::new()
         // Auth
         .route("/api/v1/auth/me", get(api::auth::me))
-        // Business Glossary
+        // Business Glossary — bulk upload routes BEFORE {term_id} to avoid path conflicts
+        .route("/api/v1/glossary/terms/bulk-upload/template", get(api::bulk_upload::download_template))
+        .route("/api/v1/glossary/terms/bulk-upload", post(api::bulk_upload::bulk_upload))
         .route("/api/v1/glossary/terms", get(api::glossary::list_terms).post(api::glossary::create_term))
         .route("/api/v1/glossary/terms/{term_id}", get(api::glossary::get_term).put(api::glossary::update_term))
         .route("/api/v1/glossary/terms/{term_id}/ai-enrich", post(api::glossary::ai_enrich_term))
@@ -331,6 +358,15 @@ async fn main() -> anyhow::Result<()> {
         .route("/api/v1/ai/suggestions/{suggestion_id}/accept", post(api::ai::accept_suggestion))
         .route("/api/v1/ai/suggestions/{suggestion_id}/reject", post(api::ai::reject_suggestion))
         .route("/api/v1/ai/suggestions/{suggestion_id}/feedback", post(api::ai::submit_feedback))
+        // Admin — settings
+        .route("/api/v1/admin/settings", get(api::admin::list_settings))
+        .route("/api/v1/admin/settings/{key}", put(api::admin::update_setting))
+        .route("/api/v1/admin/settings/{key}/reveal", get(api::admin::reveal_setting))
+        .route("/api/v1/admin/settings/test-connection/{key}", post(api::admin::test_connection))
+        // Admin — lookup table CRUD
+        .route("/api/v1/admin/lookups/{table_name}", get(api::admin::list_lookup).post(api::admin::create_lookup))
+        .route("/api/v1/admin/lookups/{table_name}/{id}", put(api::admin::update_lookup).delete(api::admin::delete_lookup))
+        .route("/api/v1/admin/lookups/{table_name}/{id}/usage-count", get(api::admin::get_lookup_usage_count))
         // Apply auth middleware to all protected routes
         .layer(middleware::from_fn_with_state(state.clone(), require_auth));
 

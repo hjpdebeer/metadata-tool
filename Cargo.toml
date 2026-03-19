@@ -12,7 +12,7 @@ repository = "https://github.com/hjpdebeer/metadata-tool"
 # in individual crate Cargo.toml files. Never add versions directly to crates.
 [workspace.dependencies]
 # Web framework
-axum = { version = "0.8", features = ["macros", "json"] }
+axum = { version = "0.8", features = ["macros", "json", "multipart"] }
 axum-extra = { version = "0.10", features = ["typed-header", "cookie"] }
 tower = { version = "0.5", features = ["full"] }
 tower-http = { version = "0.6", features = ["cors", "trace", "compression-gzip", "request-id", "timeout"] }
@@ -50,6 +50,17 @@ anyhow = "1"
 validator = { version = "0.19", features = ["derive"] }
 regex = "1"
 reqwest = { version = "0.12", default-features = false, features = ["json", "native-tls", "charset", "http2", "macos-system-configuration"] }
+
+# Excel processing
+calamine = "0.26"
+rust_xlsxwriter = "0.79"
+
+# Encryption
+aes-gcm = "0.10"
+
+# Multipart file upload
+axum_typed_multipart = "0.14"
+tempfile = "3"
 
 # Testing
 axum-test = "16"

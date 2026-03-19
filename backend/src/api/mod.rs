@@ -4,7 +4,9 @@
 //! All handlers use utoipa annotations for OpenAPI documentation and
 //! follow ADR-0006 data access patterns for consistent read/write behaviour.
 
+pub mod admin;
 pub mod glossary;
+pub mod bulk_upload;
 pub mod data_dictionary;
 pub mod data_quality;
 pub mod lineage;

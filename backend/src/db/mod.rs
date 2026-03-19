@@ -3,17 +3,26 @@ use sqlx::PgPool;
 use uuid::Uuid;
 
 use crate::config::AppConfig;
+use crate::settings::SettingsCache;
 
 /// Shared application state available to all route handlers
 #[derive(Clone)]
 pub struct AppState {
     pub pool: PgPool,
     pub config: AppConfig,
+    pub settings_cache: Option<SettingsCache>,
 }
 
 impl AppState {
     pub fn new(pool: PgPool, config: AppConfig) -> Self {
-        Self { pool, config }
+        let encryption_secret = std::env::var("SETTINGS_ENCRYPTION_KEY")
+            .unwrap_or_else(|_| config.jwt_secret.clone());
+        let settings_cache = Some(SettingsCache::new(encryption_secret));
+        Self {
+            pool,
+            config,
+            settings_cache,
+        }
     }
 }
 

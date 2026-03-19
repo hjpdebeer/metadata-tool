@@ -30,4 +30,5 @@ pub mod error;
 pub mod ai;
 pub mod naming;
 pub mod notifications;
+pub mod settings;
 pub mod workflow;

@@ -100,19 +100,18 @@ const GlossaryTermDetail: React.FC = () => {
 
   const isSteward = user?.roles?.includes('data_steward') || user?.roles?.includes('admin');
 
-  const fetchDetail = useCallback(async () => {
+  const fetchDetail = useCallback(async (showSpinner = false) => {
     if (!id) return;
-    setLoading(true);
+    if (showSpinner) setLoading(true);
     try {
       // ADR-0006: Single detail endpoint returns flat response with all resolved names + junction data
       const response = await glossaryApi.getTermDetail(id);
-      const detailData = response.data;
-      setDetail(detailData);
+      setDetail(response.data);
     } catch {
       message.error('Failed to load term details.');
       navigate('/glossary');
     } finally {
-      setLoading(false);
+      if (showSpinner) setLoading(false);
     }
   }, [id, navigate]);
 
@@ -126,7 +125,7 @@ const GlossaryTermDetail: React.FC = () => {
   }, []);
 
   useEffect(() => {
-    fetchDetail();
+    fetchDetail(true); // Initial load — show spinner
     fetchLookups();
   }, [fetchDetail, fetchLookups]);
 

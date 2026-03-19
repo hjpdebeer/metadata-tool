@@ -527,7 +527,7 @@ const GlossaryTermForm: React.FC = () => {
           </Row>
           <Row gutter={16}>
             <Col xs={24} md={8}>
-              <Form.Item name="classification_id" label="Sensitivity Classification">
+              <Form.Item name="classification_id" label="Data Classification">
                 <Select
                   placeholder="Select classification"
                   options={classificationOptions}

@@ -139,6 +139,7 @@ fn build_prompt(
     entity_type: &str,
     entity_data: &serde_json::Value,
     existing_fields: &[String],
+    lookups: &serde_json::Value,
 ) -> String {
     let existing_list = if existing_fields.is_empty() {
         "None specified".to_string()
@@ -147,16 +148,27 @@ fn build_prompt(
     };
 
     match entity_type {
-        "glossary_term" => build_glossary_term_prompt(entity_data, &existing_list),
+        "glossary_term" => build_glossary_term_prompt(entity_data, &existing_list, lookups),
         _ => build_generic_prompt(entity_type, entity_data, &existing_list),
     }
 }
 
-/// Specialised prompt for glossary terms covering all 22 AI-suggestible fields
+/// Specialised prompt for glossary terms covering all 22 AI-suggestible fields.
+/// Includes lookup tables with UUIDs for dropdown fields (CODING_STANDARDS Section 15.6).
 fn build_glossary_term_prompt(
     entity_data: &serde_json::Value,
     existing_list: &str,
+    lookups: &serde_json::Value,
 ) -> String {
+    // Format lookup tables for the prompt (only if non-empty)
+    let domains_json = serde_json::to_string_pretty(&lookups["domain"]).unwrap_or_default();
+    let categories_json = serde_json::to_string_pretty(&lookups["category"]).unwrap_or_default();
+    let classifications_json =
+        serde_json::to_string_pretty(&lookups["data_classification"]).unwrap_or_default();
+    let term_types_json = serde_json::to_string_pretty(&lookups["term_type"]).unwrap_or_default();
+    let units_json =
+        serde_json::to_string_pretty(&lookups["unit_of_measure"]).unwrap_or_default();
+
     format!(
         r#"You are a metadata governance expert for financial institutions. Given a business glossary term, suggest values for empty metadata fields based on industry standards (DAMA DMBOK, BCBS 239, ISO 8000).
 
@@ -166,13 +178,13 @@ Current field values:
 
 Fields that already have values: {existing_list}
 
-Suggest values for ONLY these text fields (never suggest ID fields, FK fields, or ownership fields):
+Suggest values for ONLY these fields (never suggest ID fields, FK fields, or ownership fields):
+
+TEXT FIELDS (return a descriptive string):
 - abbreviation: common abbreviation or acronym
 - definition_notes: additional clarifying notes on the definition
 - counter_examples: what this term does NOT mean, common confusions
 - formula: calculation formula if this is a KPI/metric (null if not applicable)
-- unit_of_measure: suggest the unit name (e.g., "Percentage (%)", "Currency", "Count") — user will map to dropdown
-- term_type: suggest the type name (e.g., "KPI / Financial Metric", "Business Concept", "Regulatory Term", "Technical Term", "Process Term", "Product Term", "Risk Term", "Compliance Term") — user will map to dropdown
 - business_context: business rules, operational rules, and calculation methodology
 - examples: concrete examples of this term in use
 - source_reference: authoritative source for this definition
@@ -188,29 +200,49 @@ Suggest values for ONLY these text fields (never suggest ID fields, FK fields, o
 - used_in_policies: policies referencing this term
 - golden_source: authoritative source system for this term's data
 
+LOOKUP FIELDS — For these fields, you MUST return the UUID "id" value from the provided list, NOT a display name.
+Pick the single best match from each list. If none fits well, omit the field.
+
+- domain: pick the best matching domain UUID from this list:
+{domains_json}
+
+- category: pick the best matching category UUID from this list:
+{categories_json}
+
+- data_classification: pick the best matching classification UUID from this list:
+{classifications_json}
+
+- term_type: pick the best matching term type UUID from this list:
+{term_types_json}
+
+- unit_of_measure: pick the best matching unit UUID from this list:
+{units_json}
+
 RESPONSE FORMAT — you MUST respond with a JSON array conforming to this schema:
 [
   {{
     "field_name": "string — exact field name from the list above, max 64 chars",
-    "suggested_value": "string — max 2000 chars for text fields, max 50 chars for abbreviation, max 200 chars for comma-separated lists (tags, subject_areas, regulatory_tags)",
+    "suggested_value": "string — for text fields: max 2000 chars, max 50 chars for abbreviation, max 200 chars for comma-separated lists. For lookup fields: the UUID string from the lookup list.",
     "confidence": 0.85,
     "rationale": "string — max 500 chars, cite standards (DAMA DMBOK, BCBS 239, ISO 8000) where applicable"
   }}
 ]
-
-ALLOWED VALUES for dropdown fields (suggest the DISPLAY NAME, not an ID):
-- term_type: "KPI / Financial Metric", "Business Concept", "Regulatory Term", "Technical Term", "Process Term", "Product Term", "Risk Term", "Compliance Term"
-- unit_of_measure: "Percentage", "Currency", "Count", "Ratio", "Days", "Months", "Years", "Basis Points", "Boolean", "Text", "Date", "Volume", "Weight", "Rate"
 
 RULES:
 - Never suggest values for fields ending in _id, _at, or _by
 - Never suggest owner, steward, approver, organisational_unit, or domain_owner
 - Only suggest for fields that are empty or missing — skip fields in the "already have values" list
 - Every suggested_value MUST be a non-null, non-empty string
+- For lookup fields (domain, category, data_classification, term_type, unit_of_measure), the suggested_value MUST be a UUID from the provided list — never a display name
 - Return [] if no suggestions are needed
 - Return ONLY the JSON array — no markdown, no explanation text"#,
         entity_json = serde_json::to_string_pretty(entity_data).unwrap_or_default(),
         existing_list = existing_list,
+        domains_json = domains_json,
+        categories_json = categories_json,
+        classifications_json = classifications_json,
+        term_types_json = term_types_json,
+        units_json = units_json,
     )
 }
 
@@ -511,12 +543,17 @@ fn parse_suggestions(text: &str) -> Result<Vec<RawAiSuggestion>, AppError> {
 /// Calls the AI provider (Claude primary, OpenAI fallback) to generate
 /// metadata enrichment suggestions for the given entity.
 ///
+/// The `lookups` parameter provides lookup table values with UUIDs for dropdown
+/// fields (CODING_STANDARDS Section 15.6). Pass `serde_json::json!({})` for
+/// entity types that don't need lookups.
+///
 /// Returns structured suggestions with provider/model metadata.
 pub async fn enrich_entity(
     config: &AiConfig,
     entity_type: &str,
     entity_data: serde_json::Value,
     existing_fields: Vec<String>,
+    lookups: serde_json::Value,
 ) -> Result<EnrichmentResult, AppError> {
     // Verify at least one provider is configured
     if config.anthropic_api_key.is_none() && config.openai_api_key.is_none() {
@@ -527,7 +564,7 @@ pub async fn enrich_entity(
 
     // Sanitize entity data to mitigate prompt injection (SEC-013)
     let sanitized_data = sanitize_json_for_prompt(&entity_data);
-    let prompt = build_prompt(entity_type, &sanitized_data, &existing_fields);
+    let prompt = build_prompt(entity_type, &sanitized_data, &existing_fields, &lookups);
 
     // Try Claude first (primary)
     if config.anthropic_api_key.is_some() {
@@ -651,6 +688,7 @@ Hope this helps!"#;
             "data_element",
             &serde_json::json!({"element_name": "Test"}),
             &["element_name".to_string()],
+            &serde_json::json!({}),
         );
         assert!(prompt.contains("data_element"));
         assert!(prompt.contains("DAMA DMBOK"));
@@ -694,10 +732,18 @@ Hope this helps!"#;
 
     #[test]
     fn glossary_prompt_includes_all_enrichable_fields() {
+        let lookups = serde_json::json!({
+            "domain": [{"id": "00000000-0000-0000-0000-000000000001", "name": "Finance"}],
+            "category": [{"id": "00000000-0000-0000-0000-000000000002", "name": "KPI"}],
+            "data_classification": [{"id": "00000000-0000-0000-0000-000000000003", "name": "Confidential"}],
+            "term_type": [{"id": "00000000-0000-0000-0000-000000000004", "name": "Business Concept"}],
+            "unit_of_measure": [{"id": "00000000-0000-0000-0000-000000000005", "name": "Percentage"}],
+        });
         let prompt = build_prompt(
             "glossary_term",
             &serde_json::json!({"term_name": "NPL Ratio", "definition": "Non-performing loan ratio"}),
             &["term_name".to_string(), "definition".to_string()],
+            &lookups,
         );
         assert!(prompt.contains("glossary_term"));
         assert!(prompt.contains("definition_notes"));
@@ -713,5 +759,9 @@ Hope this helps!"#;
         assert!(prompt.contains("used_in_reports"));
         assert!(prompt.contains("used_in_policies"));
         assert!(prompt.contains("parent_term"));
+        // Verify lookup UUIDs are included in the prompt
+        assert!(prompt.contains("00000000-0000-0000-0000-000000000001"));
+        assert!(prompt.contains("Finance"));
+        assert!(prompt.contains("LOOKUP FIELDS"));
     }
 }

@@ -9,6 +9,61 @@ use crate::domain::ai::*;
 use crate::error::{AppError, AppResult};
 
 // ---------------------------------------------------------------------------
+// Helper: fetch lookup table values with UUIDs for AI prompts
+// (CODING_STANDARDS Section 15.6)
+// ---------------------------------------------------------------------------
+
+/// Row type for `SELECT id, name` queries against lookup tables.
+#[derive(sqlx::FromRow)]
+struct IdName {
+    id: Uuid,
+    name: String,
+}
+
+/// Fetch all glossary-related lookup tables as `{id, name}` arrays.
+/// These are embedded in the AI prompt so the model returns a UUID directly
+/// instead of guessing a display name (eliminates fuzzy matching).
+async fn fetch_glossary_lookups(pool: &sqlx::PgPool) -> Result<serde_json::Value, AppError> {
+    let domains = sqlx::query_as::<_, IdName>(
+        "SELECT domain_id AS id, domain_name AS name FROM glossary_domains ORDER BY domain_name",
+    )
+    .fetch_all(pool)
+    .await?;
+
+    let categories = sqlx::query_as::<_, IdName>(
+        "SELECT category_id AS id, category_name AS name FROM glossary_categories ORDER BY category_name",
+    )
+    .fetch_all(pool)
+    .await?;
+
+    let classifications = sqlx::query_as::<_, IdName>(
+        "SELECT classification_id AS id, classification_name AS name FROM data_classifications ORDER BY display_order",
+    )
+    .fetch_all(pool)
+    .await?;
+
+    let term_types = sqlx::query_as::<_, IdName>(
+        "SELECT term_type_id AS id, type_name AS name FROM glossary_term_types ORDER BY display_order",
+    )
+    .fetch_all(pool)
+    .await?;
+
+    let units = sqlx::query_as::<_, IdName>(
+        "SELECT unit_id AS id, unit_name AS name FROM glossary_units_of_measure ORDER BY display_order",
+    )
+    .fetch_all(pool)
+    .await?;
+
+    Ok(serde_json::json!({
+        "domain": domains.iter().map(|r| serde_json::json!({"id": r.id, "name": r.name})).collect::<Vec<_>>(),
+        "category": categories.iter().map(|r| serde_json::json!({"id": r.id, "name": r.name})).collect::<Vec<_>>(),
+        "data_classification": classifications.iter().map(|r| serde_json::json!({"id": r.id, "name": r.name})).collect::<Vec<_>>(),
+        "term_type": term_types.iter().map(|r| serde_json::json!({"id": r.id, "name": r.name})).collect::<Vec<_>>(),
+        "unit_of_measure": units.iter().map(|r| serde_json::json!({"id": r.id, "name": r.name})).collect::<Vec<_>>(),
+    }))
+}
+
+// ---------------------------------------------------------------------------
 // Helper: fetch entity data as JSON for the AI prompt
 // ---------------------------------------------------------------------------
 
@@ -111,6 +166,22 @@ async fn fetch_entity_data(
             }
             if row.external_reference.is_some() {
                 existing.push("external_reference".to_string());
+            }
+            // Track existing lookup field values so AI skips them
+            if row.domain_id.is_some() {
+                existing.push("domain".to_string());
+            }
+            if row.category_id.is_some() {
+                existing.push("category".to_string());
+            }
+            if row.classification_id.is_some() {
+                existing.push("data_classification".to_string());
+            }
+            if row.term_type_id.is_some() {
+                existing.push("term_type".to_string());
+            }
+            if row.unit_of_measure_id.is_some() {
+                existing.push("unit_of_measure".to_string());
             }
 
             Ok((json, existing))
@@ -257,7 +328,36 @@ async fn apply_suggestion_to_entity(
                     sqlx::query("UPDATE glossary_terms SET organisational_unit = $1, updated_by = $2, updated_at = CURRENT_TIMESTAMP WHERE term_id = $3 AND deleted_at IS NULL")
                         .bind(value).bind(user_id).bind(entity_id).execute(pool).await?;
                 }
-                // --- Lookup columns: resolve display name to FK ID (ADR-0006 Pattern 2) ---
+                // --- Lookup columns: UUID-first resolution (CODING_STANDARDS Section 15.6) ---
+                // AI now returns UUIDs directly from the lookup list embedded in the prompt.
+                // Falls back to ILIKE name match for backward compatibility.
+                "domain" => {
+                    if let Some(id) = crate::db::resolve_lookup(
+                        pool, value,
+                        "SELECT domain_id FROM glossary_domains WHERE domain_name ILIKE $1 LIMIT 1",
+                    ).await {
+                        sqlx::query("UPDATE glossary_terms SET domain_id = $1, updated_by = $2, updated_at = CURRENT_TIMESTAMP WHERE term_id = $3 AND deleted_at IS NULL")
+                            .bind(id).bind(user_id).bind(entity_id).execute(pool).await?;
+                    }
+                }
+                "category" => {
+                    if let Some(id) = crate::db::resolve_lookup(
+                        pool, value,
+                        "SELECT category_id FROM glossary_categories WHERE category_name ILIKE $1 LIMIT 1",
+                    ).await {
+                        sqlx::query("UPDATE glossary_terms SET category_id = $1, updated_by = $2, updated_at = CURRENT_TIMESTAMP WHERE term_id = $3 AND deleted_at IS NULL")
+                            .bind(id).bind(user_id).bind(entity_id).execute(pool).await?;
+                    }
+                }
+                "data_classification" => {
+                    if let Some(id) = crate::db::resolve_lookup(
+                        pool, value,
+                        "SELECT classification_id FROM data_classifications WHERE classification_name ILIKE $1 LIMIT 1",
+                    ).await {
+                        sqlx::query("UPDATE glossary_terms SET classification_id = $1, updated_by = $2, updated_at = CURRENT_TIMESTAMP WHERE term_id = $3 AND deleted_at IS NULL")
+                            .bind(id).bind(user_id).bind(entity_id).execute(pool).await?;
+                    }
+                }
                 "term_type" => {
                     if let Some(id) = crate::db::resolve_lookup(
                         pool, value,
@@ -398,12 +498,20 @@ pub async fn enrich(
     let (entity_data, existing_fields) =
         fetch_entity_data(&state.pool, &body.entity_type, body.entity_id).await?;
 
+    // Fetch lookup tables for the AI prompt (CODING_STANDARDS Section 15.6)
+    let lookups = if body.entity_type == "glossary_term" {
+        fetch_glossary_lookups(&state.pool).await?
+    } else {
+        serde_json::json!({})
+    };
+
     // Call AI enrichment service
     let result = crate::ai::enrich_entity(
         &state.config.ai,
         &body.entity_type,
         entity_data,
         existing_fields,
+        lookups,
     )
     .await?;
 

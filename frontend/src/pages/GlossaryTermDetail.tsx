@@ -491,7 +491,7 @@ const GlossaryTermDetail: React.FC = () => {
                 <EmptyValue />
               )}
             </Descriptions.Item>
-            <Descriptions.Item label="Sensitivity Classification">
+            <Descriptions.Item label="Data Classification">
               {detail.classification_name ? (
                 <Tag color="volcano">{detail.classification_name}</Tag>
               ) : (

@@ -16,13 +16,21 @@ api.interceptors.request.use((config) => {
   return config;
 });
 
-// Handle 401 responses by redirecting to login
+// Track whether we're already redirecting to avoid multiple redirects
+// from concurrent 401 responses (e.g., notification polling + page load)
+let isRedirecting = false;
+
+// Handle 401 responses by clearing token and redirecting to login
 api.interceptors.response.use(
   (response) => response,
   (error) => {
-    if (error.response?.status === 401) {
+    if (error.response?.status === 401 && !isRedirecting) {
+      isRedirecting = true;
       localStorage.removeItem('auth_token');
-      window.location.href = '/login';
+      // Small delay to let any pending requests settle
+      setTimeout(() => {
+        window.location.href = '/login';
+      }, 100);
     }
     return Promise.reject(error);
   }

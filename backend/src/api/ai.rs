@@ -261,10 +261,10 @@ async fn apply_suggestion_to_entity(
                 "subject_areas" => {
                     for area_name in value.split(',').map(|s| s.trim()).filter(|s| !s.is_empty()) {
                         let area_id = sqlx::query_scalar::<_, Uuid>(
-                            "SELECT area_id FROM glossary_subject_areas WHERE area_name ILIKE $1 OR area_code ILIKE $1 LIMIT 1"
+                            "SELECT subject_area_id FROM glossary_subject_areas WHERE area_name ILIKE $1 OR area_code ILIKE $1 LIMIT 1"
                         ).bind(area_name).fetch_optional(pool).await?;
                         if let Some(id) = area_id {
-                            sqlx::query("INSERT INTO glossary_term_subject_areas (term_id, area_id) VALUES ($1, $2) ON CONFLICT DO NOTHING")
+                            sqlx::query("INSERT INTO glossary_term_subject_areas (term_id, subject_area_id) VALUES ($1, $2) ON CONFLICT DO NOTHING")
                                 .bind(entity_id).bind(id).execute(pool).await?;
                         }
                     }

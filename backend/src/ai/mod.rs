@@ -416,27 +416,22 @@ fn parse_suggestions(text: &str) -> Result<Vec<RawAiSuggestion>, AppError> {
                 .trim()
                 .to_string();
 
-            // 4. Length enforcement: truncate to max column lengths
-            let max_len = match s.field_name.as_str() {
-                "abbreviation" => 50,
-                "tags" | "subject_areas" | "regulatory_tags" | "related_terms"
-                | "parent_term" => 500,
-                "rationale" => 500,
-                _ => 2000, // TEXT fields
+            // 4. Length enforcement per CODING_STANDARDS Section 15.2
+            // Bounded fields (VARCHAR): reject if over limit — don't silently truncate
+            // Unbounded fields (TEXT): no limit enforced
+            let max_len: Option<usize> = match s.field_name.as_str() {
+                "abbreviation" => Some(50),
+                _ => None, // TEXT columns have no practical limit
             };
-            if s.suggested_value.len() > max_len {
-                // Truncate at a word boundary
-                if let Some(pos) = s.suggested_value[..max_len].rfind(' ') {
-                    s.suggested_value.truncate(pos);
-                } else {
-                    s.suggested_value.truncate(max_len);
-                }
-            }
-            if s.rationale.len() > 500 {
-                if let Some(pos) = s.rationale[..500].rfind(' ') {
-                    s.rationale.truncate(pos);
-                } else {
-                    s.rationale.truncate(500);
+            if let Some(limit) = max_len {
+                if s.suggested_value.len() > limit {
+                    tracing::warn!(
+                        field = %s.field_name,
+                        length = s.suggested_value.len(),
+                        max = limit,
+                        "AI suggestion exceeds field length limit — dropping"
+                    );
+                    return None;
                 }
             }
 

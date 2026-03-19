@@ -208,10 +208,16 @@ async fn call_claude(
         .as_ref()
         .ok_or_else(|| AppError::AiService("Anthropic API key not configured".into()))?;
 
-    let client = reqwest::Client::new();
+    let client = reqwest::Client::builder()
+        .connect_timeout(std::time::Duration::from_secs(10))
+        .timeout(std::time::Duration::from_secs(90))
+        .local_address(std::net::IpAddr::V4(std::net::Ipv4Addr::UNSPECIFIED))
+        .build()
+        .map_err(|e| AppError::AiService(format!("failed to build HTTP client: {e}")))?;
+
     let body = serde_json::json!({
         "model": config.anthropic_model,
-        "max_tokens": 4096,
+        "max_tokens": 8192,
         "messages": [
             {
                 "role": "user",
@@ -220,13 +226,14 @@ async fn call_claude(
         ]
     });
 
+    tracing::debug!("Calling Claude API at https://api.anthropic.com/v1/messages");
+
     let response = client
         .post("https://api.anthropic.com/v1/messages")
         .header("x-api-key", api_key)
         .header("anthropic-version", "2023-06-01")
         .header("content-type", "application/json")
         .json(&body)
-        .timeout(std::time::Duration::from_secs(60))
         .send()
         .await
         .map_err(|e| AppError::AiService(format!("Claude API request failed: {e}")))?;
@@ -267,7 +274,13 @@ async fn call_openai(
         .as_ref()
         .ok_or_else(|| AppError::AiService("OpenAI API key not configured".into()))?;
 
-    let client = reqwest::Client::new();
+    let client = reqwest::Client::builder()
+        .connect_timeout(std::time::Duration::from_secs(10))
+        .timeout(std::time::Duration::from_secs(90))
+        .local_address(std::net::IpAddr::V4(std::net::Ipv4Addr::UNSPECIFIED))
+        .build()
+        .map_err(|e| AppError::AiService(format!("failed to build HTTP client: {e}")))?;
+
     let body = serde_json::json!({
         "model": config.openai_model,
         "messages": [

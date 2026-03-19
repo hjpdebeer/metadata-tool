@@ -829,7 +829,7 @@ const GlossaryTermDetail: React.FC = () => {
             </Space>
           </div>
 
-          <Descriptions column={{ xs: 1, sm: 2 }} bordered size="small">
+          <Descriptions column={1} bordered size="small" labelStyle={{ width: 200 }}>
             <Descriptions.Item label="Visibility">
               {detail.visibility_name || <EmptyValue />}
             </Descriptions.Item>
@@ -842,7 +842,7 @@ const GlossaryTermDetail: React.FC = () => {
             <Descriptions.Item label={<>Regulatory Reference <AiHint /></>}>
               {term.regulatory_reference || <EmptyValue />}
             </Descriptions.Item>
-            <Descriptions.Item label="External Reference" span={2}>
+            <Descriptions.Item label="External Reference">
               {term.external_reference ? (
                 term.external_reference.startsWith('http') ? (
                   <a href={term.external_reference} target="_blank" rel="noopener noreferrer">

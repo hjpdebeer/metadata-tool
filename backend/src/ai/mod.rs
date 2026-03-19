@@ -221,10 +221,18 @@ async fn call_claude(
         .as_ref()
         .ok_or_else(|| AppError::AiService("Anthropic API key not configured".into()))?;
 
+    // Force IPv4 resolution and use OS native TLS (CODING_STANDARDS Section 15.5)
     let client = reqwest::Client::builder()
         .connect_timeout(std::time::Duration::from_secs(10))
         .timeout(std::time::Duration::from_secs(90))
         .local_address(std::net::IpAddr::V4(std::net::Ipv4Addr::UNSPECIFIED))
+        .resolve(
+            "api.anthropic.com",
+            std::net::SocketAddr::new(
+                std::net::IpAddr::V4(std::net::Ipv4Addr::new(160, 79, 104, 10)),
+                443,
+            ),
+        )
         .build()
         .map_err(|e| AppError::AiService(format!("failed to build HTTP client: {e}")))?;
 

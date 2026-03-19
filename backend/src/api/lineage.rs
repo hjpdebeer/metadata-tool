@@ -33,6 +33,8 @@ pub struct ListGraphsQuery {
 // list_graphs -- GET /api/v1/lineage/graphs
 // ---------------------------------------------------------------------------
 
+/// List lineage graphs with node/edge counts, optionally filtered by graph type.
+/// Requires authentication.
 #[utoipa::path(
     get,
     path = "/api/v1/lineage/graphs",
@@ -79,6 +81,8 @@ pub async fn list_graphs(
 // get_graph -- GET /api/v1/lineage/graphs/{graph_id}
 // ---------------------------------------------------------------------------
 
+/// Retrieve a full lineage graph with all nodes and edges for React Flow visualization.
+/// Requires authentication.
 #[utoipa::path(
     get,
     path = "/api/v1/lineage/graphs/{graph_id}",
@@ -166,6 +170,8 @@ pub async fn get_graph(
 // create_graph -- POST /api/v1/lineage/graphs
 // ---------------------------------------------------------------------------
 
+/// Create a new lineage graph (BUSINESS or TECHNICAL type).
+/// Requires authentication.
 #[utoipa::path(
     post,
     path = "/api/v1/lineage/graphs",
@@ -226,6 +232,8 @@ pub async fn create_graph(
 // update_graph -- PUT /api/v1/lineage/graphs/{graph_id}
 // ---------------------------------------------------------------------------
 
+/// Update a lineage graph's name or description.
+/// Requires authentication.
 #[utoipa::path(
     put,
     path = "/api/v1/lineage/graphs/{graph_id}",
@@ -286,6 +294,8 @@ pub async fn update_graph(
 // add_node -- POST /api/v1/lineage/graphs/{graph_id}/nodes
 // ---------------------------------------------------------------------------
 
+/// Add a new node to a lineage graph.
+/// Requires authentication.
 #[utoipa::path(
     post,
     path = "/api/v1/lineage/graphs/{graph_id}/nodes",
@@ -360,6 +370,8 @@ pub async fn add_node(
 // update_node_position -- PUT /api/v1/lineage/nodes/{node_id}/position
 // ---------------------------------------------------------------------------
 
+/// Update a node's X/Y position for the React Flow canvas.
+/// Requires authentication.
 #[utoipa::path(
     put,
     path = "/api/v1/lineage/nodes/{node_id}/position",
@@ -406,6 +418,8 @@ pub async fn update_node_position(
 // delete_node -- DELETE /api/v1/lineage/nodes/{node_id}
 // ---------------------------------------------------------------------------
 
+/// Delete a lineage node. Connected edges are removed via CASCADE.
+/// Requires authentication.
 #[utoipa::path(
     delete,
     path = "/api/v1/lineage/nodes/{node_id}",
@@ -441,6 +455,8 @@ pub async fn delete_node(
 // add_edge -- POST /api/v1/lineage/graphs/{graph_id}/edges
 // ---------------------------------------------------------------------------
 
+/// Add a directed edge between two nodes in a lineage graph.
+/// Requires authentication.
 #[utoipa::path(
     post,
     path = "/api/v1/lineage/graphs/{graph_id}/edges",
@@ -541,6 +557,8 @@ pub async fn add_edge(
 // delete_edge -- DELETE /api/v1/lineage/edges/{edge_id}
 // ---------------------------------------------------------------------------
 
+/// Delete a lineage edge.
+/// Requires authentication.
 #[utoipa::path(
     delete,
     path = "/api/v1/lineage/edges/{edge_id}",
@@ -575,6 +593,8 @@ pub async fn delete_edge(
 // list_node_types -- GET /api/v1/lineage/node-types
 // ---------------------------------------------------------------------------
 
+/// List available lineage node types (seeded in migration 006).
+/// Requires authentication.
 #[utoipa::path(
     get,
     path = "/api/v1/lineage/node-types",
@@ -605,6 +625,8 @@ pub async fn list_node_types(
 // impact_analysis -- GET /api/v1/lineage/impact/{node_id}
 // ---------------------------------------------------------------------------
 
+/// Perform upstream or downstream impact analysis from a starting node using recursive CTE traversal.
+/// Requires authentication.
 #[utoipa::path(
     get,
     path = "/api/v1/lineage/impact/{node_id}",

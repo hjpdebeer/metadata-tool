@@ -8,6 +8,7 @@ use uuid::Uuid;
 // Full data element (single-record detail view)
 // ---------------------------------------------------------------------------
 
+/// A data element representing a business-level data concept. Maps to the `data_elements` table.
 #[derive(Debug, Clone, Serialize, Deserialize, FromRow, ToSchema)]
 pub struct DataElement {
     pub element_id: Uuid,
@@ -65,7 +66,7 @@ pub struct DataElementListItem {
 // ---------------------------------------------------------------------------
 
 /// Concrete paginated type for OpenAPI schema generation.
-#[derive(Debug, Serialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, ToSchema)]
 pub struct PaginatedDataElements {
     pub data: Vec<DataElementListItem>,
     pub total_count: i64,
@@ -78,7 +79,7 @@ pub struct PaginatedDataElements {
 // ---------------------------------------------------------------------------
 
 /// Response combining business and technical metadata for a data element
-#[derive(Debug, Serialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, ToSchema)]
 pub struct DataElementFullView {
     #[serde(flatten)]
     pub element: DataElement,
@@ -93,6 +94,7 @@ pub struct DataElementFullView {
 // Request types
 // ---------------------------------------------------------------------------
 
+/// Request body for creating a new data element.
 #[derive(Debug, Deserialize, ToSchema)]
 pub struct CreateDataElementRequest {
     pub element_name: String,
@@ -111,6 +113,7 @@ pub struct CreateDataElementRequest {
     pub sensitivity_level: Option<String>,
 }
 
+/// Request body for partially updating a data element. All fields are optional.
 #[derive(Debug, Deserialize, ToSchema)]
 pub struct UpdateDataElementRequest {
     pub element_name: Option<String>,
@@ -129,6 +132,7 @@ pub struct UpdateDataElementRequest {
     pub sensitivity_level: Option<String>,
 }
 
+/// Query parameters for searching and filtering data elements with pagination.
 #[derive(Debug, Deserialize, IntoParams, ToSchema)]
 pub struct SearchDataElementsRequest {
     pub query: Option<String>,
@@ -141,6 +145,7 @@ pub struct SearchDataElementsRequest {
     pub page_size: Option<i64>,
 }
 
+/// Request body for designating or removing Critical Data Element (CDE) status (Principle 12).
 #[derive(Debug, Deserialize, ToSchema)]
 pub struct CdeDesignationRequest {
     pub is_cde: bool,
@@ -151,6 +156,7 @@ pub struct CdeDesignationRequest {
 // Source systems
 // ---------------------------------------------------------------------------
 
+/// A registered source system that produces or consumes data. Maps to the `source_systems` table.
 #[derive(Debug, Clone, Serialize, Deserialize, FromRow, ToSchema)]
 pub struct SourceSystem {
     pub system_id: Uuid,
@@ -161,6 +167,7 @@ pub struct SourceSystem {
     pub connection_details: Option<serde_json::Value>,
 }
 
+/// Request body for registering a new source system.
 #[derive(Debug, Deserialize, ToSchema)]
 pub struct CreateSourceSystemRequest {
     pub system_name: String,
@@ -174,6 +181,7 @@ pub struct CreateSourceSystemRequest {
 // Data classifications
 // ---------------------------------------------------------------------------
 
+/// Data classification level (e.g. Public, Internal, Confidential). Maps to the `data_classifications` table.
 #[derive(Debug, Clone, Serialize, Deserialize, FromRow, ToSchema)]
 pub struct DataClassification {
     pub classification_id: Uuid,
@@ -186,6 +194,7 @@ pub struct DataClassification {
 // Technical metadata
 // ---------------------------------------------------------------------------
 
+/// A database schema within a source system. Maps to the `technical_schemas` table.
 #[derive(Debug, Clone, Serialize, Deserialize, FromRow, ToSchema)]
 pub struct TechnicalSchema {
     pub schema_id: Uuid,
@@ -194,12 +203,14 @@ pub struct TechnicalSchema {
     pub description: Option<String>,
 }
 
+/// Request body for creating a new technical schema under a source system.
 #[derive(Debug, Deserialize, ToSchema)]
 pub struct CreateTechnicalSchemaRequest {
     pub schema_name: String,
     pub description: Option<String>,
 }
 
+/// A database table or view within a technical schema. Maps to the `technical_tables` table.
 #[derive(Debug, Clone, Serialize, Deserialize, FromRow, ToSchema)]
 pub struct TechnicalTable {
     pub table_id: Uuid,
@@ -211,6 +222,7 @@ pub struct TechnicalTable {
     pub size_bytes: Option<i64>,
 }
 
+/// Request body for creating a new technical table under a schema.
 #[derive(Debug, Deserialize, ToSchema)]
 pub struct CreateTechnicalTableRequest {
     pub table_name: String,
@@ -220,6 +232,7 @@ pub struct CreateTechnicalTableRequest {
     pub size_bytes: Option<i64>,
 }
 
+/// A column within a technical table, including naming standard compliance (Principle 8). Maps to the `technical_columns` table.
 #[derive(Debug, Clone, Serialize, Deserialize, FromRow, ToSchema)]
 pub struct TechnicalColumn {
     pub column_id: Uuid,
@@ -237,6 +250,7 @@ pub struct TechnicalColumn {
     pub naming_standard_violation: Option<String>,
 }
 
+/// Request body for creating a new column under a technical table.
 #[derive(Debug, Deserialize, ToSchema)]
 pub struct CreateTechnicalColumnRequest {
     pub column_name: String,
@@ -251,21 +265,21 @@ pub struct CreateTechnicalColumnRequest {
 }
 
 /// Response for column creation including naming validation results
-#[derive(Debug, Serialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct CreateTechnicalColumnResponse {
     pub column: TechnicalColumn,
     pub naming_validation: NamingValidationInfo,
 }
 
 /// Naming validation information returned with column creation
-#[derive(Debug, Serialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct NamingValidationInfo {
     pub is_compliant: bool,
     pub violations: Vec<NamingViolationInfo>,
 }
 
 /// Individual naming violation detail
-#[derive(Debug, Serialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct NamingViolationInfo {
     pub standard_name: String,
     pub message: String,

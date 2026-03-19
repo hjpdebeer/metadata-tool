@@ -193,66 +193,77 @@ async fn apply_suggestion_to_entity(
 ) -> Result<(), AppError> {
     match entity_type {
         "glossary_term" => {
-            // Only allow updating known text fields — expanded for 45-field model
-            let column = match field_name {
-                // Direct text column updates
-                "definition" | "business_context" | "examples" | "abbreviation"
-                | "source_reference" | "regulatory_reference"
-                | "definition_notes" | "counter_examples" | "formula"
-                | "used_in_reports" | "used_in_policies" | "regulatory_reporting_usage"
-                | "golden_source" | "external_reference" | "organisational_unit" => {
+            // ADR-0006 Pattern 3: Categorised field handling for AI suggestion application.
+            // Text columns — direct column update
+            const TEXT_COLUMNS: &[&str] = &[
+                "definition", "business_context", "examples", "abbreviation",
+                "source_reference", "regulatory_reference",
+                "definition_notes", "counter_examples", "formula",
+                "used_in_reports", "used_in_policies", "regulatory_reporting_usage",
+                "golden_source", "external_reference", "organisational_unit",
+            ];
+
+            if TEXT_COLUMNS.contains(&field_name) {
+                let query = format!(
+                    r#"UPDATE glossary_terms
+                       SET {column} = $1, updated_by = $2, updated_at = CURRENT_TIMESTAMP
+                       WHERE term_id = $3 AND deleted_at IS NULL"#,
+                    column = field_name,
+                );
+                sqlx::query(&query)
+                    .bind(value)
+                    .bind(user_id)
+                    .bind(entity_id)
+                    .execute(pool)
+                    .await?;
+                return Ok(());
+            }
+
+            // Lookup columns — resolve display name or UUID to FK ID (ADR-0006 Pattern 2)
+            let lookup_mapping: Option<(&str, &str)> = match field_name {
+                "term_type" => Some((
+                    "term_type_id",
+                    "SELECT term_type_id FROM glossary_term_types WHERE type_name ILIKE $1 LIMIT 1",
+                )),
+                "unit_of_measure" => Some((
+                    "unit_of_measure_id",
+                    "SELECT unit_id FROM glossary_units_of_measure WHERE unit_name ILIKE $1 LIMIT 1",
+                )),
+                "parent_term" => Some((
+                    "parent_term_id",
+                    "SELECT term_id FROM glossary_terms WHERE term_name ILIKE $1 AND is_current_version = TRUE AND deleted_at IS NULL LIMIT 1",
+                )),
+                _ => None,
+            };
+
+            if let Some((fk_column, lookup_query)) = lookup_mapping {
+                if let Some(resolved_id) = crate::db::resolve_lookup(pool, value, lookup_query).await {
                     let query = format!(
                         r#"UPDATE glossary_terms
                            SET {column} = $1, updated_by = $2, updated_at = CURRENT_TIMESTAMP
                            WHERE term_id = $3 AND deleted_at IS NULL"#,
-                        column = field_name,
+                        column = fk_column,
                     );
                     sqlx::query(&query)
-                        .bind(value)
+                        .bind(resolved_id)
                         .bind(user_id)
                         .bind(entity_id)
                         .execute(pool)
                         .await?;
                 }
+                // If resolution fails, suggestion is accepted but not applied (value doesn't match)
+                return Ok(());
+            }
 
-                // Lookup fields: match AI display name to lookup table ID
-                "term_type" => {
-                    let type_id = sqlx::query_scalar::<_, Uuid>(
-                        "SELECT term_type_id FROM glossary_term_types WHERE type_name ILIKE $1 LIMIT 1"
-                    ).bind(value).fetch_optional(pool).await?;
-                    if let Some(id) = type_id {
-                        sqlx::query("UPDATE glossary_terms SET term_type_id = $1, updated_by = $2, updated_at = CURRENT_TIMESTAMP WHERE term_id = $3 AND deleted_at IS NULL")
-                            .bind(id).bind(user_id).bind(entity_id).execute(pool).await?;
-                    }
-                }
-                "unit_of_measure" => {
-                    let unit_id = sqlx::query_scalar::<_, Uuid>(
-                        "SELECT unit_id FROM glossary_units_of_measure WHERE unit_name ILIKE $1 LIMIT 1"
-                    ).bind(value).fetch_optional(pool).await?;
-                    if let Some(id) = unit_id {
-                        sqlx::query("UPDATE glossary_terms SET unit_of_measure_id = $1, updated_by = $2, updated_at = CURRENT_TIMESTAMP WHERE term_id = $3 AND deleted_at IS NULL")
-                            .bind(id).bind(user_id).bind(entity_id).execute(pool).await?;
-                    }
-                }
-                "parent_term" => {
-                    // Look up existing term by name
-                    let parent_id = sqlx::query_scalar::<_, Uuid>(
-                        "SELECT term_id FROM glossary_terms WHERE term_name ILIKE $1 AND deleted_at IS NULL AND is_current_version = TRUE LIMIT 1"
-                    ).bind(value).fetch_optional(pool).await?;
-                    if let Some(id) = parent_id {
-                        sqlx::query("UPDATE glossary_terms SET parent_term_id = $1, updated_by = $2, updated_at = CURRENT_TIMESTAMP WHERE term_id = $3 AND deleted_at IS NULL")
-                            .bind(id).bind(user_id).bind(entity_id).execute(pool).await?;
-                    }
-                    // If parent term doesn't exist, suggestion is accepted but not applied (term doesn't exist yet)
-                }
-
-                // Junction/many-to-many fields: parse comma-separated values and attach
+            // Junction columns — parse comma-separated, resolve each, insert junction rows
+            match field_name {
                 "regulatory_tags" => {
                     for tag_name in value.split(',').map(|s| s.trim()).filter(|s| !s.is_empty()) {
-                        let tag_id = sqlx::query_scalar::<_, Uuid>(
-                            "SELECT tag_id FROM glossary_regulatory_tags WHERE tag_name ILIKE $1 OR tag_code ILIKE $1 LIMIT 1"
-                        ).bind(tag_name).fetch_optional(pool).await?;
-                        if let Some(id) = tag_id {
+                        if let Some(id) = crate::db::resolve_lookup(
+                            pool,
+                            tag_name,
+                            "SELECT tag_id FROM glossary_regulatory_tags WHERE tag_name ILIKE $1 OR tag_code ILIKE $1 LIMIT 1",
+                        ).await {
                             sqlx::query("INSERT INTO glossary_term_regulatory_tags (term_id, tag_id) VALUES ($1, $2) ON CONFLICT DO NOTHING")
                                 .bind(entity_id).bind(id).execute(pool).await?;
                         }
@@ -260,10 +271,11 @@ async fn apply_suggestion_to_entity(
                 }
                 "subject_areas" => {
                     for area_name in value.split(',').map(|s| s.trim()).filter(|s| !s.is_empty()) {
-                        let area_id = sqlx::query_scalar::<_, Uuid>(
-                            "SELECT subject_area_id FROM glossary_subject_areas WHERE area_name ILIKE $1 OR area_code ILIKE $1 LIMIT 1"
-                        ).bind(area_name).fetch_optional(pool).await?;
-                        if let Some(id) = area_id {
+                        if let Some(id) = crate::db::resolve_lookup(
+                            pool,
+                            area_name,
+                            "SELECT subject_area_id FROM glossary_subject_areas WHERE area_name ILIKE $1 OR area_code ILIKE $1 LIMIT 1",
+                        ).await {
                             sqlx::query("INSERT INTO glossary_term_subject_areas (term_id, subject_area_id) VALUES ($1, $2) ON CONFLICT DO NOTHING")
                                 .bind(entity_id).bind(id).execute(pool).await?;
                         }
@@ -281,16 +293,14 @@ async fn apply_suggestion_to_entity(
                 }
                 "related_terms" => {
                     // Store as a note — can't auto-link terms that may not exist yet
-                    // Append to regulatory_reference as a workaround
                     tracing::info!(field = "related_terms", value = %value, "AI suggested related terms — stored for reference");
                 }
-
                 _ => {
                     return Err(AppError::Validation(format!(
-                        "cannot auto-apply suggestion to field '{field_name}' on glossary_term"
+                        "cannot apply suggestion to field '{field_name}' on glossary_term"
                     )));
                 }
-            };
+            }
         }
         "data_element" => {
             let column = match field_name {
@@ -686,12 +696,12 @@ pub async fn submit_feedback(
     Json(body): Json<FeedbackRequest>,
 ) -> AppResult<Json<FeedbackResponse>> {
     // Validate rating if provided
-    if let Some(rating) = body.rating {
-        if !(1..=5).contains(&rating) {
-            return Err(AppError::Validation(
-                "Rating must be between 1 and 5".into(),
-            ));
-        }
+    if let Some(rating) = body.rating
+        && !(1..=5).contains(&rating)
+    {
+        return Err(AppError::Validation(
+            "rating must be between 1 and 5".into(),
+        ));
     }
 
     // Verify suggestion exists

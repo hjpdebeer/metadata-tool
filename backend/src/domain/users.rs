@@ -4,6 +4,7 @@ use sqlx::FromRow;
 use utoipa::{IntoParams, ToSchema};
 use uuid::Uuid;
 
+/// A platform user with authentication and profile information. Maps to the `users` table.
 #[derive(Debug, Clone, Serialize, Deserialize, FromRow, ToSchema)]
 pub struct User {
     pub user_id: Uuid,
@@ -35,6 +36,7 @@ pub struct UserListItem {
     pub created_at: DateTime<Utc>,
 }
 
+/// An RBAC role that can be assigned to users (Principle 10). Maps to the `roles` table.
 #[derive(Debug, Clone, Serialize, Deserialize, FromRow, ToSchema)]
 pub struct Role {
     pub role_id: Uuid,
@@ -44,6 +46,7 @@ pub struct Role {
     pub is_system_role: bool,
 }
 
+/// A user combined with their assigned roles for detail views.
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct UserWithRoles {
     #[serde(flatten)]
@@ -51,6 +54,7 @@ pub struct UserWithRoles {
     pub roles: Vec<Role>,
 }
 
+/// Request body for creating a new user with initial role assignments.
 #[derive(Debug, Deserialize, ToSchema)]
 pub struct CreateUserRequest {
     pub username: String,
@@ -63,6 +67,7 @@ pub struct CreateUserRequest {
     pub role_ids: Vec<Uuid>,
 }
 
+/// Request body for partially updating a user's profile. All fields are optional.
 #[derive(Debug, Deserialize, ToSchema)]
 pub struct UpdateUserRequest {
     pub display_name: Option<String>,
@@ -71,6 +76,7 @@ pub struct UpdateUserRequest {
     pub is_active: Option<bool>,
 }
 
+/// Query parameters for searching and filtering users with pagination.
 #[derive(Debug, Deserialize, IntoParams, ToSchema)]
 pub struct SearchUsersParams {
     pub query: Option<String>,
@@ -80,13 +86,14 @@ pub struct SearchUsersParams {
     pub page_size: Option<i64>,
 }
 
+/// Request body for assigning a role to a user.
 #[derive(Debug, Deserialize, ToSchema)]
 pub struct AssignRoleRequest {
     pub role_id: Uuid,
 }
 
 /// Concrete paginated type for OpenAPI schema generation.
-#[derive(Debug, Serialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, ToSchema)]
 pub struct PaginatedUsers {
     pub data: Vec<UserListItem>,
     pub total_count: i64,

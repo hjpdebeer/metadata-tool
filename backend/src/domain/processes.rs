@@ -8,6 +8,7 @@ use uuid::Uuid;
 // Full business process (single-record detail view)
 // ---------------------------------------------------------------------------
 
+/// A business process with optional criticality designation (Principle 12). Maps to the `business_processes` table.
 #[derive(Debug, Clone, Serialize, Deserialize, FromRow, ToSchema)]
 pub struct BusinessProcess {
     pub process_id: Uuid,
@@ -58,7 +59,7 @@ pub struct BusinessProcessListItem {
 // ---------------------------------------------------------------------------
 
 /// Concrete paginated type for OpenAPI schema generation.
-#[derive(Debug, Serialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, ToSchema)]
 pub struct PaginatedBusinessProcesses {
     pub data: Vec<BusinessProcessListItem>,
     pub total_count: i64,
@@ -70,7 +71,8 @@ pub struct PaginatedBusinessProcesses {
 // Full view (detail with related counts and sub-entities)
 // ---------------------------------------------------------------------------
 
-#[derive(Debug, Serialize, ToSchema)]
+/// Detail view of a business process including steps, linked elements, and sub-processes.
+#[derive(Debug, Clone, Serialize, ToSchema)]
 pub struct BusinessProcessFullView {
     #[serde(flatten)]
     pub process: BusinessProcess,
@@ -87,6 +89,7 @@ pub struct BusinessProcessFullView {
 // Process steps
 // ---------------------------------------------------------------------------
 
+/// An ordered step within a business process. Maps to the `process_steps` table.
 #[derive(Debug, Clone, Serialize, Deserialize, FromRow, ToSchema)]
 pub struct ProcessStep {
     pub step_id: Uuid,
@@ -104,6 +107,7 @@ pub struct ProcessStep {
 // Request types
 // ---------------------------------------------------------------------------
 
+/// Request body for creating a new business process.
 #[derive(Debug, Deserialize, ToSchema)]
 pub struct CreateBusinessProcessRequest {
     pub process_name: String,
@@ -120,6 +124,7 @@ pub struct CreateBusinessProcessRequest {
     pub documentation_url: Option<String>,
 }
 
+/// Request body for partially updating a business process. All fields are optional.
 #[derive(Debug, Deserialize, ToSchema)]
 pub struct UpdateBusinessProcessRequest {
     pub process_name: Option<String>,
@@ -135,6 +140,7 @@ pub struct UpdateBusinessProcessRequest {
     pub documentation_url: Option<String>,
 }
 
+/// Query parameters for searching and filtering business processes with pagination.
 #[derive(Debug, Deserialize, IntoParams, ToSchema)]
 pub struct SearchProcessesRequest {
     pub query: Option<String>,
@@ -149,6 +155,7 @@ pub struct SearchProcessesRequest {
 // Process category lookup
 // ---------------------------------------------------------------------------
 
+/// A hierarchical category for organising business processes. Maps to the `process_categories` table.
 #[derive(Debug, Clone, Serialize, Deserialize, FromRow, ToSchema)]
 pub struct ProcessCategory {
     pub category_id: Uuid,
@@ -161,6 +168,7 @@ pub struct ProcessCategory {
 // Process-Data Element links
 // ---------------------------------------------------------------------------
 
+/// Request body for linking a data element to a business process.
 #[derive(Debug, Deserialize, ToSchema)]
 pub struct LinkProcessDataElementRequest {
     pub element_id: Uuid,
@@ -169,6 +177,7 @@ pub struct LinkProcessDataElementRequest {
     pub description: Option<String>,
 }
 
+/// A link between a process and a data element, with CDE indicator. Maps to the `process_data_elements` table.
 #[derive(Debug, Clone, Serialize, FromRow, ToSchema)]
 pub struct ProcessDataElementLink {
     pub id: Uuid,
@@ -187,6 +196,7 @@ pub struct ProcessDataElementLink {
 // Process-Application links
 // ---------------------------------------------------------------------------
 
+/// Request body for linking an application to a business process.
 #[derive(Debug, Deserialize, ToSchema)]
 pub struct LinkProcessApplicationRequest {
     pub application_id: Uuid,
@@ -194,6 +204,7 @@ pub struct LinkProcessApplicationRequest {
     pub description: Option<String>,
 }
 
+/// A link between a process and an application, with role description. Maps to the `process_applications` table.
 #[derive(Debug, Clone, Serialize, FromRow, ToSchema)]
 pub struct ProcessApplicationLink {
     pub id: Uuid,
@@ -210,6 +221,7 @@ pub struct ProcessApplicationLink {
 // Process step creation
 // ---------------------------------------------------------------------------
 
+/// Request body for adding a step to a business process.
 #[derive(Debug, Deserialize, ToSchema)]
 pub struct CreateProcessStepRequest {
     pub step_number: i32,

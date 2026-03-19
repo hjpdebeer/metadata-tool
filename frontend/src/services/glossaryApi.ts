@@ -55,7 +55,8 @@ export interface GlossaryRegulatoryTag {
 }
 
 export interface GlossarySubjectArea {
-  area_id: string;
+  subject_area_id: string;
+  area_id?: string; // deprecated alias — use subject_area_id
   area_code: string;
   area_name: string;
   description: string | null;
@@ -157,14 +158,57 @@ export interface GlossaryTerm {
   workflow_instance_id: string | null;
 }
 
-/** Enhanced detail view with resolved names and junction data */
 /**
- * Detail view of a glossary term. The backend uses #[serde(flatten)] so all
- * GlossaryTerm fields are at the root level alongside resolved lookup names
- * and junction data. We use `extends` to model this flat structure.
+ * Complete detail view of a glossary term (ADR-0006 Pattern 1).
+ * All fields are at the root level — no nesting, no extends.
+ * Matches the backend `GlossaryTermDetail` struct exactly.
  */
-export interface GlossaryTermDetailView extends GlossaryTerm {
-  // Resolved lookup display names
+export interface GlossaryTermDetailView {
+  // Entity columns
+  term_id: string;
+  term_name: string;
+  term_code: string | null;
+  definition: string;
+  abbreviation: string | null;
+  business_context: string | null;
+  examples: string | null;
+  definition_notes: string | null;
+  counter_examples: string | null;
+  formula: string | null;
+  unit_of_measure_id: string | null;
+  term_type_id: string | null;
+  domain_id: string | null;
+  category_id: string | null;
+  classification_id: string | null;
+  owner_user_id: string | null;
+  steward_user_id: string | null;
+  domain_owner_user_id: string | null;
+  approver_user_id: string | null;
+  organisational_unit: string | null;
+  status_id: string;
+  version_number: number;
+  is_current_version: boolean;
+  approved_at: string | null;
+  review_frequency_id: string | null;
+  next_review_date: string | null;
+  parent_term_id: string | null;
+  source_reference: string | null;
+  regulatory_reference: string | null;
+  used_in_reports: string | null;
+  used_in_policies: string | null;
+  regulatory_reporting_usage: string | null;
+  is_cde: boolean;
+  golden_source: string | null;
+  confidence_level_id: string | null;
+  visibility_id: string | null;
+  language_id: string | null;
+  external_reference: string | null;
+  previous_version_id: string | null;
+  created_by: string;
+  updated_by: string | null;
+  created_at: string;
+  updated_at: string;
+  // Resolved lookup names (from JOINs)
   domain_name: string | null;
   category_name: string | null;
   term_type_name: string | null;
@@ -174,16 +218,18 @@ export interface GlossaryTermDetailView extends GlossaryTerm {
   confidence_level_name: string | null;
   visibility_name: string | null;
   language_name: string | null;
+  parent_term_name: string | null;
   owner_name: string | null;
   steward_name: string | null;
   domain_owner_name: string | null;
   approver_name: string | null;
-  parent_term_name: string | null;
-  // Junction data
-  regulatory_tags: { tag_id: string; tag_code: string; tag_name: string }[];
-  subject_areas: { subject_area_id: string; area_code: string; area_name: string }[];
+  status_code: string | null;
+  status_name: string | null;
+  // Junction data (from separate queries)
+  regulatory_tags: { tag_id: string; tag_code: string; tag_name: string; description: string | null }[];
+  subject_areas: { subject_area_id: string; area_code: string; area_name: string; is_primary: boolean }[];
   tags: { tag_id: string; tag_name: string }[];
-  linked_processes: { process_id: string; process_name: string }[];
+  linked_processes: { process_id: string; process_name: string; usage_context: string | null }[];
 }
 
 export interface CreateGlossaryTermRequest {

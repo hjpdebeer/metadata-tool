@@ -24,7 +24,6 @@ struct TemplateRow {
 #[derive(sqlx::FromRow)]
 struct RecipientRow {
     email: String,
-    display_name: String,
 }
 
 // ---------------------------------------------------------------------------
@@ -64,7 +63,7 @@ pub async fn queue_notification(
 
     // Look up recipient email
     let recipient = sqlx::query_as::<_, RecipientRow>(
-        "SELECT email, display_name FROM users WHERE user_id = $1",
+        "SELECT email FROM users WHERE user_id = $1",
     )
     .bind(recipient_user_id)
     .fetch_optional(pool)

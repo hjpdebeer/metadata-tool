@@ -15,6 +15,8 @@ use crate::workflow;
 // list_dimensions — GET /api/v1/data-quality/dimensions
 // ---------------------------------------------------------------------------
 
+/// List all data quality dimensions with aggregate rule counts and scores.
+/// Requires authentication.
 #[utoipa::path(
     get,
     path = "/api/v1/data-quality/dimensions",
@@ -75,6 +77,8 @@ pub async fn list_dimensions(
 // list_rule_types — GET /api/v1/data-quality/rule-types
 // ---------------------------------------------------------------------------
 
+/// List all quality rule types with their SQL templates.
+/// Requires authentication.
 #[utoipa::path(
     get,
     path = "/api/v1/data-quality/rule-types",
@@ -104,6 +108,8 @@ pub async fn list_rule_types(
 // list_rules — GET /api/v1/data-quality/rules
 // ---------------------------------------------------------------------------
 
+/// List quality rules with optional filtering and pagination.
+/// Requires authentication.
 #[utoipa::path(
     get,
     path = "/api/v1/data-quality/rules",
@@ -210,6 +216,8 @@ pub async fn list_rules(
 // get_rule — GET /api/v1/data-quality/rules/:rule_id
 // ---------------------------------------------------------------------------
 
+/// Retrieve a single quality rule by ID.
+/// Requires authentication.
 #[utoipa::path(
     get,
     path = "/api/v1/data-quality/rules/{rule_id}",
@@ -249,6 +257,8 @@ pub async fn get_rule(
 // create_rule — POST /api/v1/data-quality/rules
 // ---------------------------------------------------------------------------
 
+/// Create a new quality rule in DRAFT status with an associated workflow instance.
+/// Requires authentication.
 #[utoipa::path(
     post,
     path = "/api/v1/data-quality/rules",
@@ -343,6 +353,8 @@ pub async fn create_rule(
 // update_rule — PUT /api/v1/data-quality/rules/:rule_id
 // ---------------------------------------------------------------------------
 
+/// Update an existing quality rule. Only provided fields are changed.
+/// Requires authentication.
 #[utoipa::path(
     put,
     path = "/api/v1/data-quality/rules/{rule_id}",
@@ -435,6 +447,8 @@ pub async fn update_rule(
 // get_assessments — GET /api/v1/data-quality/assessments/:rule_id
 // ---------------------------------------------------------------------------
 
+/// Retrieve the assessment history for a quality rule.
+/// Requires authentication.
 #[utoipa::path(
     get,
     path = "/api/v1/data-quality/assessments/{rule_id}",
@@ -488,6 +502,8 @@ pub async fn get_assessments(
 // create_assessment — POST /api/v1/data-quality/assessments
 // ---------------------------------------------------------------------------
 
+/// Record a quality assessment result and update the associated element's quality score.
+/// Requires authentication.
 #[utoipa::path(
     post,
     path = "/api/v1/data-quality/assessments",
@@ -604,6 +620,8 @@ pub async fn create_assessment(
 // get_element_scores — GET /api/v1/data-quality/scores/element/:element_id
 // ---------------------------------------------------------------------------
 
+/// Retrieve quality scores per dimension for a data element.
+/// Requires authentication.
 #[utoipa::path(
     get,
     path = "/api/v1/data-quality/scores/element/{element_id}",

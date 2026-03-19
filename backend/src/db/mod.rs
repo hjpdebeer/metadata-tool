@@ -1,5 +1,6 @@
 use sqlx::postgres::{PgConnectOptions, PgSslMode};
 use sqlx::PgPool;
+use uuid::Uuid;
 
 use crate::config::AppConfig;
 
@@ -15,6 +16,37 @@ impl AppState {
         Self { pool, config }
     }
 }
+
+// ---------------------------------------------------------------------------
+// Lookup resolution (ADR-0006 Pattern 2)
+// ---------------------------------------------------------------------------
+
+/// Resolve a lookup field value. Accepts either a UUID string (from UI dropdown)
+/// or a display name (from AI suggestion). Tries UUID parse first, falls back
+/// to ILIKE name match via the provided lookup query.
+///
+/// ADR-0006 Pattern 2: Unified write path for UI and AI inputs.
+pub async fn resolve_lookup(
+    pool: &PgPool,
+    value: &str,
+    lookup_query: &str,
+) -> Option<Uuid> {
+    // Try parsing as UUID first (UI dropdowns send IDs)
+    if let Ok(id) = Uuid::parse_str(value) {
+        return Some(id);
+    }
+    // Fall back to display name resolution (AI suggestions send names)
+    sqlx::query_scalar::<_, Uuid>(lookup_query)
+        .bind(value)
+        .fetch_optional(pool)
+        .await
+        .ok()
+        .flatten()
+}
+
+// ---------------------------------------------------------------------------
+// Connection pool
+// ---------------------------------------------------------------------------
 
 /// Create a connection pool from a DATABASE_URL string.
 ///

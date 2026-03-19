@@ -15,6 +15,8 @@ use crate::workflow;
 // list_processes — GET /api/v1/processes
 // ---------------------------------------------------------------------------
 
+/// List business processes with optional filtering and pagination.
+/// Requires authentication.
 #[utoipa::path(
     get,
     path = "/api/v1/processes",
@@ -109,6 +111,8 @@ pub async fn list_processes(
 // get_process — GET /api/v1/processes/:process_id
 // ---------------------------------------------------------------------------
 
+/// Retrieve a single business process with full detail including steps and sub-processes.
+/// Requires authentication.
 #[utoipa::path(
     get,
     path = "/api/v1/processes/{process_id}",
@@ -250,6 +254,8 @@ pub async fn get_process(
 // create_process — POST /api/v1/processes
 // ---------------------------------------------------------------------------
 
+/// Create a new business process in DRAFT status with an associated workflow instance.
+/// Requires authentication. Critical processes trigger auto-CDE designation via DB trigger (Principle 12).
 #[utoipa::path(
     post,
     path = "/api/v1/processes",
@@ -341,6 +347,8 @@ pub async fn create_process(
 // update_process — PUT /api/v1/processes/:process_id
 // ---------------------------------------------------------------------------
 
+/// Update an existing business process. Only provided fields are changed.
+/// Requires authentication. CDE propagation is handled by DB triggers (Principle 12).
 #[utoipa::path(
     put,
     path = "/api/v1/processes/{process_id}",
@@ -424,6 +432,8 @@ pub async fn update_process(
 // list_critical_processes — GET /api/v1/processes/critical
 // ---------------------------------------------------------------------------
 
+/// List all critical business processes with their data element counts (Principle 12).
+/// Requires authentication.
 #[utoipa::path(
     get,
     path = "/api/v1/processes/critical",
@@ -470,6 +480,8 @@ pub async fn list_critical_processes(
 // list_categories — GET /api/v1/processes/categories
 // ---------------------------------------------------------------------------
 
+/// List all process categories.
+/// Requires authentication.
 #[utoipa::path(
     get,
     path = "/api/v1/processes/categories",
@@ -500,6 +512,8 @@ pub async fn list_categories(
 // add_step — POST /api/v1/processes/:process_id/steps
 // ---------------------------------------------------------------------------
 
+/// Add a step to a business process.
+/// Requires authentication.
 #[utoipa::path(
     post,
     path = "/api/v1/processes/{process_id}/steps",
@@ -569,6 +583,8 @@ pub async fn add_step(
 // list_steps — GET /api/v1/processes/:process_id/steps
 // ---------------------------------------------------------------------------
 
+/// List steps for a business process, ordered by step number.
+/// Requires authentication.
 #[utoipa::path(
     get,
     path = "/api/v1/processes/{process_id}/steps",
@@ -621,6 +637,8 @@ pub async fn list_steps(
 // link_data_element — POST /api/v1/processes/:process_id/elements
 // ---------------------------------------------------------------------------
 
+/// Link a data element to a business process. Auto-CDE designation via DB trigger for critical processes (Principle 12).
+/// Requires authentication.
 #[utoipa::path(
     post,
     path = "/api/v1/processes/{process_id}/elements",
@@ -711,6 +729,8 @@ pub async fn link_data_element(
 // list_process_elements — GET /api/v1/processes/:process_id/elements
 // ---------------------------------------------------------------------------
 
+/// List data elements linked to a business process, including CDE indicator.
+/// Requires authentication.
 #[utoipa::path(
     get,
     path = "/api/v1/processes/{process_id}/elements",

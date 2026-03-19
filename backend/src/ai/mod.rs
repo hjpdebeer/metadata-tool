@@ -431,16 +431,16 @@ fn parse_suggestions(text: &str) -> Result<Vec<RawAiSuggestion>, AppError> {
                 "abbreviation" => Some(50),
                 _ => None, // TEXT columns have no practical limit
             };
-            if let Some(limit) = max_len {
-                if s.suggested_value.len() > limit {
-                    tracing::warn!(
-                        field = %s.field_name,
-                        length = s.suggested_value.len(),
-                        max = limit,
-                        "AI suggestion exceeds field length limit — dropping"
-                    );
-                    return None;
-                }
+            if let Some(limit) = max_len
+                && s.suggested_value.len() > limit
+            {
+                tracing::warn!(
+                    field = %s.field_name,
+                    length = s.suggested_value.len(),
+                    max = limit,
+                    "AI suggestion exceeds field length limit — dropping"
+                );
+                return None;
             }
 
             // 5. Confidence clamping

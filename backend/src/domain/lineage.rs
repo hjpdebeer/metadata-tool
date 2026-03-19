@@ -8,6 +8,7 @@ use uuid::Uuid;
 // Core entities (map directly to database tables)
 // ---------------------------------------------------------------------------
 
+/// A data lineage graph containing nodes and edges for tracing data flow. Maps to the `lineage_graphs` table.
 #[derive(Debug, Clone, Serialize, Deserialize, FromRow, ToSchema)]
 pub struct LineageGraph {
     pub graph_id: Uuid,
@@ -23,6 +24,7 @@ pub struct LineageGraph {
     pub updated_at: DateTime<Utc>,
 }
 
+/// A node in a lineage graph representing a data source, transformation, or destination. Maps to the `lineage_nodes` table.
 #[derive(Debug, Clone, Serialize, Deserialize, FromRow, ToSchema)]
 pub struct LineageNode {
     pub node_id: Uuid,
@@ -41,6 +43,7 @@ pub struct LineageNode {
     pub properties: Option<serde_json::Value>,
 }
 
+/// A directed edge connecting two nodes in a lineage graph, representing data flow. Maps to the `lineage_edges` table.
 #[derive(Debug, Clone, Serialize, Deserialize, FromRow, ToSchema)]
 pub struct LineageEdge {
     pub edge_id: Uuid,
@@ -76,6 +79,7 @@ pub struct LineageGraphListItem {
 // Node type (seeded in migration 006)
 // ---------------------------------------------------------------------------
 
+/// A classification for lineage nodes (e.g. Database, Application, File). Maps to the `lineage_node_types` table.
 #[derive(Debug, Clone, Serialize, Deserialize, FromRow, ToSchema)]
 pub struct LineageNodeType {
     pub node_type_id: Uuid,
@@ -115,6 +119,7 @@ pub struct LineageNodeView {
 // Request types
 // ---------------------------------------------------------------------------
 
+/// Request body for creating a new lineage graph.
 #[derive(Debug, Deserialize, ToSchema)]
 pub struct CreateLineageGraphRequest {
     pub graph_name: String,
@@ -124,12 +129,14 @@ pub struct CreateLineageGraphRequest {
     pub scope_entity_id: Option<Uuid>,
 }
 
+/// Request body for partially updating a lineage graph.
 #[derive(Debug, Deserialize, ToSchema)]
 pub struct UpdateLineageGraphRequest {
     pub graph_name: Option<String>,
     pub description: Option<String>,
 }
 
+/// Request body for adding a new node to a lineage graph.
 #[derive(Debug, Deserialize, ToSchema)]
 pub struct AddLineageNodeRequest {
     pub node_type_id: Uuid,
@@ -144,6 +151,7 @@ pub struct AddLineageNodeRequest {
     pub properties: Option<serde_json::Value>,
 }
 
+/// Request body for adding a directed edge between two nodes in a lineage graph.
 #[derive(Debug, Deserialize, ToSchema)]
 pub struct AddLineageEdgeRequest {
     pub source_node_id: Uuid,
@@ -153,6 +161,7 @@ pub struct AddLineageEdgeRequest {
     pub description: Option<String>,
 }
 
+/// Request body for updating a node's position in the React Flow canvas.
 #[derive(Debug, Deserialize, ToSchema)]
 pub struct UpdateNodePositionRequest {
     pub node_id: Uuid,
@@ -160,6 +169,7 @@ pub struct UpdateNodePositionRequest {
     pub position_y: f64,
 }
 
+/// Query parameters for searching and filtering lineage graphs with pagination.
 #[derive(Debug, Deserialize, IntoParams, ToSchema)]
 pub struct SearchGraphsRequest {
     pub query: Option<String>,
@@ -173,7 +183,7 @@ pub struct SearchGraphsRequest {
 // ---------------------------------------------------------------------------
 
 /// Full graph structure for visualization
-#[derive(Debug, Serialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, ToSchema)]
 pub struct LineageGraphView {
     #[serde(flatten)]
     pub graph: LineageGraph,
@@ -214,7 +224,7 @@ pub struct ImpactedEdge {
 }
 
 /// Impact analysis result
-#[derive(Debug, Serialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, ToSchema)]
 pub struct ImpactAnalysis {
     pub source_node_id: Uuid,
     pub direction: String, // UPSTREAM or DOWNSTREAM

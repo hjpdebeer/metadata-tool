@@ -1,3 +1,9 @@
+//! API route handlers organised by metadata domain.
+//!
+//! Each submodule contains Axum handler functions registered in `main.rs`.
+//! All handlers use utoipa annotations for OpenAPI documentation and
+//! follow ADR-0006 data access patterns for consistent read/write behaviour.
+
 pub mod glossary;
 pub mod data_dictionary;
 pub mod data_quality;

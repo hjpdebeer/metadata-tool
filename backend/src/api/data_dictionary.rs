@@ -16,6 +16,8 @@ use crate::workflow;
 // list_elements — GET /api/v1/data-dictionary/elements
 // ---------------------------------------------------------------------------
 
+/// List data elements with optional filtering and pagination.
+/// Requires authentication. Supports full-text search via `query` parameter.
 #[utoipa::path(
     get,
     path = "/api/v1/data-dictionary/elements",
@@ -118,6 +120,8 @@ pub async fn list_elements(
 // get_element — GET /api/v1/data-dictionary/elements/:element_id
 // ---------------------------------------------------------------------------
 
+/// Retrieve a single data element with full detail including linked technical columns.
+/// Requires authentication.
 #[utoipa::path(
     get,
     path = "/api/v1/data-dictionary/elements/{element_id}",
@@ -220,6 +224,8 @@ pub async fn get_element(
 // create_element — POST /api/v1/data-dictionary/elements
 // ---------------------------------------------------------------------------
 
+/// Create a new data element in DRAFT status with an associated workflow instance.
+/// Requires authentication.
 #[utoipa::path(
     post,
     path = "/api/v1/data-dictionary/elements",
@@ -318,6 +324,8 @@ pub async fn create_element(
 // update_element — PUT /api/v1/data-dictionary/elements/:element_id
 // ---------------------------------------------------------------------------
 
+/// Update an existing data element. Only provided fields are changed.
+/// Requires authentication.
 #[utoipa::path(
     put,
     path = "/api/v1/data-dictionary/elements/{element_id}",
@@ -407,6 +415,8 @@ pub async fn update_element(
 // list_cde — GET /api/v1/data-dictionary/elements/cde
 // ---------------------------------------------------------------------------
 
+/// List all Critical Data Elements (CDEs) across the data dictionary (Principle 12).
+/// Requires authentication.
 #[utoipa::path(
     get,
     path = "/api/v1/data-dictionary/elements/cde",
@@ -458,6 +468,8 @@ pub async fn list_cde(
 // designate_cde — POST /api/v1/data-dictionary/elements/:element_id/cde
 // ---------------------------------------------------------------------------
 
+/// Designate or remove Critical Data Element (CDE) status for a data element (Principle 12).
+/// Requires authentication.
 #[utoipa::path(
     post,
     path = "/api/v1/data-dictionary/elements/{element_id}/cde",
@@ -524,6 +536,8 @@ pub async fn designate_cde(
 // list_source_systems — GET /api/v1/data-dictionary/source-systems
 // ---------------------------------------------------------------------------
 
+/// List all registered source systems.
+/// Requires authentication.
 #[utoipa::path(
     get,
     path = "/api/v1/data-dictionary/source-systems",
@@ -555,6 +569,8 @@ pub async fn list_source_systems(
 // create_source_system — POST /api/v1/data-dictionary/source-systems
 // ---------------------------------------------------------------------------
 
+/// Register a new source system.
+/// Requires authentication.
 #[utoipa::path(
     post,
     path = "/api/v1/data-dictionary/source-systems",
@@ -605,6 +621,8 @@ pub async fn create_source_system(
 // list_classifications — GET /api/v1/data-dictionary/classifications
 // ---------------------------------------------------------------------------
 
+/// List all data classification levels.
+/// Requires authentication.
 #[utoipa::path(
     get,
     path = "/api/v1/data-dictionary/classifications",
@@ -635,6 +653,8 @@ pub async fn list_classifications(
 // list_schemas — GET /api/v1/data-dictionary/source-systems/:system_id/schemas
 // ---------------------------------------------------------------------------
 
+/// List technical schemas for a source system.
+/// Requires authentication.
 #[utoipa::path(
     get,
     path = "/api/v1/data-dictionary/source-systems/{system_id}/schemas",
@@ -669,6 +689,8 @@ pub async fn list_schemas(
 // create_schema — POST /api/v1/data-dictionary/source-systems/:system_id/schemas
 // ---------------------------------------------------------------------------
 
+/// Create a new technical schema under a source system.
+/// Requires authentication.
 #[utoipa::path(
     post,
     path = "/api/v1/data-dictionary/source-systems/{system_id}/schemas",
@@ -725,6 +747,8 @@ pub async fn create_schema(
 // list_tables — GET /api/v1/data-dictionary/schemas/:schema_id/tables
 // ---------------------------------------------------------------------------
 
+/// List technical tables for a schema.
+/// Requires authentication.
 #[utoipa::path(
     get,
     path = "/api/v1/data-dictionary/schemas/{schema_id}/tables",
@@ -760,6 +784,8 @@ pub async fn list_tables(
 // create_table — POST /api/v1/data-dictionary/schemas/:schema_id/tables
 // ---------------------------------------------------------------------------
 
+/// Create a new technical table under a schema.
+/// Requires authentication.
 #[utoipa::path(
     post,
     path = "/api/v1/data-dictionary/schemas/{schema_id}/tables",
@@ -821,6 +847,8 @@ pub async fn create_table(
 // list_columns — GET /api/v1/data-dictionary/tables/:table_id/columns
 // ---------------------------------------------------------------------------
 
+/// List columns for a technical table.
+/// Requires authentication.
 #[utoipa::path(
     get,
     path = "/api/v1/data-dictionary/tables/{table_id}/columns",
@@ -859,6 +887,8 @@ pub async fn list_columns(
 // create_column — POST /api/v1/data-dictionary/tables/:table_id/columns
 // ---------------------------------------------------------------------------
 
+/// Create a new column and validate its name against naming standards (Principle 8).
+/// Requires authentication.
 #[utoipa::path(
     post,
     path = "/api/v1/data-dictionary/tables/{table_id}/columns",

@@ -4,37 +4,37 @@ use serde::Serialize;
 
 #[derive(Debug, thiserror::Error)]
 pub enum AppError {
-    #[error("Not found: {0}")]
+    #[error("not found: {0}")]
     NotFound(String),
 
-    #[error("Bad request: {0}")]
+    #[error("bad request: {0}")]
     BadRequest(String),
 
-    #[error("Unauthorized: {0}")]
+    #[error("unauthorized: {0}")]
     Unauthorized(String),
 
-    #[error("Forbidden: {0}")]
+    #[error("forbidden: {0}")]
     Forbidden(String),
 
-    #[error("Conflict: {0}")]
+    #[error("conflict: {0}")]
     Conflict(String),
 
-    #[error("Validation error: {0}")]
+    #[error("validation error: {0}")]
     Validation(String),
 
-    #[error("Naming standard violation: {0}")]
+    #[error("naming standard violation: {0}")]
     NamingViolation(String),
 
-    #[error("Workflow error: {0}")]
+    #[error("workflow error: {0}")]
     Workflow(String),
 
-    #[error("AI service error: {0}")]
+    #[error("ai service error: {0}")]
     AiService(String),
 
-    #[error("Database error: {0}")]
+    #[error("database error: {0}")]
     Database(#[from] sqlx::Error),
 
-    #[error("Internal error: {0}")]
+    #[error("internal error: {0}")]
     Internal(#[from] anyhow::Error),
 }
 

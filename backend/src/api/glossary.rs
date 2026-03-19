@@ -4,26 +4,12 @@ use axum::Extension;
 use axum::Json;
 use uuid::Uuid;
 
-use sqlx::PgPool;
-
 use crate::auth::Claims;
 use crate::db::AppState;
 use crate::domain::ai::{AiEnrichRequest, AiEnrichResponse};
 use crate::domain::glossary::*;
 use crate::error::{AppError, AppResult};
 use crate::workflow;
-
-/// Resolve a single display name from a lookup table by optional UUID FK.
-/// Returns None if the FK is None or the lookup row doesn't exist.
-async fn resolve_name(pool: &PgPool, query: &str, id: Option<Uuid>) -> Option<String> {
-    let id = id?;
-    sqlx::query_scalar::<_, String>(query)
-        .bind(id)
-        .fetch_optional(pool)
-        .await
-        .ok()
-        .flatten()
-}
 
 // ---------------------------------------------------------------------------
 // list_terms — GET /api/v1/glossary/terms
@@ -158,7 +144,7 @@ const GLOSSARY_TERM_COLUMNS: &str = r#"
     path = "/api/v1/glossary/terms/{term_id}",
     params(("term_id" = Uuid, Path, description = "Term ID")),
     responses(
-        (status = 200, description = "Glossary term details", body = GlossaryTermDetailView),
+        (status = 200, description = "Glossary term details", body = GlossaryTermDetail),
         (status = 404, description = "Term not found")
     ),
     security(("bearer_auth" = [])),
@@ -167,19 +153,70 @@ const GLOSSARY_TERM_COLUMNS: &str = r#"
 pub async fn get_term(
     State(state): State<AppState>,
     Path(term_id): Path<Uuid>,
-) -> AppResult<Json<GlossaryTermDetailView>> {
-    // Fetch the term with all 45 columns
-    let query = format!(
-        "SELECT {cols} FROM glossary_terms WHERE term_id = $1 AND deleted_at IS NULL",
-        cols = GLOSSARY_TERM_COLUMNS
-    );
-    let term = sqlx::query_as::<_, GlossaryTerm>(&query)
-        .bind(term_id)
-        .fetch_optional(&state.pool)
-        .await?
-        .ok_or_else(|| AppError::NotFound(format!("glossary term not found: {term_id}")))?;
+) -> AppResult<Json<GlossaryTermDetail>> {
+    // ADR-0006 Pattern 1: Single JOIN query resolves all FK lookups in one round-trip
+    let row = sqlx::query_as::<_, GlossaryTermDetailRow>(
+        r#"
+        SELECT
+            gt.term_id, gt.term_name, gt.term_code, gt.definition,
+            gt.abbreviation, gt.business_context, gt.examples,
+            gt.definition_notes, gt.counter_examples, gt.formula,
+            gt.unit_of_measure_id, gt.term_type_id, gt.domain_id,
+            gt.category_id, gt.classification_id,
+            gt.owner_user_id, gt.steward_user_id,
+            gt.domain_owner_user_id, gt.approver_user_id,
+            gt.organisational_unit,
+            gt.status_id, gt.version_number, gt.is_current_version,
+            gt.approved_at, gt.review_frequency_id, gt.next_review_date,
+            gt.parent_term_id, gt.source_reference, gt.regulatory_reference,
+            gt.used_in_reports, gt.used_in_policies,
+            gt.regulatory_reporting_usage,
+            gt.is_cde, gt.golden_source, gt.confidence_level_id,
+            gt.visibility_id, gt.language_id, gt.external_reference,
+            gt.previous_version_id,
+            gt.created_by, gt.updated_by, gt.created_at, gt.updated_at,
+            -- Resolved lookup names
+            gd.domain_name,
+            gc.category_name,
+            gtt.type_name                 AS term_type_name,
+            gum.unit_name                 AS unit_of_measure_name,
+            dc.classification_name,
+            grf.frequency_name            AS review_frequency_name,
+            gcl.level_name                AS confidence_level_name,
+            gvl.visibility_name,
+            gl.language_name,
+            pt.term_name                  AS parent_term_name,
+            uo.display_name               AS owner_name,
+            us.display_name               AS steward_name,
+            udo.display_name              AS domain_owner_name,
+            ua.display_name               AS approver_name,
+            es.status_code,
+            es.status_name
+        FROM glossary_terms gt
+        LEFT JOIN glossary_domains gd       ON gd.domain_id = gt.domain_id
+        LEFT JOIN glossary_categories gc    ON gc.category_id = gt.category_id
+        LEFT JOIN glossary_term_types gtt   ON gtt.term_type_id = gt.term_type_id
+        LEFT JOIN glossary_units_of_measure gum ON gum.unit_id = gt.unit_of_measure_id
+        LEFT JOIN data_classifications dc   ON dc.classification_id = gt.classification_id
+        LEFT JOIN glossary_review_frequencies grf ON grf.frequency_id = gt.review_frequency_id
+        LEFT JOIN glossary_confidence_levels gcl ON gcl.confidence_id = gt.confidence_level_id
+        LEFT JOIN glossary_visibility_levels gvl ON gvl.visibility_id = gt.visibility_id
+        LEFT JOIN glossary_languages gl     ON gl.language_id = gt.language_id
+        LEFT JOIN glossary_terms pt         ON pt.term_id = gt.parent_term_id
+        LEFT JOIN users uo                  ON uo.user_id = gt.owner_user_id
+        LEFT JOIN users us                  ON us.user_id = gt.steward_user_id
+        LEFT JOIN users udo                 ON udo.user_id = gt.domain_owner_user_id
+        LEFT JOIN users ua                  ON ua.user_id = gt.approver_user_id
+        LEFT JOIN entity_statuses es        ON es.status_id = gt.status_id
+        WHERE gt.term_id = $1 AND gt.deleted_at IS NULL
+        "#,
+    )
+    .bind(term_id)
+    .fetch_optional(&state.pool)
+    .await?
+    .ok_or_else(|| AppError::NotFound(format!("glossary term not found: {term_id}")))?;
 
-    // Fetch junction data in parallel-ish (sequential for simplicity, all fast indexed queries)
+    // Fetch junction data (always arrays — cannot be part of the single-row JOIN)
     let regulatory_tags = sqlx::query_as::<_, GlossaryRegulatoryTagItem>(
         r#"
         SELECT grt.tag_id, grt.tag_code, grt.tag_name, grt.description
@@ -208,11 +245,11 @@ pub async fn get_term(
 
     let tags = sqlx::query_as::<_, GlossaryTagItem>(
         r#"
-        SELECT gt.tag_id, gt.tag_name
+        SELECT gt2.tag_id, gt2.tag_name
         FROM glossary_term_tags jtt
-        JOIN glossary_tags gt ON gt.tag_id = jtt.tag_id
+        JOIN glossary_tags gt2 ON gt2.tag_id = jtt.tag_id
         WHERE jtt.term_id = $1
-        ORDER BY gt.tag_name
+        ORDER BY gt2.tag_name
         "#,
     )
     .bind(term_id)
@@ -232,44 +269,14 @@ pub async fn get_term(
     .fetch_all(&state.pool)
     .await?;
 
-    // Resolve all lookup FK names
-    let pool = &state.pool;
-    let domain_name = resolve_name(pool, "SELECT domain_name FROM glossary_domains WHERE domain_id = $1", term.domain_id).await;
-    let category_name = resolve_name(pool, "SELECT category_name FROM glossary_categories WHERE category_id = $1", term.category_id).await;
-    let term_type_name = resolve_name(pool, "SELECT type_name FROM glossary_term_types WHERE term_type_id = $1", term.term_type_id).await;
-    let unit_of_measure_name = resolve_name(pool, "SELECT unit_name FROM glossary_units_of_measure WHERE unit_id = $1", term.unit_of_measure_id).await;
-    let classification_name = resolve_name(pool, "SELECT classification_name FROM data_classifications WHERE classification_id = $1", term.classification_id).await;
-    let review_frequency_name = resolve_name(pool, "SELECT frequency_name FROM glossary_review_frequencies WHERE frequency_id = $1", term.review_frequency_id).await;
-    let confidence_level_name = resolve_name(pool, "SELECT level_name FROM glossary_confidence_levels WHERE confidence_id = $1", term.confidence_level_id).await;
-    let visibility_name = resolve_name(pool, "SELECT visibility_name FROM glossary_visibility_levels WHERE visibility_id = $1", term.visibility_id).await;
-    let language_name = resolve_name(pool, "SELECT language_name FROM glossary_languages WHERE language_id = $1", term.language_id).await;
-    let parent_term_name = resolve_name(pool, "SELECT term_name FROM glossary_terms WHERE term_id = $1", term.parent_term_id).await;
-    let owner_name = resolve_name(pool, "SELECT display_name FROM users WHERE user_id = $1", term.owner_user_id).await;
-    let steward_name = resolve_name(pool, "SELECT display_name FROM users WHERE user_id = $1", term.steward_user_id).await;
-    let domain_owner_name = resolve_name(pool, "SELECT display_name FROM users WHERE user_id = $1", term.domain_owner_user_id).await;
-    let approver_name = resolve_name(pool, "SELECT display_name FROM users WHERE user_id = $1", term.approver_user_id).await;
-
-    Ok(Json(GlossaryTermDetailView {
-        term,
-        domain_name,
-        category_name,
-        term_type_name,
-        unit_of_measure_name,
-        classification_name,
-        review_frequency_name,
-        confidence_level_name,
-        visibility_name,
-        language_name,
-        parent_term_name,
-        owner_name,
-        steward_name,
-        domain_owner_name,
-        approver_name,
+    // Construct the flat response (ADR-0006 Pattern 1)
+    Ok(Json(GlossaryTermDetail::from_row_and_junctions(
+        row,
         regulatory_tags,
         subject_areas,
         tags,
         linked_processes,
-    }))
+    )))
 }
 
 // ---------------------------------------------------------------------------

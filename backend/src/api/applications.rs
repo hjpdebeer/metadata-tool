@@ -15,6 +15,8 @@ use crate::workflow;
 // list_applications — GET /api/v1/applications
 // ---------------------------------------------------------------------------
 
+/// List applications with optional filtering and pagination.
+/// Requires authentication.
 #[utoipa::path(
     get,
     path = "/api/v1/applications",
@@ -114,6 +116,8 @@ pub async fn list_applications(
 // get_application — GET /api/v1/applications/:app_id
 // ---------------------------------------------------------------------------
 
+/// Retrieve a single application with full detail including linked processes and interfaces.
+/// Requires authentication.
 #[utoipa::path(
     get,
     path = "/api/v1/applications/{app_id}",
@@ -220,6 +224,8 @@ pub async fn get_application(
 // create_application — POST /api/v1/applications
 // ---------------------------------------------------------------------------
 
+/// Create a new application in DRAFT status with an associated workflow instance.
+/// Requires authentication.
 #[utoipa::path(
     post,
     path = "/api/v1/applications",
@@ -318,6 +324,8 @@ pub async fn create_application(
 // update_application — PUT /api/v1/applications/:app_id
 // ---------------------------------------------------------------------------
 
+/// Update an existing application. Only provided fields are changed.
+/// Requires authentication.
 #[utoipa::path(
     put,
     path = "/api/v1/applications/{app_id}",
@@ -408,6 +416,8 @@ pub async fn update_application(
 // list_classifications — GET /api/v1/applications/classifications
 // ---------------------------------------------------------------------------
 
+/// List application classification categories.
+/// Requires authentication.
 #[utoipa::path(
     get,
     path = "/api/v1/applications/classifications",
@@ -438,6 +448,8 @@ pub async fn list_classifications(
 // link_data_element — POST /api/v1/applications/:app_id/elements
 // ---------------------------------------------------------------------------
 
+/// Link a data element to an application with usage type and authoritative source flag.
+/// Requires authentication.
 #[utoipa::path(
     post,
     path = "/api/v1/applications/{app_id}/elements",
@@ -524,6 +536,8 @@ pub async fn link_data_element(
 // list_app_elements — GET /api/v1/applications/:app_id/elements
 // ---------------------------------------------------------------------------
 
+/// List data elements linked to an application.
+/// Requires authentication.
 #[utoipa::path(
     get,
     path = "/api/v1/applications/{app_id}/elements",
@@ -583,6 +597,8 @@ pub async fn list_app_elements(
 // list_interfaces — GET /api/v1/applications/:app_id/interfaces
 // ---------------------------------------------------------------------------
 
+/// List interfaces (data exchanges) for an application.
+/// Requires authentication.
 #[utoipa::path(
     get,
     path = "/api/v1/applications/{app_id}/interfaces",

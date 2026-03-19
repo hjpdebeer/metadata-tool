@@ -8,6 +8,7 @@ use uuid::Uuid;
 // Full application (single-record detail view)
 // ---------------------------------------------------------------------------
 
+/// A business application in the application registry. Maps to the `applications` table.
 #[derive(Debug, Clone, Serialize, Deserialize, FromRow, ToSchema)]
 pub struct Application {
     pub application_id: Uuid,
@@ -61,7 +62,7 @@ pub struct ApplicationListItem {
 // ---------------------------------------------------------------------------
 
 /// Concrete paginated type for OpenAPI schema generation.
-#[derive(Debug, Serialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, ToSchema)]
 pub struct PaginatedApplications {
     pub data: Vec<ApplicationListItem>,
     pub total_count: i64,
@@ -73,7 +74,8 @@ pub struct PaginatedApplications {
 // Full view (detail with related counts)
 // ---------------------------------------------------------------------------
 
-#[derive(Debug, Serialize, ToSchema)]
+/// Detail view of an application including owner names, linked elements, and process counts.
+#[derive(Debug, Clone, Serialize, ToSchema)]
 pub struct ApplicationFullView {
     #[serde(flatten)]
     pub application: Application,
@@ -88,6 +90,7 @@ pub struct ApplicationFullView {
 // Request types
 // ---------------------------------------------------------------------------
 
+/// Request body for creating a new application.
 #[derive(Debug, Deserialize, ToSchema)]
 pub struct CreateApplicationRequest {
     pub application_name: String,
@@ -104,6 +107,7 @@ pub struct CreateApplicationRequest {
     pub documentation_url: Option<String>,
 }
 
+/// Request body for partially updating an application. All fields are optional.
 #[derive(Debug, Deserialize, ToSchema)]
 pub struct UpdateApplicationRequest {
     pub application_name: Option<String>,
@@ -119,6 +123,7 @@ pub struct UpdateApplicationRequest {
     pub documentation_url: Option<String>,
 }
 
+/// Query parameters for searching and filtering applications with pagination.
 #[derive(Debug, Deserialize, IntoParams, ToSchema)]
 pub struct SearchApplicationsRequest {
     pub query: Option<String>,
@@ -134,6 +139,7 @@ pub struct SearchApplicationsRequest {
 // Classification lookup
 // ---------------------------------------------------------------------------
 
+/// Classification category for applications (e.g. Core, Support, Analytics). Maps to the `application_classifications` table.
 #[derive(Debug, Clone, Serialize, Deserialize, FromRow, ToSchema)]
 pub struct ApplicationClassification {
     pub classification_id: Uuid,
@@ -146,6 +152,7 @@ pub struct ApplicationClassification {
 // Application-Data Element links
 // ---------------------------------------------------------------------------
 
+/// Request body for linking a data element to an application.
 #[derive(Debug, Deserialize, ToSchema)]
 pub struct LinkDataElementRequest {
     pub element_id: Uuid,
@@ -154,6 +161,7 @@ pub struct LinkDataElementRequest {
     pub description: Option<String>,
 }
 
+/// A link between an application and a data element, with usage details. Maps to the `application_data_elements` table.
 #[derive(Debug, Clone, Serialize, FromRow, ToSchema)]
 pub struct ApplicationDataElementLink {
     pub id: Uuid,
@@ -171,6 +179,7 @@ pub struct ApplicationDataElementLink {
 // Application interfaces
 // ---------------------------------------------------------------------------
 
+/// An interface between two applications describing data exchange. Maps to the `application_interfaces` table.
 #[derive(Debug, Clone, Serialize, Deserialize, FromRow, ToSchema)]
 pub struct ApplicationInterface {
     pub interface_id: Uuid,

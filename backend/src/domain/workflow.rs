@@ -4,6 +4,7 @@ use sqlx::FromRow;
 use utoipa::ToSchema;
 use uuid::Uuid;
 
+/// A configurable workflow definition for a specific entity type (Principle 5). Maps to the `workflow_definitions` table.
 #[derive(Debug, Clone, Serialize, Deserialize, FromRow, ToSchema)]
 pub struct WorkflowDefinition {
     pub workflow_def_id: Uuid,
@@ -14,6 +15,7 @@ pub struct WorkflowDefinition {
     pub review_sla_hours: Option<i32>,
 }
 
+/// A workflow state in the lifecycle state machine (e.g. DRAFT, ACCEPTED). Maps to the `workflow_states` table.
 #[derive(Debug, Clone, Serialize, Deserialize, FromRow, ToSchema)]
 pub struct WorkflowState {
     pub state_id: Uuid,
@@ -24,6 +26,7 @@ pub struct WorkflowState {
     pub is_terminal: bool,
 }
 
+/// A running workflow instance tracking the lifecycle of a specific entity. Maps to the `workflow_instances` table.
 #[derive(Debug, Clone, Serialize, Deserialize, FromRow, ToSchema)]
 pub struct WorkflowInstance {
     pub instance_id: Uuid,
@@ -37,6 +40,7 @@ pub struct WorkflowInstance {
     pub completion_notes: Option<String>,
 }
 
+/// An approval or review task assigned to a user or role within a workflow. Maps to the `workflow_tasks` table.
 #[derive(Debug, Clone, Serialize, Deserialize, FromRow, ToSchema)]
 pub struct WorkflowTask {
     pub task_id: Uuid,
@@ -54,19 +58,22 @@ pub struct WorkflowTask {
     pub comments: Option<String>,
 }
 
+/// Request body for triggering a workflow state transition.
 #[derive(Debug, Deserialize, ToSchema)]
 pub struct WorkflowTransitionRequest {
     pub action: String, // SUBMIT, APPROVE, REJECT, REVISE, WITHDRAW
     pub comments: Option<String>,
 }
 
+/// Request body for completing a workflow task with a decision.
 #[derive(Debug, Deserialize, ToSchema)]
 pub struct CompleteTaskRequest {
     pub decision: String, // APPROVE, REJECT, REVISE
     pub comments: Option<String>,
 }
 
-#[derive(Debug, Serialize, ToSchema)]
+/// Enriched view of a workflow instance with state name, tasks, and transition history (Principle 9).
+#[derive(Debug, Clone, Serialize, ToSchema)]
 pub struct WorkflowInstanceView {
     #[serde(flatten)]
     pub instance: WorkflowInstance,
@@ -77,6 +84,7 @@ pub struct WorkflowInstanceView {
     pub history: Vec<WorkflowHistoryEntry>,
 }
 
+/// A record of a workflow state transition for audit purposes (Principle 9). Maps to the `workflow_history` table.
 #[derive(Debug, Clone, Serialize, Deserialize, FromRow, ToSchema)]
 pub struct WorkflowHistoryEntry {
     pub history_id: Uuid,
@@ -90,7 +98,7 @@ pub struct WorkflowHistoryEntry {
 }
 
 /// Pending tasks for the current user's dashboard
-#[derive(Debug, Serialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, ToSchema)]
 pub struct PendingTaskView {
     pub task: WorkflowTask,
     pub entity_type: String,

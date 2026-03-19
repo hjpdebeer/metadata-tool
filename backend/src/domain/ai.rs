@@ -34,7 +34,7 @@ pub struct AiSuggestion {
 // ---------------------------------------------------------------------------
 
 /// Response returned after AI enrichment — includes all generated suggestions
-#[derive(Debug, Serialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct AiEnrichResponse {
     pub entity_type: String,
     pub entity_id: Uuid,
@@ -44,7 +44,7 @@ pub struct AiEnrichResponse {
 }
 
 /// Single suggestion with display-friendly fields
-#[derive(Debug, Serialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct AiSuggestionResponse {
     pub suggestion_id: Uuid,
     pub field_name: String,
@@ -93,7 +93,7 @@ pub struct FeedbackRequest {
 }
 
 /// Response after feedback is recorded
-#[derive(Debug, Serialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct FeedbackResponse {
     pub feedback_id: Uuid,
     pub suggestion_id: Uuid,

@@ -39,19 +39,23 @@ pub struct AiConfig {
 }
 
 impl AppConfig {
-    pub fn from_env() -> Result<Self, env::VarError> {
+    pub fn from_env() -> anyhow::Result<Self> {
+        let port_str = env::var("PORT").unwrap_or_else(|_| "8080".into());
+        let port: u16 = port_str
+            .parse()
+            .map_err(|_| anyhow::anyhow!("PORT must be a valid u16, got '{port_str}'"))?;
+
+        let expiry_str = env::var("JWT_EXPIRY_HOURS").unwrap_or_else(|_| "8".into());
+        let jwt_expiry_hours: u64 = expiry_str.parse().map_err(|_| {
+            anyhow::anyhow!("JWT_EXPIRY_HOURS must be a valid u64, got '{expiry_str}'")
+        })?;
+
         Ok(Self {
             database_url: env::var("DATABASE_URL")?,
             host: env::var("HOST").unwrap_or_else(|_| "0.0.0.0".into()),
-            port: env::var("PORT")
-                .unwrap_or_else(|_| "8080".into())
-                .parse()
-                .expect("PORT must be a valid u16"),
+            port,
             jwt_secret: env::var("JWT_SECRET")?,
-            jwt_expiry_hours: env::var("JWT_EXPIRY_HOURS")
-                .unwrap_or_else(|_| "8".into())
-                .parse()
-                .expect("JWT_EXPIRY_HOURS must be a valid u64"),
+            jwt_expiry_hours,
             entra: EntraConfig {
                 tenant_id: env::var("ENTRA_TENANT_ID")?,
                 client_id: env::var("ENTRA_CLIENT_ID")?,

@@ -209,7 +209,9 @@ async fn main() -> anyhow::Result<()> {
             config
                 .frontend_url
                 .parse::<axum::http::HeaderValue>()
-                .unwrap(),
+                .map_err(|e| {
+                    anyhow::anyhow!("invalid FRONTEND_URL '{}': {e}", config.frontend_url)
+                })?,
         )
         .allow_methods(Any)
         .allow_headers(Any);

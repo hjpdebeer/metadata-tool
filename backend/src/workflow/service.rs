@@ -634,6 +634,7 @@ async fn create_approval_tasks(
         .await?;
 
         // Send notification to the assigned user (if user-assigned, not role-only)
+        #[allow(clippy::collapsible_if)] // Intentionally separate: Some check vs Err check
         if let Some(user_id) = approver.approver_user_id {
             if let Err(e) = notifications::queue_workflow_task_notification(
                 pool,

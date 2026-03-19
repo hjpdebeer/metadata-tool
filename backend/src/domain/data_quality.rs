@@ -33,6 +33,7 @@ pub struct QualityDimensionSummary {
 // Quality rule types
 // ---------------------------------------------------------------------------
 
+/// A quality rule type template (e.g. completeness check, range validation). Maps to the `quality_rule_types` table.
 #[derive(Debug, Clone, Serialize, Deserialize, FromRow, ToSchema)]
 pub struct QualityRuleType {
     pub rule_type_id: Uuid,
@@ -46,6 +47,7 @@ pub struct QualityRuleType {
 // Full quality rule (single-record detail view)
 // ---------------------------------------------------------------------------
 
+/// A data quality rule defining a specific check against a data element or column. Maps to the `quality_rules` table.
 #[derive(Debug, Clone, Serialize, Deserialize, FromRow, ToSchema)]
 pub struct QualityRule {
     pub rule_id: Uuid,
@@ -98,7 +100,7 @@ pub struct QualityRuleListItem {
 // ---------------------------------------------------------------------------
 
 /// Concrete paginated type for OpenAPI schema generation.
-#[derive(Debug, Serialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, ToSchema)]
 pub struct PaginatedQualityRules {
     pub data: Vec<QualityRuleListItem>,
     pub total_count: i64,
@@ -110,6 +112,7 @@ pub struct PaginatedQualityRules {
 // Assessments
 // ---------------------------------------------------------------------------
 
+/// A recorded execution result for a quality rule. Maps to the `quality_assessments` table.
 #[derive(Debug, Clone, Serialize, Deserialize, FromRow, ToSchema)]
 pub struct QualityAssessment {
     pub assessment_id: Uuid,
@@ -130,6 +133,7 @@ pub struct QualityAssessment {
 // Scores
 // ---------------------------------------------------------------------------
 
+/// An aggregated quality score for an element or table over a time period. Maps to the `quality_scores` table.
 #[derive(Debug, Clone, Serialize, Deserialize, FromRow, ToSchema)]
 pub struct QualityScore {
     pub score_id: Uuid,
@@ -174,6 +178,7 @@ pub struct ElementQualityOverview {
 // Request types
 // ---------------------------------------------------------------------------
 
+/// Request body for creating a new quality rule.
 #[derive(Debug, Deserialize, ToSchema)]
 pub struct CreateQualityRuleRequest {
     pub rule_name: String,
@@ -188,6 +193,7 @@ pub struct CreateQualityRuleRequest {
     pub severity: Option<String>,
 }
 
+/// Request body for partially updating a quality rule. All fields are optional.
 #[derive(Debug, Deserialize, ToSchema)]
 pub struct UpdateQualityRuleRequest {
     pub rule_name: Option<String>,
@@ -204,6 +210,7 @@ pub struct UpdateQualityRuleRequest {
     pub owner_user_id: Option<Uuid>,
 }
 
+/// Request body for recording a quality assessment result.
 #[derive(Debug, Deserialize, ToSchema)]
 pub struct CreateAssessmentRequest {
     pub rule_id: Uuid,
@@ -214,6 +221,7 @@ pub struct CreateAssessmentRequest {
     pub details: Option<serde_json::Value>,
 }
 
+/// Query parameters for searching and filtering quality rules with pagination.
 #[derive(Debug, Deserialize, IntoParams, ToSchema)]
 pub struct SearchQualityRulesRequest {
     pub query: Option<String>,

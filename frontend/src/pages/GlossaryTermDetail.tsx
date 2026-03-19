@@ -104,47 +104,10 @@ const GlossaryTermDetail: React.FC = () => {
     if (!id) return;
     setLoading(true);
     try {
-      // Try the enhanced detail endpoint first; fall back to basic getTerm
-      let detailData: GlossaryTermDetailView;
-      try {
-        const response = await glossaryApi.getTermDetail(id);
-        detailData = response.data;
-      } catch {
-        // Fallback: use basic getTerm and build a minimal detail view
-        const response = await glossaryApi.getTerm(id);
-        detailData = {
-          ...response.data,
-          domain_name: null,
-          category_name: null,
-          term_type_name: null,
-          unit_of_measure_name: null,
-          classification_name: null,
-          review_frequency_name: null,
-          confidence_level_name: null,
-          visibility_name: null,
-          language_name: null,
-          owner_name: null,
-          steward_name: null,
-          domain_owner_name: null,
-          approver_name: null,
-          parent_term_name: null,
-          regulatory_tags: [],
-          subject_areas: [],
-          tags: [],
-          linked_processes: [],
-        };
-      }
+      // ADR-0006: Single detail endpoint returns flat response with all resolved names + junction data
+      const response = await glossaryApi.getTermDetail(id);
+      const detailData = response.data;
       setDetail(detailData);
-
-      // Fetch workflow instance
-      if (detailData.workflow_instance_id) {
-        try {
-          const wfResponse = await workflowApi.getInstance(detailData.workflow_instance_id);
-          setWorkflowInstance(wfResponse.data);
-        } catch {
-          // Workflow may not be available
-        }
-      }
     } catch {
       message.error('Failed to load term details.');
       navigate('/glossary');
@@ -244,7 +207,7 @@ const GlossaryTermDetail: React.FC = () => {
   // --- Workflow ---
 
   const handleWorkflowAction = (action: string) => {
-    if (!detail?.term.workflow_instance_id) {
+    if (!workflowInstance?.instance_id) {
       message.error('No active workflow for this term.');
       return;
     }
@@ -254,11 +217,11 @@ const GlossaryTermDetail: React.FC = () => {
   };
 
   const submitTransition = async () => {
-    if (!detail?.term.workflow_instance_id) return;
+    if (!workflowInstance?.instance_id) return;
     setActionLoading(true);
     try {
       await workflowApi.transitionWorkflow(
-        detail\.workflow_instance_id,
+        workflowInstance.instance_id,
         transitionAction,
         transitionComments || undefined,
       );
@@ -306,9 +269,7 @@ const GlossaryTermDetail: React.FC = () => {
     return null;
   }
 
-  // The backend uses #[serde(flatten)] — all term fields and resolved
-  // lookup names are at the root level of the response.
-  // `detail` IS the term + resolved names + junction data.
+  // ADR-0006: All fields are at the root level — flat struct, no nesting.
   const term = detail;
   const status = detail.status_code || 'DRAFT';
 
@@ -386,15 +347,17 @@ const GlossaryTermDetail: React.FC = () => {
     return buttons;
   };
 
-  // Determine which relationship categories exist
-  const childTerms = detail.related_terms.filter(
+  // Related terms — placeholder until term relationships are added to the detail response
+  type RelatedTermRef = { term_id: string; term_name: string; relationship_type: string; relationship_type_name?: string };
+  const allRelatedTerms: RelatedTermRef[] = [];
+  const childTerms = allRelatedTerms.filter(
     (r) => r.relationship_type === 'CHILD' || r.relationship_type === 'HAS_PART',
   );
-  const synonyms = detail.related_terms.filter((r) => r.relationship_type === 'SYNONYM');
-  const relatedTerms = detail.related_terms.filter((r) => r.relationship_type === 'RELATED');
-  const conflicting = detail.related_terms.filter((r) => r.relationship_type === 'CONFLICTING');
-  const isPartOf = detail.related_terms.filter((r) => r.relationship_type === 'IS_PART_OF');
-  const otherRelations = detail.related_terms.filter(
+  const synonyms = allRelatedTerms.filter((r) => r.relationship_type === 'SYNONYM');
+  const relatedTerms = allRelatedTerms.filter((r) => r.relationship_type === 'RELATED');
+  const conflicting = allRelatedTerms.filter((r) => r.relationship_type === 'CONFLICTING');
+  const isPartOf = allRelatedTerms.filter((r) => r.relationship_type === 'IS_PART_OF');
+  const otherRelations = allRelatedTerms.filter(
     (r) =>
       !['CHILD', 'HAS_PART', 'SYNONYM', 'RELATED', 'CONFLICTING', 'IS_PART_OF'].includes(
         r.relationship_type,
@@ -404,8 +367,8 @@ const GlossaryTermDetail: React.FC = () => {
   // Available tags/areas not yet attached
   const attachedRegTagIds = new Set(detail.regulatory_tags.map((t) => t.tag_id));
   const availableRegTags = allRegulatoryTags.filter((t) => !attachedRegTagIds.has(t.tag_id));
-  const attachedAreaIds = new Set(detail.subject_areas.map((a) => a.area_id));
-  const availableSubjectAreas = allSubjectAreas.filter((a) => !attachedAreaIds.has(a.area_id));
+  const attachedAreaIds = new Set(detail.subject_areas.map((a: { subject_area_id: string }) => a.subject_area_id));
+  const availableSubjectAreas = allSubjectAreas.filter((a) => !attachedAreaIds.has(a.subject_area_id || a.area_id));
 
   const renderTermLinks = (terms: { term_id: string; term_name: string }[]) => {
     if (terms.length === 0) return <EmptyValue text="None" />;
@@ -496,12 +459,7 @@ const GlossaryTermDetail: React.FC = () => {
             </Descriptions.Item>
             <Descriptions.Item label="Unit of Measure">
               {detail.unit_of_measure_name ? (
-                <span>
-                  {detail.unit_of_measure_name}
-                  {detail.unit_of_measure_symbol && (
-                    <Text type="secondary"> ({detail.unit_of_measure_symbol})</Text>
-                  )}
-                </span>
+                <span>{detail.unit_of_measure_name}</span>
               ) : (
                 <EmptyValue />
               )}
@@ -595,12 +553,12 @@ const GlossaryTermDetail: React.FC = () => {
             <Space wrap size={[4, 8]}>
               {detail.subject_areas.map((area) => (
                 <Tag
-                  key={area.area_id}
+                  key={area.subject_area_id}
                   color="cyan"
                   closable
                   onClose={(e) => {
                     e.preventDefault();
-                    handleDetachSubjectArea(area.area_id);
+                    handleDetachSubjectArea(area.subject_area_id);
                   }}
                 >
                   {area.area_name}
@@ -617,7 +575,7 @@ const GlossaryTermDetail: React.FC = () => {
                   showSearch
                   optionFilterProp="label"
                   options={availableSubjectAreas.map((a) => ({
-                    value: a.area_id,
+                    value: a.subject_area_id || a.area_id,
                     label: a.area_name,
                   }))}
                   onChange={handleAttachSubjectArea}

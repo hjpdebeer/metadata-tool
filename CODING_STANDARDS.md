@@ -150,6 +150,27 @@ All paths are kebab-case, nested under `/api/v1/`:
 
 Path parameters use snake_case: `{term_id}`, `{element_id}`, `{instance_id}`.
 
+### 1.5 Cross-Layer Naming Alignment
+
+Frontend UI labels, API field names, and database column names MUST be traceable and consistent. A mismatch between any layer is a bug.
+
+**Rule**: For every data field, there is ONE concept name used across all layers:
+
+| Layer | Convention | Example |
+|-------|-----------|---------|
+| Database column | `snake_case` with `_id` suffix for FKs | `classification_id` |
+| API response (detail) | includes both `{concept}_id` and `{concept}_name` | `classification_id` + `classification_name` |
+| API response (AI suggestion) | uses concept name without `_id` | `data_classification` |
+| Frontend label | Title Case of concept name | "Data Classification" |
+
+**Lookup fields** (FK to a lookup table):
+- The DB column stores the UUID: `classification_id`
+- The API detail response includes the resolved display name: `classification_name`
+- The AI prompt uses the concept name: `data_classification`
+- The frontend label matches the concept: "Data Classification"
+
+**Never**: Use different names for the same concept across layers (e.g., "Sensitivity Classification" in frontend but "data_classifications" in DB). See `docs/NAMING_ALIGNMENT.md` for the complete field mapping.
+
 ---
 
 ## 2. Rust Module Organisation
@@ -1126,9 +1147,9 @@ AI responses MUST be validated before storage. The backend MUST:
 
 ### 15.3 Prompt Design Rules
 
-1. **Never expose internal IDs**: AI prompts must only contain human-readable text fields. Never send UUID primary keys, foreign keys, status IDs, or user IDs to the AI.
+1. **Never expose internal IDs**: AI prompts must only contain human-readable text fields for the entity being enriched. Never send UUID primary keys, foreign keys, status IDs, or user IDs as entity data. Exception: lookup table UUIDs are included deliberately — see Section 15.6.
 2. **Never request ID suggestions**: The prompt must explicitly instruct the AI to never suggest values for fields ending in `_id`, `_at`, or `_by`, or for ownership fields (owner, steward, approver).
-3. **Dropdown fields**: When a field maps to a lookup table (dropdown), the prompt must list the allowed display values and instruct the AI to suggest a display name — the backend maps it to the ID.
+3. **Lookup fields**: When a field maps to a lookup table (dropdown), the prompt MUST include the complete lookup table with `{id, name}` pairs. The AI returns the UUID directly — the backend parses it with `Uuid::parse_str()`. See Section 15.6 for the full pattern.
 4. **Idempotent enrichment**: Calling enrichment multiple times on the same entity must not create duplicate suggestions. Check for existing PENDING suggestions before creating new ones, or replace them.
 5. **Financial services context**: All prompts must reference industry standards (DAMA DMBOK, BCBS 239, ISO 8000) to ground suggestions in authoritative sources rather than generic knowledge.
 
@@ -1153,3 +1174,18 @@ AI generates → Stored as PENDING → User reviews → ACCEPTED / MODIFIED / RE
 3. **Rate limiting**: Respect provider rate limits. If rate-limited, return a user-friendly message suggesting they retry in a few minutes.
 4. **Cost awareness**: Log the provider and model used for each enrichment call. Monitor usage to prevent unexpected costs.
 5. **Network**: Use `native-tls` (OS certificate store) for AI API calls to avoid DNS/IPv6 issues with `rustls`. Force IPv4 via `local_address(Ipv4Addr::UNSPECIFIED)` if the network does not support IPv6.
+
+### 15.6 Lookup Fields in AI Prompts
+
+When an AI prompt needs to suggest a value for a field that maps to a lookup table (FK to a predefined list), the prompt MUST include the complete lookup table with UUIDs. The AI returns the UUID directly — no fuzzy matching.
+
+**Standard pattern**:
+1. Before building the prompt, fetch all lookup values from DB as `{id, name}` pairs (see `fetch_glossary_lookups` in `api/ai.rs`)
+2. Include them in the prompt: "Pick the best match from this list. Return the UUID."
+3. AI returns the UUID in `suggested_value`
+4. Acceptance handler uses `resolve_lookup()` which tries `Uuid::parse_str()` first, falling back to ILIKE name match for backward compatibility
+5. If the UUID does not parse and no ILIKE match is found, the suggestion is silently dropped
+
+**Why**: Eliminates reliance on fuzzy matching (ILIKE), prevents mismatches when display names are ambiguous, and ensures AI can only pick from valid values. The prompt is self-contained — the AI does not need external knowledge of what lookup values exist.
+
+**Applies to**: domain, category, data_classification, term_type, unit_of_measure — any field backed by a lookup table. When adding new lookup fields, follow this same pattern: fetch the lookup table, embed it in the prompt, accept the UUID in the handler.

@@ -113,15 +113,18 @@ const GlossaryTermDetail: React.FC = () => {
         // Fallback: use basic getTerm and build a minimal detail view
         const response = await glossaryApi.getTerm(id);
         detailData = {
-          term: response.data,
+          ...response.data,
+          domain_name: null,
+          category_name: null,
           term_type_name: null,
           unit_of_measure_name: null,
-          unit_of_measure_symbol: null,
           classification_name: null,
           review_frequency_name: null,
           confidence_level_name: null,
           visibility_name: null,
           language_name: null,
+          owner_name: null,
+          steward_name: null,
           domain_owner_name: null,
           approver_name: null,
           parent_term_name: null,
@@ -129,15 +132,14 @@ const GlossaryTermDetail: React.FC = () => {
           subject_areas: [],
           tags: [],
           linked_processes: [],
-          related_terms: [],
         };
       }
       setDetail(detailData);
 
       // Fetch workflow instance
-      if (detailData.term.workflow_instance_id) {
+      if (detailData.workflow_instance_id) {
         try {
-          const wfResponse = await workflowApi.getInstance(detailData.term.workflow_instance_id);
+          const wfResponse = await workflowApi.getInstance(detailData.workflow_instance_id);
           setWorkflowInstance(wfResponse.data);
         } catch {
           // Workflow may not be available
@@ -256,7 +258,7 @@ const GlossaryTermDetail: React.FC = () => {
     setActionLoading(true);
     try {
       await workflowApi.transitionWorkflow(
-        detail.term.workflow_instance_id,
+        detail\.workflow_instance_id,
         transitionAction,
         transitionComments || undefined,
       );
@@ -304,8 +306,11 @@ const GlossaryTermDetail: React.FC = () => {
     return null;
   }
 
-  const { term } = detail;
-  const status = term.status_code || 'DRAFT';
+  // The backend uses #[serde(flatten)] — all term fields and resolved
+  // lookup names are at the root level of the response.
+  // `detail` IS the term + resolved names + junction data.
+  const term = detail;
+  const status = detail.status_code || 'DRAFT';
 
   // --- Action buttons ---
 

@@ -158,27 +158,32 @@ export interface GlossaryTerm {
 }
 
 /** Enhanced detail view with resolved names and junction data */
-export interface GlossaryTermDetailView {
-  term: GlossaryTerm;
+/**
+ * Detail view of a glossary term. The backend uses #[serde(flatten)] so all
+ * GlossaryTerm fields are at the root level alongside resolved lookup names
+ * and junction data. We use `extends` to model this flat structure.
+ */
+export interface GlossaryTermDetailView extends GlossaryTerm {
   // Resolved lookup display names
+  domain_name: string | null;
+  category_name: string | null;
   term_type_name: string | null;
   unit_of_measure_name: string | null;
-  unit_of_measure_symbol: string | null;
   classification_name: string | null;
   review_frequency_name: string | null;
   confidence_level_name: string | null;
   visibility_name: string | null;
   language_name: string | null;
+  owner_name: string | null;
+  steward_name: string | null;
   domain_owner_name: string | null;
   approver_name: string | null;
   parent_term_name: string | null;
   // Junction data
   regulatory_tags: { tag_id: string; tag_code: string; tag_name: string }[];
-  subject_areas: { area_id: string; area_code: string; area_name: string }[];
+  subject_areas: { subject_area_id: string; area_code: string; area_name: string }[];
   tags: { tag_id: string; tag_name: string }[];
   linked_processes: { process_id: string; process_name: string }[];
-  // Relationships (from glossary_term_relationships)
-  related_terms: { term_id: string; term_name: string; relationship_type: string; relationship_type_name: string }[];
 }
 
 export interface CreateGlossaryTermRequest {
@@ -341,9 +346,10 @@ export const glossaryApi = {
     return api.get(`/glossary/terms/${id}`);
   },
 
-  /** Enhanced detail endpoint returning resolved names and junction data */
+  /** Enhanced detail view with resolved lookup names and junction data.
+   *  Uses the same endpoint as getTerm — the backend always returns the full detail view. */
   getTermDetail(id: string): Promise<AxiosResponse<GlossaryTermDetailView>> {
-    return api.get(`/glossary/terms/${id}/detail`);
+    return api.get(`/glossary/terms/${id}`);
   },
 
   createTerm(data: CreateGlossaryTermRequest): Promise<AxiosResponse<GlossaryTerm>> {

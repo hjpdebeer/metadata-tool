@@ -510,22 +510,40 @@ pub async fn enrich(
         &state.config.ai,
         &body.entity_type,
         entity_data,
-        existing_fields,
+        existing_fields.clone(),
         lookups,
     )
     .await?;
 
-    // Filter out any suggestions for ID/FK/system fields that slipped through
+    // Filter suggestions — backend is the authoritative gate, not the AI prompt.
+    // Drop: disallowed fields, empty values, AND fields that already have values.
     let filtered_suggestions: Vec<_> = result.suggestions.iter().filter(|s| {
-        !s.field_name.ends_with("_id")
-            && !s.field_name.ends_with("_at")
-            && !s.field_name.ends_with("_by")
-            && !matches!(
+        // Drop disallowed field names
+        if s.field_name.ends_with("_id")
+            || s.field_name.ends_with("_at")
+            || s.field_name.ends_with("_by")
+            || matches!(
                 s.field_name.as_str(),
                 "status_id" | "version_number" | "is_current_version" | "is_cde"
                     | "is_nullable" | "is_active" | "is_critical"
             )
-            && !s.suggested_value.is_empty()
+        {
+            return false;
+        }
+        // Drop empty suggestions
+        if s.suggested_value.is_empty() {
+            return false;
+        }
+        // Drop suggestions for fields that already have values
+        // (AI may ignore the prompt instruction to skip populated fields)
+        if existing_fields.contains(&s.field_name) {
+            tracing::debug!(
+                field = %s.field_name,
+                "dropping AI suggestion for already-populated field"
+            );
+            return false;
+        }
+        true
     }).collect();
 
     // Store suggestions in the database

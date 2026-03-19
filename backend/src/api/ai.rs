@@ -245,7 +245,7 @@ async fn fetch_entity_data(
             Ok((json, existing))
         }
         _ => Err(AppError::Validation(format!(
-            "Unsupported entity type for AI enrichment: {entity_type}. Supported types: glossary_term, data_element"
+            "unsupported entity type for AI enrichment: {entity_type} — supported types: glossary_term, data_element"
         ))),
     }
 }
@@ -492,6 +492,11 @@ pub async fn enrich(
     Extension(claims): Extension<Claims>,
     Json(body): Json<AiEnrichRequest>,
 ) -> AppResult<Json<AiEnrichResponse>> {
+    // SEC-025: Input length validation
+    if body.entity_type.len() > 64 {
+        return Err(AppError::Validation("entity_type exceeds maximum length".into()));
+    }
+
     // Fetch entity data
     let (entity_data, existing_fields) =
         fetch_entity_data(&state.pool, &body.entity_type, body.entity_id).await?;
@@ -684,6 +689,13 @@ pub async fn accept_suggestion(
     Path(suggestion_id): Path<Uuid>,
     Json(body): Json<AcceptSuggestionRequest>,
 ) -> AppResult<Json<AiSuggestionResponse>> {
+    // SEC-025: Input length validation
+    if let Some(ref val) = body.modified_value
+        && val.len() > 4000
+    {
+        return Err(AppError::Validation("modified_value exceeds 4000 characters".into()));
+    }
+
     // Fetch the suggestion
     let suggestion = sqlx::query_as::<_, AiSuggestion>(
         r#"
@@ -703,7 +715,7 @@ pub async fn accept_suggestion(
 
     if suggestion.status != "PENDING" {
         return Err(AppError::Validation(format!(
-            "Suggestion is already {}, cannot accept",
+            "suggestion is already {}, cannot accept",
             suggestion.status
         )));
     }
@@ -814,7 +826,7 @@ pub async fn reject_suggestion(
     .await?
     .ok_or_else(|| {
         AppError::NotFound(format!(
-            "Pending suggestion not found: {suggestion_id}"
+            "pending suggestion not found: {suggestion_id}"
         ))
     })?;
 
@@ -868,6 +880,15 @@ pub async fn submit_feedback(
         ));
     }
 
+    // SEC-025: Input length validation
+    if let Some(ref text) = body.feedback_text
+        && text.len() > 4000
+    {
+        return Err(AppError::Validation(
+            "feedback_text exceeds 4000 characters".into(),
+        ));
+    }
+
     // Verify suggestion exists
     let exists = sqlx::query_scalar::<_, bool>(
         "SELECT EXISTS(SELECT 1 FROM ai_suggestions WHERE suggestion_id = $1)",
@@ -900,6 +921,6 @@ pub async fn submit_feedback(
     Ok(Json(FeedbackResponse {
         feedback_id,
         suggestion_id,
-        message: "Feedback recorded successfully".to_string(),
+        message: "feedback recorded successfully".to_string(),
     }))
 }

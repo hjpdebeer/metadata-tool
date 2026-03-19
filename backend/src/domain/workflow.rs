@@ -73,13 +73,24 @@ pub struct CompleteTaskRequest {
 }
 
 /// Enriched view of a workflow instance with state name, tasks, and transition history (Principle 9).
+/// All fields are at the root level -- no nesting, no `#[serde(flatten)]` (ADR-0006 Pattern 1).
 #[derive(Debug, Clone, Serialize, ToSchema)]
 pub struct WorkflowInstanceView {
-    #[serde(flatten)]
-    pub instance: WorkflowInstance,
+    // === Instance columns ===
+    pub instance_id: Uuid,
+    pub workflow_def_id: Uuid,
+    pub entity_type_id: Uuid,
+    pub entity_id: Uuid,
+    pub current_state_id: Uuid,
+    pub initiated_by: Uuid,
+    pub initiated_at: DateTime<Utc>,
+    pub completed_at: Option<DateTime<Utc>>,
+    pub completion_notes: Option<String>,
+    // === Resolved lookup names (from JOINs) ===
     pub current_state_name: String,
     pub entity_type_name: String,
     pub initiated_by_name: String,
+    // === Junction data (from separate queries) ===
     pub tasks: Vec<WorkflowTask>,
     pub history: Vec<WorkflowHistoryEntry>,
 }

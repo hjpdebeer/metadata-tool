@@ -195,13 +195,50 @@ pub struct SearchGraphsRequest {
 // Full graph structure for visualization (React Flow)
 // ---------------------------------------------------------------------------
 
-/// Full graph structure for visualization
+/// Full graph structure for visualization.
+/// All fields are at the root level -- no nesting, no `#[serde(flatten)]` (ADR-0006 Pattern 1).
 #[derive(Debug, Clone, Serialize, ToSchema)]
 pub struct LineageGraphView {
-    #[serde(flatten)]
-    pub graph: LineageGraph,
+    // === Graph entity columns ===
+    pub graph_id: Uuid,
+    pub graph_name: String,
+    pub graph_type: String,
+    pub description: Option<String>,
+    pub scope_type: Option<String>,
+    pub scope_entity_id: Option<Uuid>,
+    pub version_number: i32,
+    pub is_current: bool,
+    pub created_by: Uuid,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+    // === Junction data (from separate queries) ===
     pub nodes: Vec<LineageNodeView>,
     pub edges: Vec<LineageEdge>,
+}
+
+impl LineageGraphView {
+    /// Construct from a `LineageGraph` and its nodes/edges.
+    pub fn from_graph_and_children(
+        graph: LineageGraph,
+        nodes: Vec<LineageNodeView>,
+        edges: Vec<LineageEdge>,
+    ) -> Self {
+        Self {
+            graph_id: graph.graph_id,
+            graph_name: graph.graph_name,
+            graph_type: graph.graph_type,
+            description: graph.description,
+            scope_type: graph.scope_type,
+            scope_entity_id: graph.scope_entity_id,
+            version_number: graph.version_number,
+            is_current: graph.is_current,
+            created_by: graph.created_by,
+            created_at: graph.created_at,
+            updated_at: graph.updated_at,
+            nodes,
+            edges,
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------

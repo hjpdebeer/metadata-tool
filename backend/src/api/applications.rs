@@ -133,17 +133,33 @@ pub async fn get_application(
     State(state): State<AppState>,
     Path(app_id): Path<Uuid>,
 ) -> AppResult<Json<ApplicationFullView>> {
-    // Fetch the main application record
-    let application = sqlx::query_as::<_, Application>(
+    // Single JOIN query resolving all FK lookups (ADR-0006 Pattern 1)
+    let row = sqlx::query_as::<_, ApplicationDetailRow>(
         r#"
         SELECT
-            application_id, application_name, application_code, description,
-            classification_id, status_id, business_owner_id, technical_owner_id,
-            vendor, version, deployment_type, technology_stack,
-            is_critical, criticality_rationale, go_live_date, retirement_date,
-            documentation_url, created_by, updated_by, created_at, updated_at
-        FROM applications
-        WHERE application_id = $1 AND deleted_at IS NULL
+            a.application_id, a.application_name, a.application_code, a.description,
+            a.classification_id, a.status_id, a.business_owner_id, a.technical_owner_id,
+            a.vendor, a.version, a.deployment_type, a.technology_stack,
+            a.is_critical, a.criticality_rationale, a.go_live_date, a.retirement_date,
+            a.documentation_url, a.created_by, a.updated_by, a.created_at, a.updated_at,
+            ac.classification_name,
+            es.status_code,
+            es.status_name,
+            ubo.display_name              AS business_owner_name,
+            uto.display_name              AS technical_owner_name,
+            ucb.display_name              AS created_by_name,
+            uub.display_name              AS updated_by_name,
+            wi.instance_id                AS workflow_instance_id
+        FROM applications a
+        LEFT JOIN application_classifications ac ON ac.classification_id = a.classification_id
+        LEFT JOIN entity_statuses es ON es.status_id = a.status_id
+        LEFT JOIN users ubo ON ubo.user_id = a.business_owner_id
+        LEFT JOIN users uto ON uto.user_id = a.technical_owner_id
+        LEFT JOIN users ucb ON ucb.user_id = a.created_by
+        LEFT JOIN users uub ON uub.user_id = a.updated_by
+        LEFT JOIN workflow_instances wi ON wi.entity_id = a.application_id
+            AND wi.completed_at IS NULL
+        WHERE a.application_id = $1 AND a.deleted_at IS NULL
         "#,
     )
     .bind(app_id)
@@ -151,33 +167,7 @@ pub async fn get_application(
     .await?
     .ok_or_else(|| AppError::NotFound(format!("application not found: {app_id}")))?;
 
-    // Fetch business owner name
-    let business_owner_name: Option<String> = if let Some(owner_id) = application.business_owner_id
-    {
-        sqlx::query_scalar::<_, String>(
-            "SELECT display_name FROM users WHERE user_id = $1",
-        )
-        .bind(owner_id)
-        .fetch_optional(&state.pool)
-        .await?
-    } else {
-        None
-    };
-
-    // Fetch technical owner name
-    let technical_owner_name: Option<String> =
-        if let Some(owner_id) = application.technical_owner_id {
-            sqlx::query_scalar::<_, String>(
-                "SELECT display_name FROM users WHERE user_id = $1",
-            )
-            .bind(owner_id)
-            .fetch_optional(&state.pool)
-            .await?
-        } else {
-            None
-        };
-
-    // Count linked data elements
+    // Separate queries for junction/aggregate data only
     let data_elements_count = sqlx::query_scalar::<_, i64>(
         "SELECT COUNT(*) FROM application_data_elements WHERE application_id = $1",
     )
@@ -185,7 +175,6 @@ pub async fn get_application(
     .fetch_one(&state.pool)
     .await?;
 
-    // Count interfaces (both source and target)
     let interfaces_count = sqlx::query_scalar::<_, i64>(
         r#"
         SELECT COUNT(*) FROM application_interfaces
@@ -196,7 +185,6 @@ pub async fn get_application(
     .fetch_one(&state.pool)
     .await?;
 
-    // Fetch linked process names
     let linked_processes = sqlx::query_scalar::<_, String>(
         r#"
         SELECT bp.process_name
@@ -210,14 +198,12 @@ pub async fn get_application(
     .fetch_all(&state.pool)
     .await?;
 
-    Ok(Json(ApplicationFullView {
-        application,
-        business_owner_name,
-        technical_owner_name,
+    Ok(Json(ApplicationFullView::from_row_and_junctions(
+        row,
         data_elements_count,
         interfaces_count,
         linked_processes,
-    }))
+    )))
 }
 
 // ---------------------------------------------------------------------------

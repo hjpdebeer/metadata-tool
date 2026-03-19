@@ -15,8 +15,32 @@ pub struct AppState {
 
 impl AppState {
     pub fn new(pool: PgPool, config: AppConfig) -> Self {
-        let encryption_secret = std::env::var("SETTINGS_ENCRYPTION_KEY")
-            .unwrap_or_else(|_| config.jwt_secret.clone());
+        // SEC-019: In production (Entra SSO configured), require a separate encryption key.
+        // In development (placeholder tenant ID), allow fallback to jwt_secret for convenience.
+        let entra_configured = !config.entra.tenant_id.is_empty()
+            && config.entra.tenant_id != "your-tenant-id"
+            && uuid::Uuid::parse_str(&config.entra.tenant_id).is_ok();
+
+        let encryption_secret = match std::env::var("SETTINGS_ENCRYPTION_KEY") {
+            Ok(key) if !key.is_empty() => key,
+            _ if entra_configured => {
+                tracing::error!(
+                    "SETTINGS_ENCRYPTION_KEY is required in production (Entra SSO is configured). \
+                     Set a unique 32+ character key, different from JWT_SECRET."
+                );
+                panic!(
+                    "SETTINGS_ENCRYPTION_KEY must be set when Entra SSO is configured — \
+                     refusing to reuse JWT_SECRET as encryption key in production"
+                );
+            }
+            _ => {
+                tracing::warn!(
+                    "SETTINGS_ENCRYPTION_KEY not set — falling back to JWT_SECRET (dev mode only)"
+                );
+                config.jwt_secret.clone()
+            }
+        };
+
         let settings_cache = Some(SettingsCache::new(encryption_secret));
         Self {
             pool,

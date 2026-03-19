@@ -1,3 +1,4 @@
+use axum::extract::DefaultBodyLimit;
 use axum::middleware;
 use axum::routing::{delete, get, post, put};
 use axum::Router;
@@ -5,6 +6,7 @@ use tower_http::cors::CorsLayer;
 use tower_http::trace::TraceLayer;
 use tracing_subscriber::EnvFilter;
 use utoipa::OpenApi;
+#[cfg(debug_assertions)]
 use utoipa_swagger_ui::SwaggerUi;
 
 use metadata_tool::api;
@@ -270,7 +272,10 @@ async fn main() -> anyhow::Result<()> {
         .route("/api/v1/auth/me", get(api::auth::me))
         // Business Glossary — bulk upload routes BEFORE {term_id} to avoid path conflicts
         .route("/api/v1/glossary/terms/bulk-upload/template", get(api::bulk_upload::download_template))
-        .route("/api/v1/glossary/terms/bulk-upload", post(api::bulk_upload::bulk_upload))
+        .route("/api/v1/glossary/terms/bulk-upload",
+            post(api::bulk_upload::bulk_upload)
+                .layer(DefaultBodyLimit::max(10 * 1024 * 1024))
+        )
         .route("/api/v1/glossary/terms", get(api::glossary::list_terms).post(api::glossary::create_term))
         .route("/api/v1/glossary/terms/{term_id}", get(api::glossary::get_term).put(api::glossary::update_term))
         .route("/api/v1/glossary/terms/{term_id}/ai-enrich", post(api::glossary::ai_enrich_term))
@@ -370,21 +375,27 @@ async fn main() -> anyhow::Result<()> {
         // Apply auth middleware to all protected routes
         .layer(middleware::from_fn_with_state(state.clone(), require_auth));
 
-    // Swagger UI router
-    let swagger_ui = SwaggerUi::new("/swagger-ui")
-        .url("/api-docs/openapi.json", ApiDoc::openapi());
-    let swagger_router = Router::<()>::from(swagger_ui);
-
     // Combine all routes
     let app = Router::new()
         .merge(public_routes)
         .merge(protected_routes)
-        .with_state(state)
-        .merge(swagger_router)
+        .with_state(state);
+
+    // SEC-023: Only expose Swagger UI in debug builds (disabled in production)
+    #[cfg(debug_assertions)]
+    let app = {
+        let swagger_ui = SwaggerUi::new("/swagger-ui")
+            .url("/api-docs/openapi.json", ApiDoc::openapi());
+        let swagger_router = Router::<()>::from(swagger_ui);
+        app.merge(swagger_router)
+    };
+
+    let app = app
         .layer(TraceLayer::new_for_http())
         .layer(cors);
 
     tracing::info!("Starting server on {addr}");
+    #[cfg(debug_assertions)]
     tracing::info!("Swagger UI available at http://{addr}/swagger-ui/");
 
     let listener = tokio::net::TcpListener::bind(&addr).await?;

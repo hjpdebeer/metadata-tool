@@ -59,9 +59,21 @@ pub async fn dev_login(
     State(state): State<AppState>,
     Json(body): Json<DevLoginRequest>,
 ) -> AppResult<Json<TokenResponse>> {
-    // Block dev-login when Entra SSO is configured
-    if state.config.entra.tenant_id != "your-tenant-id" && !state.config.entra.tenant_id.is_empty()
-    {
+    // SEC-025: Input length validation
+    if body.email.len() > 320 {
+        return Err(AppError::Validation("email exceeds maximum length".into()));
+    }
+    if body.password.len() > 128 {
+        return Err(AppError::Validation("password exceeds maximum length".into()));
+    }
+
+    // SEC-021: Block dev-login when Entra SSO is properly configured
+    // Check that tenant ID is not empty, not the placeholder, and looks like a UUID
+    let entra_configured = !state.config.entra.tenant_id.is_empty()
+        && state.config.entra.tenant_id != "your-tenant-id"
+        && uuid::Uuid::parse_str(&state.config.entra.tenant_id).is_ok();
+
+    if entra_configured {
         return Err(AppError::Forbidden(
             "dev login disabled — Entra SSO is configured".into(),
         ));

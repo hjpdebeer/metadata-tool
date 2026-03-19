@@ -109,6 +109,11 @@ const INSTRUCTIONS: &[(&str, &str, &str, &str, &str)] = &[
 // Template download
 // ---------------------------------------------------------------------------
 
+/// Download an Excel template for bulk-uploading glossary terms.
+///
+/// Returns a `.xlsx` file with three sheets: Terms (data entry with dropdowns),
+/// Valid Values (lookup lists from the database), and Instructions (field documentation).
+/// Dropdown validations reference the Valid Values sheet, ensuring data integrity.
 #[utoipa::path(
     get,
     path = "/api/v1/glossary/terms/bulk-upload/template",
@@ -361,13 +366,19 @@ fn col_to_letter(col: u16) -> String {
 
 /// Convert `rust_xlsxwriter` errors to `AppError`.
 fn xlsx_err(e: rust_xlsxwriter::XlsxError) -> AppError {
-    AppError::Internal(anyhow::anyhow!("Excel generation error: {e}"))
+    AppError::Internal(anyhow::anyhow!("excel generation error: {e}"))
 }
 
 // ---------------------------------------------------------------------------
 // Bulk upload
 // ---------------------------------------------------------------------------
 
+/// Bulk-upload glossary terms from a filled-in Excel template.
+///
+/// Accepts a multipart file upload (max 10 MB, up to 1000 rows). Each row is
+/// processed independently — partial success is supported. Created terms enter
+/// the DRAFT workflow state. No AI enrichment is triggered. Each successful
+/// insert is recorded in the `audit_log` table.
 #[utoipa::path(
     post,
     path = "/api/v1/glossary/terms/bulk-upload",
@@ -387,6 +398,8 @@ pub async fn bulk_upload(
 ) -> AppResult<axum::Json<BulkUploadResult>> {
     // Extract the file from multipart
     let mut file_bytes: Option<Vec<u8>> = None;
+    let mut file_name: Option<String> = None;
+    let mut content_type: Option<String> = None;
 
     while let Some(field) = multipart
         .next_field()
@@ -395,6 +408,8 @@ pub async fn bulk_upload(
     {
         let name = field.name().unwrap_or("").to_string();
         if name == "file" {
+            file_name = field.file_name().map(|s| s.to_string());
+            content_type = field.content_type().map(|s| s.to_string());
             let data = field
                 .bytes()
                 .await
@@ -408,10 +423,31 @@ pub async fn bulk_upload(
         AppError::BadRequest("no file field found in multipart upload".into())
     })?;
 
+    // SEC-024: Validate content type and file extension before processing
+    let valid_content_types = [
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        "application/vnd.ms-excel",
+        "application/octet-stream", // browsers sometimes send this for xlsx
+    ];
+    let has_valid_content_type = content_type
+        .as_deref()
+        .map(|ct| valid_content_types.iter().any(|v| ct.starts_with(v)))
+        .unwrap_or(true); // if no content type, fall through to format check below
+    let has_valid_extension = file_name
+        .as_deref()
+        .map(|name| name.to_lowercase().ends_with(".xlsx") || name.to_lowercase().ends_with(".xls"))
+        .unwrap_or(true); // if no filename, fall through to format check below
+
+    if !has_valid_content_type && !has_valid_extension {
+        return Err(AppError::Validation(
+            "invalid file type — only .xlsx (Excel) files are accepted".into(),
+        ));
+    }
+
     // Check file size
     if file_bytes.len() > MAX_FILE_SIZE {
         return Err(AppError::Validation(format!(
-            "File exceeds maximum size of {} MB",
+            "file exceeds maximum size of {} MB",
             MAX_FILE_SIZE / (1024 * 1024)
         )));
     }
@@ -419,12 +455,12 @@ pub async fn bulk_upload(
     // Parse the Excel file
     let cursor = Cursor::new(&file_bytes);
     let mut workbook: Xlsx<_> = open_workbook_from_rs(cursor)
-        .map_err(|e| AppError::Validation(format!("Invalid Excel file: {e}")))?;
+        .map_err(|e| AppError::Validation(format!("invalid Excel file: {e}")))?;
 
     // Read the "Terms" sheet
     let range = workbook
         .worksheet_range("Terms")
-        .map_err(|e| AppError::Validation(format!("Cannot read 'Terms' sheet: {e}")))?;
+        .map_err(|e| AppError::Validation(format!("cannot read 'Terms' sheet: {e}")))?;
 
     let rows: Vec<Vec<Data>> = range
         .rows()
@@ -432,7 +468,7 @@ pub async fn bulk_upload(
         .collect();
 
     if rows.is_empty() {
-        return Err(AppError::Validation("Terms sheet is empty".into()));
+        return Err(AppError::Validation("terms sheet is empty".into()));
     }
 
     // Validate header row
@@ -441,7 +477,7 @@ pub async fn bulk_upload(
         let actual = cell_as_string(header_row.get(i));
         if actual.trim().to_lowercase() != expected.to_lowercase() {
             return Err(AppError::Validation(format!(
-                "Column {} header mismatch: expected '{}', found '{}'",
+                "column {} header mismatch: expected '{}', found '{}'",
                 col_to_letter(i as u16),
                 expected,
                 actual
@@ -491,6 +527,13 @@ pub async fn bulk_upload(
     .fetch_optional(&state.pool)
     .await?;
 
+    let ctx = BulkUploadContext {
+        pool: &state.pool,
+        user_id: claims.sub,
+        draft_status_id,
+        annual_frequency_id,
+    };
+
     let total_rows = data_rows.len();
     let mut successful = 0usize;
     let mut errors: Vec<BulkUploadError> = Vec::new();
@@ -499,12 +542,9 @@ pub async fn bulk_upload(
     // Process each row independently
     for (row_num, cols) in &data_rows {
         let row_errors = process_row(
-            &state.pool,
+            &ctx,
             *row_num,
             cols,
-            claims.sub,
-            draft_status_id,
-            annual_frequency_id,
             &mut created_term_ids,
         )
         .await;
@@ -528,16 +568,20 @@ pub async fn bulk_upload(
     }))
 }
 
-/// Process a single row from the upload. Returns Ok(()) on success,
-/// or Err(Vec<BulkUploadError>) with all validation errors for this row.
-#[allow(clippy::too_many_arguments)]
-async fn process_row(
-    pool: &PgPool,
-    row_num: usize,
-    cols: &[String],
+/// Context passed to each row during bulk upload processing.
+struct BulkUploadContext<'a> {
+    pool: &'a PgPool,
     user_id: Uuid,
     draft_status_id: Uuid,
     annual_frequency_id: Option<Uuid>,
+}
+
+/// Process a single row from the upload. Returns Ok(()) on success,
+/// or Err(Vec<BulkUploadError>) with all validation errors for this row.
+async fn process_row(
+    ctx: &BulkUploadContext<'_>,
+    row_num: usize,
+    cols: &[String],
     created_ids: &mut Vec<Uuid>,
 ) -> Result<(), Vec<BulkUploadError>> {
     let mut row_errors: Vec<BulkUploadError> = Vec::new();
@@ -654,64 +698,64 @@ async fn process_row(
 
     // --- Resolve lookups ---
     let domain_id = resolve_optional_lookup(
-        pool, row_num, "Domain", &domain_val,
+        ctx.pool, row_num, "Domain", &domain_val,
         "SELECT domain_id FROM glossary_domains WHERE domain_name ILIKE $1",
         &mut row_errors,
     ).await;
 
     let category_id = resolve_optional_lookup(
-        pool, row_num, "Category", &category_val,
+        ctx.pool, row_num, "Category", &category_val,
         "SELECT category_id FROM glossary_categories WHERE category_name ILIKE $1",
         &mut row_errors,
     ).await;
 
     let classification_id = resolve_optional_lookup(
-        pool, row_num, "Data Classification", &classification_val,
+        ctx.pool, row_num, "Data Classification", &classification_val,
         "SELECT classification_id FROM data_classifications WHERE classification_name ILIKE $1",
         &mut row_errors,
     ).await;
 
     let term_type_id = resolve_optional_lookup(
-        pool, row_num, "Term Type", &term_type_val,
+        ctx.pool, row_num, "Term Type", &term_type_val,
         "SELECT term_type_id FROM glossary_term_types WHERE type_name ILIKE $1",
         &mut row_errors,
     ).await;
 
     let unit_id = resolve_optional_lookup(
-        pool, row_num, "Unit of Measure", &unit_val,
+        ctx.pool, row_num, "Unit of Measure", &unit_val,
         "SELECT unit_id FROM glossary_units_of_measure WHERE unit_name ILIKE $1",
         &mut row_errors,
     ).await;
 
     let frequency_id = resolve_optional_lookup(
-        pool, row_num, "Review Frequency", &frequency_val,
+        ctx.pool, row_num, "Review Frequency", &frequency_val,
         "SELECT frequency_id FROM glossary_review_frequencies WHERE frequency_name ILIKE $1",
         &mut row_errors,
     ).await;
 
     let confidence_id = resolve_optional_lookup(
-        pool, row_num, "Confidence Level", &confidence_val,
+        ctx.pool, row_num, "Confidence Level", &confidence_val,
         "SELECT confidence_id FROM glossary_confidence_levels WHERE level_name ILIKE $1",
         &mut row_errors,
     ).await;
 
     let visibility_id = resolve_optional_lookup(
-        pool, row_num, "Visibility", &visibility_val,
+        ctx.pool, row_num, "Visibility", &visibility_val,
         "SELECT visibility_id FROM glossary_visibility_levels WHERE visibility_name ILIKE $1",
         &mut row_errors,
     ).await;
 
     let language_id = resolve_optional_lookup(
-        pool, row_num, "Language", &language_val,
+        ctx.pool, row_num, "Language", &language_val,
         "SELECT language_id FROM glossary_languages WHERE language_name ILIKE $1",
         &mut row_errors,
     ).await;
 
     // Resolve users by email
-    let owner_user_id = resolve_user_by_email(pool, row_num, "Business Term Owner", &owner_email, &mut row_errors).await;
-    let steward_user_id = resolve_user_by_email(pool, row_num, "Data Steward", &steward_email, &mut row_errors).await;
-    let domain_owner_user_id = resolve_user_by_email(pool, row_num, "Data Domain Owner", &domain_owner_email, &mut row_errors).await;
-    let approver_user_id = resolve_user_by_email(pool, row_num, "Approver", &approver_email, &mut row_errors).await;
+    let owner_user_id = resolve_user_by_email(ctx.pool, row_num, "Business Term Owner", &owner_email, &mut row_errors).await;
+    let steward_user_id = resolve_user_by_email(ctx.pool, row_num, "Data Steward", &steward_email, &mut row_errors).await;
+    let domain_owner_user_id = resolve_user_by_email(ctx.pool, row_num, "Data Domain Owner", &domain_owner_email, &mut row_errors).await;
+    let approver_user_id = resolve_user_by_email(ctx.pool, row_num, "Approver", &approver_email, &mut row_errors).await;
 
     // Resolve organisational unit text (stored as text, not FK)
     let organisational_unit = org_unit_val.clone();
@@ -722,7 +766,7 @@ async fn process_row(
             "SELECT term_id FROM glossary_terms WHERE term_name ILIKE $1 AND is_current_version = TRUE AND deleted_at IS NULL LIMIT 1",
         )
         .bind(parent_name)
-        .fetch_optional(pool)
+        .fetch_optional(ctx.pool)
         .await
         .ok()
         .flatten();
@@ -751,7 +795,7 @@ async fn process_row(
     }
 
     // Use the resolved review frequency, fall back to ANNUAL default
-    let effective_frequency_id = frequency_id.or(annual_frequency_id);
+    let effective_frequency_id = frequency_id.or(ctx.annual_frequency_id);
 
     // --- Insert the term ---
     let term_id = sqlx::query_scalar::<_, Uuid>(
@@ -808,29 +852,41 @@ async fn process_row(
     .bind(regulatory_reporting_usage.as_deref()) // $29
     .bind(is_cde)                           // $30
     .bind(golden_source.as_deref())         // $31
-    .bind(draft_status_id)                  // $32
-    .bind(user_id)                          // $33
-    .fetch_one(pool)
+    .bind(ctx.draft_status_id)               // $32
+    .bind(ctx.user_id)                      // $33
+    .fetch_one(ctx.pool)
     .await
     .map_err(|e| {
         vec![BulkUploadError {
             row: row_num,
             field: None,
-            message: format!("Database insert failed: {e}"),
+            message: format!("database insert failed: {e}"),
         }]
     })?;
 
     // Initiate workflow
     if let Err(e) = workflow::service::initiate_workflow(
-        pool,
+        ctx.pool,
         workflow::ENTITY_GLOSSARY_TERM,
         term_id,
-        user_id,
+        ctx.user_id,
     )
     .await
     {
-        tracing::warn!(term_id = %term_id, error = %e, "Failed to initiate workflow for bulk-uploaded term");
+        tracing::warn!(term_id = %term_id, error = %e, "failed to initiate workflow for bulk-uploaded term");
     }
+
+    // CS-003: Audit log entry for bulk-uploaded term
+    sqlx::query(
+        "INSERT INTO audit_log (table_name, record_id, action, new_values, changed_by) \
+         VALUES ('glossary_terms', $1, 'INSERT', $2, $3)"
+    )
+    .bind(term_id)
+    .bind(serde_json::json!({"source": "bulk_upload", "row": row_num}))
+    .bind(ctx.user_id)
+    .execute(ctx.pool)
+    .await
+    .ok(); // Don't fail the upload if audit logging fails
 
     // --- Junction tables ---
 
@@ -841,7 +897,7 @@ async fn process_row(
                 "SELECT tag_id FROM glossary_regulatory_tags WHERE tag_name ILIKE $1",
             )
             .bind(tag_name)
-            .fetch_optional(pool)
+            .fetch_optional(ctx.pool)
             .await
             .ok()
             .flatten();
@@ -852,11 +908,11 @@ async fn process_row(
                 )
                 .bind(term_id)
                 .bind(tag_id)
-                .bind(user_id)
-                .execute(pool)
+                .bind(ctx.user_id)
+                .execute(ctx.pool)
                 .await;
             } else {
-                tracing::warn!(row = row_num, tag = tag_name, "Regulatory tag not found during bulk upload — skipped");
+                tracing::warn!(row = row_num, tag = tag_name, "regulatory tag not found during bulk upload — skipped");
             }
         }
     }
@@ -868,7 +924,7 @@ async fn process_row(
                 "SELECT subject_area_id FROM glossary_subject_areas WHERE area_name ILIKE $1",
             )
             .bind(area_name)
-            .fetch_optional(pool)
+            .fetch_optional(ctx.pool)
             .await
             .ok()
             .flatten();
@@ -879,11 +935,11 @@ async fn process_row(
                 )
                 .bind(term_id)
                 .bind(area_id)
-                .bind(user_id)
-                .execute(pool)
+                .bind(ctx.user_id)
+                .execute(ctx.pool)
                 .await;
             } else {
-                tracing::warn!(row = row_num, area = area_name, "Subject area not found during bulk upload — skipped");
+                tracing::warn!(row = row_num, area = area_name, "subject area not found during bulk upload — skipped");
             }
         }
     }
@@ -900,8 +956,8 @@ async fn process_row(
                 "#,
             )
             .bind(&tag_name)
-            .bind(user_id)
-            .fetch_one(pool)
+            .bind(ctx.user_id)
+            .fetch_one(ctx.pool)
             .await;
 
             if let Ok(tag_id) = tag_id {
@@ -910,8 +966,8 @@ async fn process_row(
                 )
                 .bind(term_id)
                 .bind(tag_id)
-                .bind(user_id)
-                .execute(pool)
+                .bind(ctx.user_id)
+                .execute(ctx.pool)
                 .await;
             }
         }

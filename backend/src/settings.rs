@@ -2,7 +2,7 @@
 //!
 //! Settings are stored in the `system_settings` database table. Encrypted values
 //! use AES-256-GCM with a random 12-byte nonce prepended to the ciphertext. The
-//! encryption key is derived from `SETTINGS_ENCRYPTION_KEY` or `JWT_SECRET` via SHA-256.
+//! encryption key is derived from `SETTINGS_ENCRYPTION_KEY` or `JWT_SECRET` via Argon2id.
 
 use aes_gcm::aead::Aead;
 use aes_gcm::{Aes256Gcm, KeyInit};
@@ -20,26 +20,27 @@ use crate::error::{AppError, AppResult};
 // Encryption helpers
 // ---------------------------------------------------------------------------
 
-/// Derive a 256-bit encryption key from the given secret using a simple hash.
+/// Derive a 256-bit encryption key from the given secret using Argon2id (SEC-014).
+///
+/// Uses a fixed application-scoped salt, which is acceptable for key derivation
+/// from a high-entropy secret (not password hashing). The salt prevents
+/// cross-application key collisions.
 fn derive_key(secret: &str) -> [u8; 32] {
-    use std::hash::Hasher;
-    let mut hasher = std::collections::hash_map::DefaultHasher::new();
-    hasher.write(secret.as_bytes());
-    let h1 = hasher.finish().to_le_bytes();
-    hasher.write(b"settings-encryption-key-derivation");
-    let h2 = hasher.finish().to_le_bytes();
-    hasher.write(secret.as_bytes());
-    hasher.write(b"second-round");
-    let h3 = hasher.finish().to_le_bytes();
-    hasher.write(b"third-round-padding");
-    let h4 = hasher.finish().to_le_bytes();
-
-    let mut key = [0u8; 32];
-    key[0..8].copy_from_slice(&h1);
-    key[8..16].copy_from_slice(&h2);
-    key[16..24].copy_from_slice(&h3);
-    key[24..32].copy_from_slice(&h4);
-    key
+    use argon2::{Algorithm, Argon2, Params, Version};
+    let salt = b"metadata-tool-settings-key-v1---"; // 32 bytes, fixed for KDF
+    let params = Params::new(
+        Params::DEFAULT_M_COST,
+        Params::DEFAULT_T_COST,
+        Params::DEFAULT_P_COST,
+        Some(32),
+    )
+    .expect("valid argon2 params");
+    let argon2 = Argon2::new(Algorithm::Argon2id, Version::V0x13, params);
+    let mut output = [0u8; 32];
+    argon2
+        .hash_password_into(secret.as_bytes(), salt, &mut output)
+        .expect("argon2 key derivation");
+    output
 }
 
 /// Encrypt a plaintext string using AES-256-GCM.
@@ -49,9 +50,9 @@ fn encrypt_value(plaintext: &str, secret: &str) -> AppResult<String> {
     let cipher = Aes256Gcm::new_from_slice(&key_bytes)
         .map_err(|e| AppError::Internal(anyhow::anyhow!("invalid key: {e}")))?;
 
-    // Generate a random 12-byte nonce
+    // Generate a random 12-byte nonce using OS CSPRNG
     let mut nonce_bytes = [0u8; 12];
-    getrandom(&mut nonce_bytes);
+    fill_random(&mut nonce_bytes);
     let nonce = aes_gcm::Nonce::from(nonce_bytes);
 
     let ciphertext = cipher
@@ -99,17 +100,17 @@ fn decrypt_value(encrypted_b64: &str, secret: &str) -> AppResult<String> {
         .map_err(|e| AppError::Internal(anyhow::anyhow!("decrypted value is not UTF-8: {e}")))
 }
 
-/// Fill a buffer with random bytes using std randomness.
-fn getrandom(buf: &mut [u8]) {
-    use std::collections::hash_map::RandomState;
-    use std::hash::{BuildHasher, Hasher};
-    for chunk in buf.chunks_mut(8) {
-        let state = RandomState::new();
-        let mut h = state.build_hasher();
-        h.write_u64(0);
-        let val = h.finish().to_le_bytes();
-        let n = chunk.len().min(8);
-        chunk[..n].copy_from_slice(&val[..n]);
+/// Fill a buffer with cryptographically secure random bytes (SEC-015).
+///
+/// Uses UUID v4 (backed by OS CSPRNG) to fill the buffer. Each UUID v4
+/// provides 16 bytes of cryptographically random data, which is sufficient
+/// for AES-GCM nonce generation.
+fn fill_random(buf: &mut [u8]) {
+    for chunk in buf.chunks_mut(16) {
+        let id = uuid::Uuid::new_v4();
+        let bytes = id.as_bytes();
+        let len = chunk.len().min(16);
+        chunk[..len].copy_from_slice(&bytes[..len]);
     }
 }
 

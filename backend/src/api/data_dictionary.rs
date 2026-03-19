@@ -137,19 +137,39 @@ pub async fn get_element(
     State(state): State<AppState>,
     Path(element_id): Path<Uuid>,
 ) -> AppResult<Json<DataElementFullView>> {
-    // Fetch the main data element
-    let element = sqlx::query_as::<_, DataElement>(
+    // Single JOIN query resolving all FK lookups (ADR-0006 Pattern 1)
+    let row = sqlx::query_as::<_, DataElementDetailRow>(
         r#"
         SELECT
-            element_id, element_name, element_code, description,
-            business_definition, business_rules, data_type, format_pattern,
-            allowed_values, default_value, is_nullable, is_cde,
-            cde_rationale, cde_designated_at, glossary_term_id,
-            domain_id, classification_id, sensitivity_level,
-            status_id, owner_user_id, steward_user_id,
-            created_by, updated_by, created_at, updated_at
-        FROM data_elements
-        WHERE element_id = $1 AND deleted_at IS NULL
+            de.element_id, de.element_name, de.element_code, de.description,
+            de.business_definition, de.business_rules, de.data_type, de.format_pattern,
+            de.allowed_values, de.default_value, de.is_nullable, de.is_cde,
+            de.cde_rationale, de.cde_designated_at, de.glossary_term_id,
+            de.domain_id, de.classification_id, de.sensitivity_level,
+            de.status_id, de.owner_user_id, de.steward_user_id,
+            de.created_by, de.updated_by, de.created_at, de.updated_at,
+            gt.term_name                  AS glossary_term_name,
+            gd.domain_name,
+            dc.classification_name,
+            uo.display_name               AS owner_name,
+            us.display_name               AS steward_name,
+            es.status_code,
+            es.status_name,
+            ucb.display_name              AS created_by_name,
+            uub.display_name              AS updated_by_name,
+            wi.instance_id                AS workflow_instance_id
+        FROM data_elements de
+        LEFT JOIN glossary_terms gt ON gt.term_id = de.glossary_term_id
+        LEFT JOIN glossary_domains gd ON gd.domain_id = de.domain_id
+        LEFT JOIN data_classifications dc ON dc.classification_id = de.classification_id
+        LEFT JOIN users uo ON uo.user_id = de.owner_user_id
+        LEFT JOIN users us ON us.user_id = de.steward_user_id
+        LEFT JOIN entity_statuses es ON es.status_id = de.status_id
+        LEFT JOIN users ucb ON ucb.user_id = de.created_by
+        LEFT JOIN users uub ON uub.user_id = de.updated_by
+        LEFT JOIN workflow_instances wi ON wi.entity_id = de.element_id
+            AND wi.completed_at IS NULL
+        WHERE de.element_id = $1 AND de.deleted_at IS NULL
         "#,
     )
     .bind(element_id)
@@ -157,19 +177,7 @@ pub async fn get_element(
     .await?
     .ok_or_else(|| AppError::NotFound(format!("data element not found: {element_id}")))?;
 
-    // Fetch the glossary term name if linked
-    let glossary_term_name: Option<String> = if let Some(term_id) = element.glossary_term_id {
-        sqlx::query_scalar::<_, String>(
-            "SELECT term_name FROM glossary_terms WHERE term_id = $1",
-        )
-        .bind(term_id)
-        .fetch_optional(&state.pool)
-        .await?
-    } else {
-        None
-    };
-
-    // Fetch technical columns mapped to this element
+    // Separate queries for junction/aggregate data only
     let technical_columns = sqlx::query_as::<_, TechnicalColumn>(
         r#"
         SELECT
@@ -186,7 +194,6 @@ pub async fn get_element(
     .fetch_all(&state.pool)
     .await?;
 
-    // Count linked quality rules
     let quality_rules_count = sqlx::query_scalar::<_, i64>(
         "SELECT COUNT(*) FROM quality_rules WHERE element_id = $1 AND deleted_at IS NULL",
     )
@@ -194,7 +201,6 @@ pub async fn get_element(
     .fetch_one(&state.pool)
     .await?;
 
-    // Count linked processes
     let linked_processes_count = sqlx::query_scalar::<_, i64>(
         "SELECT COUNT(*) FROM process_data_elements WHERE element_id = $1",
     )
@@ -202,7 +208,6 @@ pub async fn get_element(
     .fetch_one(&state.pool)
     .await?;
 
-    // Count linked applications
     let linked_applications_count = sqlx::query_scalar::<_, i64>(
         "SELECT COUNT(*) FROM application_data_elements WHERE element_id = $1",
     )
@@ -210,14 +215,13 @@ pub async fn get_element(
     .fetch_one(&state.pool)
     .await?;
 
-    Ok(Json(DataElementFullView {
-        element,
-        glossary_term_name,
+    Ok(Json(DataElementFullView::from_row_and_junctions(
+        row,
         technical_columns,
         quality_rules_count,
         linked_processes_count,
         linked_applications_count,
-    }))
+    )))
 }
 
 // ---------------------------------------------------------------------------

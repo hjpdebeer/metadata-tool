@@ -183,11 +183,9 @@ pub async fn get_graph(
     .fetch_all(&state.pool)
     .await?;
 
-    Ok(Json(LineageGraphView {
-        graph,
-        nodes,
-        edges,
-    }))
+    Ok(Json(LineageGraphView::from_graph_and_children(
+        graph, nodes, edges,
+    )))
 }
 
 // ---------------------------------------------------------------------------

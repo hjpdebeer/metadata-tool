@@ -47,11 +47,47 @@ pub struct Role {
 }
 
 /// A user combined with their assigned roles for detail views.
+/// All fields are at the root level -- no nesting, no `#[serde(flatten)]` (ADR-0006 Pattern 1).
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct UserWithRoles {
-    #[serde(flatten)]
-    pub user: User,
+    // === User columns ===
+    pub user_id: Uuid,
+    pub username: String,
+    pub email: String,
+    pub display_name: String,
+    pub first_name: Option<String>,
+    pub last_name: Option<String>,
+    pub department: Option<String>,
+    pub job_title: Option<String>,
+    pub entra_object_id: Option<String>,
+    pub is_active: bool,
+    pub last_login_at: Option<DateTime<Utc>>,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+    // === Junction data ===
     pub roles: Vec<Role>,
+}
+
+impl UserWithRoles {
+    /// Construct from a `User` and their assigned roles.
+    pub fn from_user_and_roles(user: User, roles: Vec<Role>) -> Self {
+        Self {
+            user_id: user.user_id,
+            username: user.username,
+            email: user.email,
+            display_name: user.display_name,
+            first_name: user.first_name,
+            last_name: user.last_name,
+            department: user.department,
+            job_title: user.job_title,
+            entra_object_id: user.entra_object_id,
+            is_active: user.is_active,
+            last_login_at: user.last_login_at,
+            created_at: user.created_at,
+            updated_at: user.updated_at,
+            roles,
+        }
+    }
 }
 
 /// Request body for creating a new user with initial role assignments.

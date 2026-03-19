@@ -71,18 +71,121 @@ pub struct PaginatedBusinessProcesses {
 // Full view (detail with related counts and sub-entities)
 // ---------------------------------------------------------------------------
 
-/// Detail view of a business process including steps, linked elements, and sub-processes.
-#[derive(Debug, Clone, Serialize, ToSchema)]
-pub struct BusinessProcessFullView {
-    #[serde(flatten)]
-    pub process: BusinessProcess,
+/// Internal row type for the single JOIN query that fetches all process columns
+/// plus resolved FK lookup names. Used by the `get_process` handler (ADR-0006 Pattern 1).
+#[derive(Debug, Clone, FromRow)]
+pub struct BusinessProcessDetailRow {
+    // === Entity columns ===
+    pub process_id: Uuid,
+    pub process_name: String,
+    pub process_code: String,
+    pub description: String,
+    pub detailed_description: Option<String>,
+    pub category_id: Option<Uuid>,
+    pub status_id: Uuid,
+    pub owner_user_id: Option<Uuid>,
+    pub parent_process_id: Option<Uuid>,
+    pub is_critical: bool,
+    pub criticality_rationale: Option<String>,
+    pub frequency: Option<String>,
+    pub regulatory_requirement: Option<String>,
+    pub sla_description: Option<String>,
+    pub documentation_url: Option<String>,
+    pub created_by: Uuid,
+    pub updated_by: Option<Uuid>,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+    // === Resolved lookup names (from LEFT JOINs) ===
     pub owner_name: Option<String>,
     pub category_name: Option<String>,
     pub parent_process_name: Option<String>,
+    pub status_code: Option<String>,
+    pub status_name: Option<String>,
+    pub created_by_name: Option<String>,
+    pub updated_by_name: Option<String>,
+    pub workflow_instance_id: Option<Uuid>,
+}
+
+/// Complete business process detail view with resolved lookup names and junction data.
+/// All fields are at the root level -- no nesting, no `#[serde(flatten)]` (ADR-0006 Pattern 1).
+#[derive(Debug, Clone, Serialize, ToSchema)]
+pub struct BusinessProcessFullView {
+    // === Entity columns ===
+    pub process_id: Uuid,
+    pub process_name: String,
+    pub process_code: String,
+    pub description: String,
+    pub detailed_description: Option<String>,
+    pub category_id: Option<Uuid>,
+    pub category_name: Option<String>,
+    pub status_id: Uuid,
+    pub status_code: Option<String>,
+    pub owner_user_id: Option<Uuid>,
+    pub owner_name: Option<String>,
+    pub parent_process_id: Option<Uuid>,
+    pub parent_process_name: Option<String>,
+    pub is_critical: bool,
+    pub criticality_rationale: Option<String>,
+    pub frequency: Option<String>,
+    pub regulatory_requirement: Option<String>,
+    pub sla_description: Option<String>,
+    pub documentation_url: Option<String>,
+    pub created_by: Uuid,
+    pub created_by_name: Option<String>,
+    pub updated_by: Option<Uuid>,
+    pub updated_by_name: Option<String>,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+    pub workflow_instance_id: Option<Uuid>,
+    // === Junction data (from separate queries) ===
     pub steps: Vec<ProcessStep>,
     pub data_elements_count: i64,
     pub linked_applications: Vec<String>,
     pub sub_processes: Vec<BusinessProcess>,
+}
+
+impl BusinessProcessFullView {
+    /// Construct from a `BusinessProcessDetailRow` (JOIN query result) and junction data.
+    pub fn from_row_and_junctions(
+        row: BusinessProcessDetailRow,
+        steps: Vec<ProcessStep>,
+        data_elements_count: i64,
+        linked_applications: Vec<String>,
+        sub_processes: Vec<BusinessProcess>,
+    ) -> Self {
+        Self {
+            process_id: row.process_id,
+            process_name: row.process_name,
+            process_code: row.process_code,
+            description: row.description,
+            detailed_description: row.detailed_description,
+            category_id: row.category_id,
+            category_name: row.category_name,
+            status_id: row.status_id,
+            status_code: row.status_code,
+            owner_user_id: row.owner_user_id,
+            owner_name: row.owner_name,
+            parent_process_id: row.parent_process_id,
+            parent_process_name: row.parent_process_name,
+            is_critical: row.is_critical,
+            criticality_rationale: row.criticality_rationale,
+            frequency: row.frequency,
+            regulatory_requirement: row.regulatory_requirement,
+            sla_description: row.sla_description,
+            documentation_url: row.documentation_url,
+            created_by: row.created_by,
+            created_by_name: row.created_by_name,
+            updated_by: row.updated_by,
+            updated_by_name: row.updated_by_name,
+            created_at: row.created_at,
+            updated_at: row.updated_at,
+            workflow_instance_id: row.workflow_instance_id,
+            steps,
+            data_elements_count,
+            linked_applications,
+            sub_processes,
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------

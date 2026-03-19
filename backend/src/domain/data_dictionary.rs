@@ -78,16 +78,148 @@ pub struct PaginatedDataElements {
 // Full view (detail with related counts)
 // ---------------------------------------------------------------------------
 
-/// Response combining business and technical metadata for a data element
+/// Internal row type for the single JOIN query that fetches all data element columns
+/// plus resolved FK lookup names. Used by the `get_element` handler (ADR-0006 Pattern 1).
+#[derive(Debug, Clone, FromRow)]
+pub struct DataElementDetailRow {
+    // === Entity columns ===
+    pub element_id: Uuid,
+    pub element_name: String,
+    pub element_code: String,
+    pub description: String,
+    pub business_definition: Option<String>,
+    pub business_rules: Option<String>,
+    pub data_type: String,
+    pub format_pattern: Option<String>,
+    pub allowed_values: Option<serde_json::Value>,
+    pub default_value: Option<String>,
+    pub is_nullable: bool,
+    pub is_cde: bool,
+    pub cde_rationale: Option<String>,
+    pub cde_designated_at: Option<DateTime<Utc>>,
+    pub glossary_term_id: Option<Uuid>,
+    pub domain_id: Option<Uuid>,
+    pub classification_id: Option<Uuid>,
+    pub sensitivity_level: Option<String>,
+    pub status_id: Uuid,
+    pub owner_user_id: Option<Uuid>,
+    pub steward_user_id: Option<Uuid>,
+    pub created_by: Uuid,
+    pub updated_by: Option<Uuid>,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+    // === Resolved lookup names (from LEFT JOINs) ===
+    pub glossary_term_name: Option<String>,
+    pub domain_name: Option<String>,
+    pub classification_name: Option<String>,
+    pub owner_name: Option<String>,
+    pub steward_name: Option<String>,
+    pub status_code: Option<String>,
+    pub status_name: Option<String>,
+    pub created_by_name: Option<String>,
+    pub updated_by_name: Option<String>,
+    pub workflow_instance_id: Option<Uuid>,
+}
+
+/// Complete data element detail view with resolved lookup names and junction data.
+/// All fields are at the root level -- no nesting, no `#[serde(flatten)]` (ADR-0006 Pattern 1).
 #[derive(Debug, Clone, Serialize, ToSchema)]
 pub struct DataElementFullView {
-    #[serde(flatten)]
-    pub element: DataElement,
+    // === Entity columns ===
+    pub element_id: Uuid,
+    pub element_name: String,
+    pub element_code: String,
+    pub description: String,
+    pub business_definition: Option<String>,
+    pub business_rules: Option<String>,
+    pub data_type: String,
+    pub format_pattern: Option<String>,
+    pub allowed_values: Option<serde_json::Value>,
+    pub default_value: Option<String>,
+    pub is_nullable: bool,
+    pub is_cde: bool,
+    pub cde_rationale: Option<String>,
+    pub cde_designated_at: Option<DateTime<Utc>>,
+    pub glossary_term_id: Option<Uuid>,
+    pub domain_id: Option<Uuid>,
+    pub classification_id: Option<Uuid>,
+    pub sensitivity_level: Option<String>,
+    pub status_id: Uuid,
+    pub owner_user_id: Option<Uuid>,
+    pub steward_user_id: Option<Uuid>,
+    pub created_by: Uuid,
+    pub updated_by: Option<Uuid>,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+    // === Resolved lookup names (from JOINs) ===
     pub glossary_term_name: Option<String>,
+    pub domain_name: Option<String>,
+    pub classification_name: Option<String>,
+    pub owner_name: Option<String>,
+    pub steward_name: Option<String>,
+    pub status_code: Option<String>,
+    pub status_name: Option<String>,
+    pub created_by_name: Option<String>,
+    pub updated_by_name: Option<String>,
+    pub workflow_instance_id: Option<Uuid>,
+    // === Junction data (from separate queries) ===
     pub technical_columns: Vec<TechnicalColumn>,
     pub quality_rules_count: i64,
     pub linked_processes_count: i64,
     pub linked_applications_count: i64,
+}
+
+impl DataElementFullView {
+    /// Construct from a `DataElementDetailRow` (JOIN query result) and junction data.
+    pub fn from_row_and_junctions(
+        row: DataElementDetailRow,
+        technical_columns: Vec<TechnicalColumn>,
+        quality_rules_count: i64,
+        linked_processes_count: i64,
+        linked_applications_count: i64,
+    ) -> Self {
+        Self {
+            element_id: row.element_id,
+            element_name: row.element_name,
+            element_code: row.element_code,
+            description: row.description,
+            business_definition: row.business_definition,
+            business_rules: row.business_rules,
+            data_type: row.data_type,
+            format_pattern: row.format_pattern,
+            allowed_values: row.allowed_values,
+            default_value: row.default_value,
+            is_nullable: row.is_nullable,
+            is_cde: row.is_cde,
+            cde_rationale: row.cde_rationale,
+            cde_designated_at: row.cde_designated_at,
+            glossary_term_id: row.glossary_term_id,
+            domain_id: row.domain_id,
+            classification_id: row.classification_id,
+            sensitivity_level: row.sensitivity_level,
+            status_id: row.status_id,
+            owner_user_id: row.owner_user_id,
+            steward_user_id: row.steward_user_id,
+            created_by: row.created_by,
+            updated_by: row.updated_by,
+            created_at: row.created_at,
+            updated_at: row.updated_at,
+            glossary_term_name: row.glossary_term_name,
+            domain_name: row.domain_name,
+            classification_name: row.classification_name,
+            owner_name: row.owner_name,
+            steward_name: row.steward_name,
+            status_code: row.status_code,
+            status_name: row.status_name,
+            created_by_name: row.created_by_name,
+            updated_by_name: row.updated_by_name,
+            workflow_instance_id: row.workflow_instance_id,
+            technical_columns,
+            quality_rules_count,
+            linked_processes_count,
+            linked_applications_count,
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------

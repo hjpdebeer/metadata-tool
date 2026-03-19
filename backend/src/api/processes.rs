@@ -128,17 +128,33 @@ pub async fn get_process(
     State(state): State<AppState>,
     Path(process_id): Path<Uuid>,
 ) -> AppResult<Json<BusinessProcessFullView>> {
-    // Fetch the main process record
-    let process = sqlx::query_as::<_, BusinessProcess>(
+    // Single JOIN query resolving all FK lookups (ADR-0006 Pattern 1)
+    let row = sqlx::query_as::<_, BusinessProcessDetailRow>(
         r#"
         SELECT
-            process_id, process_name, process_code, description,
-            detailed_description, category_id, status_id, owner_user_id,
-            parent_process_id, is_critical, criticality_rationale,
-            frequency, regulatory_requirement, sla_description,
-            documentation_url, created_by, updated_by, created_at, updated_at
-        FROM business_processes
-        WHERE process_id = $1 AND deleted_at IS NULL
+            bp.process_id, bp.process_name, bp.process_code, bp.description,
+            bp.detailed_description, bp.category_id, bp.status_id, bp.owner_user_id,
+            bp.parent_process_id, bp.is_critical, bp.criticality_rationale,
+            bp.frequency, bp.regulatory_requirement, bp.sla_description,
+            bp.documentation_url, bp.created_by, bp.updated_by, bp.created_at, bp.updated_at,
+            uo.display_name               AS owner_name,
+            pc.category_name,
+            pp.process_name               AS parent_process_name,
+            es.status_code,
+            es.status_name,
+            ucb.display_name              AS created_by_name,
+            uub.display_name              AS updated_by_name,
+            wi.instance_id                AS workflow_instance_id
+        FROM business_processes bp
+        LEFT JOIN users uo ON uo.user_id = bp.owner_user_id
+        LEFT JOIN process_categories pc ON pc.category_id = bp.category_id
+        LEFT JOIN business_processes pp ON pp.process_id = bp.parent_process_id
+        LEFT JOIN entity_statuses es ON es.status_id = bp.status_id
+        LEFT JOIN users ucb ON ucb.user_id = bp.created_by
+        LEFT JOIN users uub ON uub.user_id = bp.updated_by
+        LEFT JOIN workflow_instances wi ON wi.entity_id = bp.process_id
+            AND wi.completed_at IS NULL
+        WHERE bp.process_id = $1 AND bp.deleted_at IS NULL
         "#,
     )
     .bind(process_id)
@@ -146,43 +162,7 @@ pub async fn get_process(
     .await?
     .ok_or_else(|| AppError::NotFound(format!("business process not found: {process_id}")))?;
 
-    // Fetch owner name
-    let owner_name: Option<String> = if let Some(owner_id) = process.owner_user_id {
-        sqlx::query_scalar::<_, String>(
-            "SELECT display_name FROM users WHERE user_id = $1",
-        )
-        .bind(owner_id)
-        .fetch_optional(&state.pool)
-        .await?
-    } else {
-        None
-    };
-
-    // Fetch category name
-    let category_name: Option<String> = if let Some(cat_id) = process.category_id {
-        sqlx::query_scalar::<_, String>(
-            "SELECT category_name FROM process_categories WHERE category_id = $1",
-        )
-        .bind(cat_id)
-        .fetch_optional(&state.pool)
-        .await?
-    } else {
-        None
-    };
-
-    // Fetch parent process name
-    let parent_process_name: Option<String> = if let Some(parent_id) = process.parent_process_id {
-        sqlx::query_scalar::<_, String>(
-            "SELECT process_name FROM business_processes WHERE process_id = $1",
-        )
-        .bind(parent_id)
-        .fetch_optional(&state.pool)
-        .await?
-    } else {
-        None
-    };
-
-    // Fetch process steps
+    // Separate queries for junction/aggregate data only
     let steps = sqlx::query_as::<_, ProcessStep>(
         r#"
         SELECT
@@ -198,7 +178,6 @@ pub async fn get_process(
     .fetch_all(&state.pool)
     .await?;
 
-    // Count linked data elements
     let data_elements_count = sqlx::query_scalar::<_, i64>(
         "SELECT COUNT(*) FROM process_data_elements WHERE process_id = $1",
     )
@@ -206,7 +185,6 @@ pub async fn get_process(
     .fetch_one(&state.pool)
     .await?;
 
-    // Fetch linked application names
     let linked_applications = sqlx::query_scalar::<_, String>(
         r#"
         SELECT a.application_name
@@ -220,7 +198,6 @@ pub async fn get_process(
     .fetch_all(&state.pool)
     .await?;
 
-    // Fetch sub-processes
     let sub_processes = sqlx::query_as::<_, BusinessProcess>(
         r#"
         SELECT
@@ -238,16 +215,13 @@ pub async fn get_process(
     .fetch_all(&state.pool)
     .await?;
 
-    Ok(Json(BusinessProcessFullView {
-        process,
-        owner_name,
-        category_name,
-        parent_process_name,
+    Ok(Json(BusinessProcessFullView::from_row_and_junctions(
+        row,
         steps,
         data_elements_count,
         linked_applications,
         sub_processes,
-    }))
+    )))
 }
 
 // ---------------------------------------------------------------------------

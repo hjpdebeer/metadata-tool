@@ -162,6 +162,14 @@ pub async fn update_setting(
 ) -> AppResult<Json<UpdateSettingResponse>> {
     require_admin(&claims)?;
 
+    // SEC-025: Input length validation
+    if key.len() > 128 {
+        return Err(AppError::Validation("setting key exceeds 128 characters".into()));
+    }
+    if body.value.len() > 4000 {
+        return Err(AppError::Validation("setting value exceeds 4000 characters".into()));
+    }
+
     let secret = encryption_secret(&state);
     settings::set_setting(&state.pool, &key, &body.value, claims.sub, &secret).await?;
 
@@ -284,7 +292,7 @@ async fn test_anthropic_key(api_key: &str) -> AppResult<TestConnectionResponse> 
     let client = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(15))
         .build()
-        .map_err(|e| AppError::Internal(anyhow::anyhow!("HTTP client error: {e}")))?;
+        .map_err(|e| AppError::Internal(anyhow::anyhow!("http client error: {e}")))?;
 
     let response = client
         .get("https://api.anthropic.com/v1/models")
@@ -317,7 +325,7 @@ async fn test_openai_key(api_key: &str) -> AppResult<TestConnectionResponse> {
     let client = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(15))
         .build()
-        .map_err(|e| AppError::Internal(anyhow::anyhow!("HTTP client error: {e}")))?;
+        .map_err(|e| AppError::Internal(anyhow::anyhow!("http client error: {e}")))?;
 
     let response = client
         .get("https://api.openai.com/v1/models")
@@ -360,7 +368,7 @@ async fn test_graph_connection(
     let client = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(15))
         .build()
-        .map_err(|e| AppError::Internal(anyhow::anyhow!("HTTP client error: {e}")))?;
+        .map_err(|e| AppError::Internal(anyhow::anyhow!("http client error: {e}")))?;
 
     let token_url = format!(
         "https://login.microsoftonline.com/{tenant_id}/oauth2/v2.0/token"

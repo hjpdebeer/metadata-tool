@@ -301,9 +301,16 @@ async fn call_claude(
     let api_key = config
         .anthropic_api_key
         .as_ref()
-        .ok_or_else(|| AppError::AiService("Anthropic API key not configured".into()))?;
+        .ok_or_else(|| AppError::AiService("anthropic API key not configured".into()))?;
 
     // Force IPv4 resolution and use OS native TLS (CODING_STANDARDS Section 15.5)
+    //
+    // WORKAROUND: Hardcoded IPv4 address for api.anthropic.com.
+    // Required because macOS with Tailscale DNS prefers IPv6 which times out.
+    // If this IP becomes stale, remove this .resolve() call entirely --
+    // the local_address(Ipv4Addr::UNSPECIFIED) should force IPv4 resolution.
+    // To find current IP: dig api.anthropic.com +short
+    // Last verified: 2026-03-19 -> 160.79.104.10
     let client = reqwest::Client::builder()
         .connect_timeout(std::time::Duration::from_secs(10))
         .timeout(std::time::Duration::from_secs(90))
@@ -339,7 +346,7 @@ async fn call_claude(
         .json(&body)
         .send()
         .await
-        .map_err(|e| AppError::AiService(format!("Claude API request failed: {e}")))?;
+        .map_err(|e| AppError::AiService(format!("claude API request failed: {e}")))?;
 
     let status = response.status();
     if !status.is_success() {
@@ -352,7 +359,7 @@ async fn call_claude(
     let claude_resp: ClaudeResponse = response
         .json()
         .await
-        .map_err(|e| AppError::AiService(format!("Failed to parse Claude response: {e}")))?;
+        .map_err(|e| AppError::AiService(format!("failed to parse Claude response: {e}")))?;
 
     let text = claude_resp
         .content
@@ -375,7 +382,7 @@ async fn call_openai(
     let api_key = config
         .openai_api_key
         .as_ref()
-        .ok_or_else(|| AppError::AiService("OpenAI API key not configured".into()))?;
+        .ok_or_else(|| AppError::AiService("openAI API key not configured".into()))?;
 
     let client = reqwest::Client::builder()
         .connect_timeout(std::time::Duration::from_secs(10))
@@ -408,7 +415,7 @@ async fn call_openai(
         .timeout(std::time::Duration::from_secs(60))
         .send()
         .await
-        .map_err(|e| AppError::AiService(format!("OpenAI API request failed: {e}")))?;
+        .map_err(|e| AppError::AiService(format!("openAI API request failed: {e}")))?;
 
     let status = response.status();
     if !status.is_success() {
@@ -421,7 +428,7 @@ async fn call_openai(
     let openai_resp: OpenAiResponse = response
         .json()
         .await
-        .map_err(|e| AppError::AiService(format!("Failed to parse OpenAI response: {e}")))?;
+        .map_err(|e| AppError::AiService(format!("failed to parse OpenAI response: {e}")))?;
 
     let text = openai_resp
         .choices
@@ -471,7 +478,7 @@ fn parse_suggestions(text: &str) -> Result<Vec<RawAiSuggestion>, AppError> {
     };
 
     let suggestions: Vec<RawAiSuggestion> = serde_json::from_str(&json_to_parse).map_err(|e| {
-        AppError::AiService(format!("Failed to parse AI suggestions as JSON: {e}"))
+        AppError::AiService(format!("failed to parse AI suggestions as JSON: {e}"))
     })?;
 
     // Validate and clean each suggestion per CODING_STANDARDS Section 15.2
@@ -557,7 +564,7 @@ pub async fn enrich_entity(
     // Verify at least one provider is configured
     if config.anthropic_api_key.is_none() && config.openai_api_key.is_none() {
         return Err(AppError::AiService(
-            "No AI provider configured. Set ANTHROPIC_API_KEY or OPENAI_API_KEY in your environment.".into(),
+            "no AI provider configured — set ANTHROPIC_API_KEY or OPENAI_API_KEY in your environment".into(),
         ));
     }
 
@@ -598,14 +605,14 @@ pub async fn enrich_entity(
             }
             Err(e) => {
                 return Err(AppError::AiService(format!(
-                    "Both AI providers failed. Last error: {e}"
+                    "both AI providers failed, last error: {e}"
                 )));
             }
         }
     }
 
     Err(AppError::AiService(
-        "No AI provider available for enrichment".into(),
+        "no AI provider available for enrichment".into(),
     ))
 }
 

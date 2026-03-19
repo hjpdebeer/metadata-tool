@@ -324,6 +324,14 @@ pub async fn create_term(
         return Err(AppError::Validation("definition is required".into()));
     }
 
+    // SEC-025: Input length validation
+    if term_name.len() > 256 {
+        return Err(AppError::Validation("term_name exceeds 256 characters".into()));
+    }
+    if definition.len() > 4000 {
+        return Err(AppError::Validation("definition exceeds 4000 characters".into()));
+    }
+
     // Look up DRAFT status_id from entity_statuses
     let draft_status_id = sqlx::query_scalar::<_, Uuid>(
         "SELECT status_id FROM entity_statuses WHERE status_code = 'DRAFT'",
@@ -408,6 +416,43 @@ pub async fn update_term(
         return Err(AppError::NotFound(format!(
             "glossary term not found: {term_id}"
         )));
+    }
+
+    // SEC-025: Input length validation for optional text fields
+    if let Some(ref name) = body.term_name
+        && name.trim().len() > 256
+    {
+        return Err(AppError::Validation("term_name exceeds 256 characters".into()));
+    }
+    if let Some(ref def) = body.definition
+        && def.trim().len() > 4000
+    {
+        return Err(AppError::Validation("definition exceeds 4000 characters".into()));
+    }
+    if let Some(ref abbr) = body.abbreviation
+        && abbr.trim().len() > 50
+    {
+        return Err(AppError::Validation("abbreviation exceeds 50 characters".into()));
+    }
+    if let Some(ref val) = body.source_reference
+        && val.trim().len() > 2000
+    {
+        return Err(AppError::Validation("source_reference exceeds 2000 characters".into()));
+    }
+    if let Some(ref val) = body.regulatory_reference
+        && val.trim().len() > 2000
+    {
+        return Err(AppError::Validation("regulatory_reference exceeds 2000 characters".into()));
+    }
+    if let Some(ref val) = body.external_reference
+        && val.trim().len() > 2000
+    {
+        return Err(AppError::Validation("external_reference exceeds 2000 characters".into()));
+    }
+    if let Some(ref val) = body.golden_source
+        && val.trim().len() > 500
+    {
+        return Err(AppError::Validation("golden_source exceeds 500 characters".into()));
     }
 
     // Update using COALESCE to only change provided fields

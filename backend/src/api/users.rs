@@ -153,7 +153,7 @@ pub async fn get_user(
     .fetch_all(&state.pool)
     .await?;
 
-    Ok(Json(UserWithRoles { user, roles }))
+    Ok(Json(UserWithRoles::from_user_and_roles(user, roles)))
 }
 
 // ---------------------------------------------------------------------------

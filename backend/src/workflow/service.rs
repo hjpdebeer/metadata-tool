@@ -567,17 +567,15 @@ pub async fn get_workflow_instance(
     .await?;
 
     Ok(WorkflowInstanceView {
-        instance: WorkflowInstance {
-            instance_id: row.instance_id,
-            workflow_def_id: row.workflow_def_id,
-            entity_type_id: row.entity_type_id,
-            entity_id: row.entity_id,
-            current_state_id: row.current_state_id,
-            initiated_by: row.initiated_by,
-            initiated_at: row.initiated_at,
-            completed_at: row.completed_at,
-            completion_notes: row.completion_notes,
-        },
+        instance_id: row.instance_id,
+        workflow_def_id: row.workflow_def_id,
+        entity_type_id: row.entity_type_id,
+        entity_id: row.entity_id,
+        current_state_id: row.current_state_id,
+        initiated_by: row.initiated_by,
+        initiated_at: row.initiated_at,
+        completed_at: row.completed_at,
+        completion_notes: row.completion_notes,
         current_state_name: row.current_state_name,
         entity_type_name: row.entity_type_name,
         initiated_by_name: row.initiated_by_name,
@@ -841,47 +839,44 @@ async fn validate_ownership_before_submit(
     .fetch_one(pool)
     .await?;
 
-    match entity_type.as_str() {
-        "glossary_terms" => {
-            #[derive(sqlx::FromRow)]
-            struct OwnershipCheck {
-                owner_user_id: Option<Uuid>,
-                steward_user_id: Option<Uuid>,
-                domain_owner_user_id: Option<Uuid>,
-                approver_user_id: Option<Uuid>,
-            }
-
-            let row = sqlx::query_as::<_, OwnershipCheck>(
-                "SELECT owner_user_id, steward_user_id, domain_owner_user_id, approver_user_id FROM glossary_terms WHERE term_id = $1 AND deleted_at IS NULL",
-            )
-            .bind(instance.entity_id)
-            .fetch_optional(pool)
-            .await?
-            .ok_or_else(|| AppError::NotFound("entity not found for ownership check".into()))?;
-
-            let mut missing = Vec::new();
-            if row.owner_user_id.is_none() {
-                missing.push("Business Term Owner");
-            }
-            if row.steward_user_id.is_none() {
-                missing.push("Data Steward");
-            }
-            if row.domain_owner_user_id.is_none() {
-                missing.push("Data Domain Owner");
-            }
-            if row.approver_user_id.is_none() {
-                missing.push("Approver");
-            }
-
-            if !missing.is_empty() {
-                return Err(AppError::Validation(format!(
-                    "cannot submit for review — the following ownership fields must be assigned: {}",
-                    missing.join(", ")
-                )));
-            }
+    // Ownership checks per entity type (other types can be added as needed)
+    if entity_type.as_str() == "glossary_terms" {
+        #[derive(sqlx::FromRow)]
+        struct OwnershipCheck {
+            owner_user_id: Option<Uuid>,
+            steward_user_id: Option<Uuid>,
+            domain_owner_user_id: Option<Uuid>,
+            approver_user_id: Option<Uuid>,
         }
-        // Other entity types can add ownership checks as needed
-        _ => {}
+
+        let row = sqlx::query_as::<_, OwnershipCheck>(
+            "SELECT owner_user_id, steward_user_id, domain_owner_user_id, approver_user_id FROM glossary_terms WHERE term_id = $1 AND deleted_at IS NULL",
+        )
+        .bind(instance.entity_id)
+        .fetch_optional(pool)
+        .await?
+        .ok_or_else(|| AppError::NotFound("entity not found for ownership check".into()))?;
+
+        let mut missing = Vec::new();
+        if row.owner_user_id.is_none() {
+            missing.push("Business Term Owner");
+        }
+        if row.steward_user_id.is_none() {
+            missing.push("Data Steward");
+        }
+        if row.domain_owner_user_id.is_none() {
+            missing.push("Data Domain Owner");
+        }
+        if row.approver_user_id.is_none() {
+            missing.push("Approver");
+        }
+
+        if !missing.is_empty() {
+            return Err(AppError::Validation(format!(
+                "cannot submit for review — the following ownership fields must be assigned: {}",
+                missing.join(", ")
+            )));
+        }
     }
 
     Ok(())

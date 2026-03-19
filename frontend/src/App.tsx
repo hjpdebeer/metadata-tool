@@ -31,6 +31,14 @@ import LineageGraphView from './pages/LineageGraphView';
 import LoginPage from './pages/LoginPage';
 import AdminPanel from './pages/AdminPanel';
 
+const RequireAdmin: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const { user } = useAuth();
+  if (!user?.roles?.includes('ADMIN')) {
+    return <Navigate to="/dashboard" replace />;
+  }
+  return <>{children}</>;
+};
+
 const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { isAuthenticated, isLoading } = useAuth();
 
@@ -134,7 +142,7 @@ const App: React.FC = () => {
               <Route path="processes/:id" element={<ProcessDetail />} />
               <Route path="processes/:id/edit" element={<ProcessForm />} />
               <Route path="workflow" element={<WorkflowTasksPage />} />
-              <Route path="admin" element={<AdminPanel />} />
+              <Route path="admin" element={<RequireAdmin><AdminPanel /></RequireAdmin>} />
             </Route>
           </Routes>
         </AuthProvider>

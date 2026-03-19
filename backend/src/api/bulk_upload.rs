@@ -559,6 +559,34 @@ pub async fn bulk_upload(
         }
     }
 
+    // Second pass: resolve parent_term references within the batch.
+    // Rows may reference other rows in the same upload as parents.
+    for (_row_num, cols) in &data_rows {
+        let parent_name = cols.get(20).and_then(|s| {
+            let trimmed = s.trim();
+            if trimmed.is_empty() { None } else { Some(trimmed.to_string()) }
+        });
+        if let Some(ref name) = parent_name {
+            let term_name = cols.first().map(|s| s.trim().to_string()).unwrap_or_default();
+            if let Ok(Some(parent_id)) = sqlx::query_scalar::<_, Uuid>(
+                "SELECT term_id FROM glossary_terms WHERE term_name ILIKE $1 AND is_current_version = TRUE AND deleted_at IS NULL LIMIT 1",
+            )
+            .bind(name)
+            .fetch_optional(&state.pool)
+            .await
+            {
+                // Find the term we created and update its parent
+                let _ = sqlx::query(
+                    "UPDATE glossary_terms SET parent_term_id = $1 WHERE term_name ILIKE $2 AND is_current_version = TRUE AND deleted_at IS NULL AND parent_term_id IS NULL",
+                )
+                .bind(parent_id)
+                .bind(&term_name)
+                .execute(&state.pool)
+                .await;
+            }
+        }
+    }
+
     Ok(axum::Json(BulkUploadResult {
         total_rows,
         successful,
@@ -761,24 +789,20 @@ async fn process_row(
     let organisational_unit = org_unit_val.clone();
 
     // Resolve parent term by name
-    let parent_term_id = if let Some(ref parent_name) = parent_term_val {
+    // Parent term is resolved AFTER all rows are inserted (second pass)
+    // because a child row might reference a parent in the same upload batch.
+    // Set to NULL here — the caller handles the second pass.
+    let parent_term_id: Option<Uuid> = if parent_term_val.is_some() {
+        // Try to resolve from already-existing terms (not in this batch)
         let id = sqlx::query_scalar::<_, Uuid>(
             "SELECT term_id FROM glossary_terms WHERE term_name ILIKE $1 AND is_current_version = TRUE AND deleted_at IS NULL LIMIT 1",
         )
-        .bind(parent_name)
+        .bind(parent_term_val.as_deref().unwrap_or(""))
         .fetch_optional(ctx.pool)
         .await
         .ok()
         .flatten();
-
-        if id.is_none() {
-            row_errors.push(BulkUploadError {
-                row: row_num,
-                field: Some("Parent Term".into()),
-                message: format!("Parent term '{}' not found", parent_name),
-            });
-        }
-        id
+        id // May be None — second pass will resolve within-batch references
     } else {
         None
     };

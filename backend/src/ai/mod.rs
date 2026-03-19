@@ -194,8 +194,7 @@ TEXT FIELDS (return a descriptive string):
 - regulatory_reporting_usage: how this term is used in regulatory reports
 - external_reference: external standard references (e.g., "BCBS 239 Principle 6")
 - tags: suggest keywords for discoverability as comma-separated
-- parent_term: suggest a logical parent term name if hierarchical
-- related_terms: suggest related terms as comma-separated
+- synonyms: suggest common synonyms or alternate names as comma-separated
 - used_in_reports: reports where this term is used
 - used_in_policies: policies referencing this term
 - golden_source: authoritative source system for this term's data
@@ -758,7 +757,10 @@ Hope this helps!"#;
         assert!(prompt.contains("golden_source"));
         assert!(prompt.contains("used_in_reports"));
         assert!(prompt.contains("used_in_policies"));
-        assert!(prompt.contains("parent_term"));
+        assert!(prompt.contains("synonyms"));
+        // parent_term, related_terms are NOT AI-suggestible (user selects from existing terms)
+        assert!(!prompt.contains("parent_term"));
+        assert!(!prompt.contains("related_terms"));
         // Verify lookup UUIDs are included in the prompt
         assert!(prompt.contains("00000000-0000-0000-0000-000000000001"));
         assert!(prompt.contains("Finance"));

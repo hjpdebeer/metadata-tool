@@ -376,15 +376,9 @@ async fn apply_suggestion_to_entity(
                             .bind(id).bind(user_id).bind(entity_id).execute(pool).await?;
                     }
                 }
-                "parent_term" => {
-                    if let Some(id) = crate::db::resolve_lookup(
-                        pool, value,
-                        "SELECT term_id FROM glossary_terms WHERE term_name ILIKE $1 AND is_current_version = TRUE AND deleted_at IS NULL LIMIT 1",
-                    ).await {
-                        sqlx::query("UPDATE glossary_terms SET parent_term_id = $1, updated_by = $2, updated_at = CURRENT_TIMESTAMP WHERE term_id = $3 AND deleted_at IS NULL")
-                            .bind(id).bind(user_id).bind(entity_id).execute(pool).await?;
-                    }
-                }
+                // parent_term, child_terms, related_terms are NOT AI-suggestible.
+                // They must be selected from existing terms by the user.
+
                 // --- Junction columns: parse comma-separated, resolve each, insert junction rows ---
                 "regulatory_tags" => {
                     for tag_name in value.split(',').map(|s| s.trim()).filter(|s| !s.is_empty()) {
@@ -419,9 +413,13 @@ async fn apply_suggestion_to_entity(
                             .bind(entity_id).bind(tag_id).execute(pool).await?;
                     }
                 }
-                "related_terms" => {
-                    // Store as a note — can't auto-link terms that may not exist yet
-                    tracing::info!(field = "related_terms", value = %value, "AI suggested related terms — stored for reference");
+                "synonyms" => {
+                    // Insert each synonym as an alias in glossary_term_aliases
+                    for synonym in value.split(',').map(|s| s.trim()).filter(|s| !s.is_empty()) {
+                        sqlx::query(
+                            "INSERT INTO glossary_term_aliases (term_id, alias_name, alias_type) VALUES ($1, $2, 'SYNONYM') ON CONFLICT DO NOTHING"
+                        ).bind(entity_id).bind(synonym).execute(pool).await?;
+                    }
                 }
                 _ => {
                     return Err(AppError::Validation(format!(
@@ -526,6 +524,7 @@ pub async fn enrich(
                 s.field_name.as_str(),
                 "status_id" | "version_number" | "is_current_version" | "is_cde"
                     | "is_nullable" | "is_active" | "is_critical"
+                    | "parent_term" | "child_terms" | "related_terms"
             )
         {
             return false;

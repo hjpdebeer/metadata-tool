@@ -1,10 +1,15 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Button, Card, Input, Select, Space, Table, Tag, Typography, message } from 'antd';
-import { PlusOutlined } from '@ant-design/icons';
+import { PlusOutlined, SafetyCertificateOutlined } from '@ant-design/icons';
 import type { TablePaginationConfig } from 'antd';
 import { glossaryApi } from '../services/glossaryApi';
-import type { GlossaryTermListItem, GlossaryDomain, ListTermsParams } from '../services/glossaryApi';
+import type {
+  GlossaryTermListItem,
+  GlossaryDomain,
+  GlossaryTermType,
+  ListTermsParams,
+} from '../services/glossaryApi';
 
 const { Title } = Typography;
 
@@ -39,6 +44,7 @@ const GlossaryPage: React.FC = () => {
 
   const [terms, setTerms] = useState<GlossaryTermListItem[]>([]);
   const [domains, setDomains] = useState<GlossaryDomain[]>([]);
+  const [termTypes, setTermTypes] = useState<GlossaryTermType[]>([]);
   const [loading, setLoading] = useState(false);
   const [totalCount, setTotalCount] = useState(0);
 
@@ -48,6 +54,9 @@ const GlossaryPage: React.FC = () => {
   );
   const [selectedStatus, setSelectedStatus] = useState<string | undefined>(
     searchParams.get('status') || undefined,
+  );
+  const [selectedTermType, setSelectedTermType] = useState<string | undefined>(
+    searchParams.get('term_type_id') || undefined,
   );
   const [currentPage, setCurrentPage] = useState(
     Number(searchParams.get('page')) || 1,
@@ -65,6 +74,7 @@ const GlossaryPage: React.FC = () => {
         query: searchQuery || undefined,
         domain_id: selectedDomain,
         status: selectedStatus,
+        term_type_id: selectedTermType,
       };
 
       const response = await glossaryApi.listTerms(params);
@@ -84,20 +94,20 @@ const GlossaryPage: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  }, [currentPage, pageSize, searchQuery, selectedDomain, selectedStatus]);
+  }, [currentPage, pageSize, searchQuery, selectedDomain, selectedStatus, selectedTermType]);
 
-  const fetchDomains = useCallback(async () => {
-    try {
-      const response = await glossaryApi.listDomains();
-      setDomains(response.data);
-    } catch {
-      // Domains fetch is non-critical
-    }
+  const fetchReferenceData = useCallback(async () => {
+    const [domainsRes, typesRes] = await Promise.allSettled([
+      glossaryApi.listDomains(),
+      glossaryApi.listTermTypes(),
+    ]);
+    if (domainsRes.status === 'fulfilled') setDomains(domainsRes.value.data);
+    if (typesRes.status === 'fulfilled') setTermTypes(typesRes.value.data);
   }, []);
 
   useEffect(() => {
-    fetchDomains();
-  }, [fetchDomains]);
+    fetchReferenceData();
+  }, [fetchReferenceData]);
 
   useEffect(() => {
     fetchTerms();
@@ -109,10 +119,11 @@ const GlossaryPage: React.FC = () => {
     if (searchQuery) params.query = searchQuery;
     if (selectedDomain) params.domain_id = selectedDomain;
     if (selectedStatus) params.status = selectedStatus;
+    if (selectedTermType) params.term_type_id = selectedTermType;
     if (currentPage > 1) params.page = String(currentPage);
     if (pageSize !== 20) params.page_size = String(pageSize);
     setSearchParams(params, { replace: true });
-  }, [searchQuery, selectedDomain, selectedStatus, currentPage, pageSize, setSearchParams]);
+  }, [searchQuery, selectedDomain, selectedStatus, selectedTermType, currentPage, pageSize, setSearchParams]);
 
   const handleSearch = (value: string) => {
     setSearchQuery(value);
@@ -129,6 +140,11 @@ const GlossaryPage: React.FC = () => {
     setCurrentPage(1);
   };
 
+  const handleTermTypeChange = (value: string | undefined) => {
+    setSelectedTermType(value || undefined);
+    setCurrentPage(1);
+  };
+
   const handleTableChange = (pagination: TablePaginationConfig) => {
     setCurrentPage(pagination.current || 1);
     setPageSize(pagination.pageSize || 20);
@@ -141,8 +157,29 @@ const GlossaryPage: React.FC = () => {
       key: 'term_name',
       sorter: true,
       render: (name: string, record: GlossaryTermListItem) => (
-        <a onClick={() => navigate(`/glossary/${record.term_id}`)}>{name}</a>
+        <Space size={4}>
+          <a onClick={() => navigate(`/glossary/${record.term_id}`)}>{name}</a>
+          {record.is_cde && (
+            <Tag color="red" style={{ fontSize: 10, lineHeight: '16px', padding: '0 4px' }}>
+              <SafetyCertificateOutlined /> CDE
+            </Tag>
+          )}
+        </Space>
       ),
+    },
+    {
+      title: 'Term Code',
+      dataIndex: 'term_code',
+      key: 'term_code',
+      width: 150,
+      render: (code: string | null) =>
+        code ? (
+          <Tag color="geekblue" style={{ fontFamily: 'monospace', fontSize: 11 }}>
+            {code}
+          </Tag>
+        ) : (
+          <span style={{ color: '#9CA3AF' }}>-</span>
+        ),
     },
     {
       title: 'Domain',
@@ -151,17 +188,25 @@ const GlossaryPage: React.FC = () => {
       render: (domain: string | null) => domain || '-',
     },
     {
+      title: 'Term Type',
+      dataIndex: 'term_type_name',
+      key: 'term_type_name',
+      width: 160,
+      render: (typeName: string | null) =>
+        typeName ? <Tag color="purple">{typeName}</Tag> : '-',
+    },
+    {
       title: 'Definition',
       dataIndex: 'definition',
       key: 'definition',
       ellipsis: true,
-      width: '30%',
+      width: '22%',
     },
     {
       title: 'Status',
       dataIndex: 'status_code',
       key: 'status_code',
-      width: 140,
+      width: 130,
       render: (status: string) => (
         <Tag color={statusColors[status] || 'default'}>
           {statusLabels[status] || status}
@@ -178,7 +223,7 @@ const GlossaryPage: React.FC = () => {
       title: 'Updated',
       dataIndex: 'updated_at',
       key: 'updated_at',
-      width: 140,
+      width: 120,
       render: (date: string) => {
         if (!date) return '-';
         return new Date(date).toLocaleDateString('en-ZA', {
@@ -193,6 +238,11 @@ const GlossaryPage: React.FC = () => {
   const domainOptions = domains.map((d) => ({
     value: d.domain_id,
     label: d.domain_name,
+  }));
+
+  const termTypeOptions = termTypes.map((t) => ({
+    value: t.term_type_id,
+    label: t.type_name,
   }));
 
   return (
@@ -235,6 +285,14 @@ const GlossaryPage: React.FC = () => {
             allowClear
           />
           <Select
+            placeholder="Filter by type"
+            style={{ width: 200 }}
+            value={selectedTermType}
+            onChange={handleTermTypeChange}
+            options={termTypeOptions}
+            allowClear
+          />
+          <Select
             placeholder="Filter by status"
             style={{ width: 180 }}
             value={selectedStatus}
@@ -257,6 +315,7 @@ const GlossaryPage: React.FC = () => {
             pageSizeOptions: ['10', '20', '50', '100'],
             showTotal: (total, range) => `${range[0]}-${range[1]} of ${total} terms`,
           }}
+          scroll={{ x: 1100 }}
         />
       </Card>
     </div>

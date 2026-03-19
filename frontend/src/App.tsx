@@ -1,6 +1,6 @@
 import React from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
-import { ConfigProvider, Spin } from 'antd';
+import { App as AntApp, ConfigProvider, Spin } from 'antd';
 import themeConfig from './theme/themeConfig';
 import { AuthProvider, useAuth } from './hooks/useAuth';
 import AppLayout from './layouts/AppLayout';
@@ -85,6 +85,7 @@ const PublicRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
 const App: React.FC = () => {
   return (
     <ConfigProvider theme={themeConfig}>
+      <AntApp>
       <BrowserRouter>
         <AuthProvider>
           <Routes>
@@ -140,6 +141,7 @@ const App: React.FC = () => {
           </Routes>
         </AuthProvider>
       </BrowserRouter>
+      </AntApp>
     </ConfigProvider>
   );
 };

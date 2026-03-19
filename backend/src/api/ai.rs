@@ -22,10 +22,18 @@ async fn fetch_entity_data(
             let row = sqlx::query_as::<_, crate::domain::glossary::GlossaryTerm>(
                 r#"
                 SELECT
-                    term_id, term_name, definition, business_context, examples,
-                    abbreviation, domain_id, category_id, status_id,
-                    owner_user_id, steward_user_id, version_number,
-                    is_current_version, source_reference, regulatory_reference,
+                    term_id, term_name, term_code, definition, abbreviation,
+                    business_context, examples, definition_notes, counter_examples,
+                    formula, unit_of_measure_id,
+                    term_type_id, domain_id, category_id, classification_id,
+                    owner_user_id, steward_user_id, domain_owner_user_id,
+                    approver_user_id, organisational_unit,
+                    status_id, version_number, is_current_version,
+                    approved_at, review_frequency_id, next_review_date,
+                    parent_term_id, source_reference, regulatory_reference,
+                    used_in_reports, used_in_policies, regulatory_reporting_usage,
+                    is_cde, golden_source, confidence_level_id,
+                    visibility_id, language_id, external_reference,
                     created_by, updated_by, created_at, updated_at
                 FROM glossary_terms
                 WHERE term_id = $1 AND deleted_at IS NULL
@@ -38,8 +46,24 @@ async fn fetch_entity_data(
                 AppError::NotFound(format!("glossary term not found: {entity_id}"))
             })?;
 
-            let json = serde_json::to_value(&row)
-                .map_err(|e| AppError::Internal(anyhow::anyhow!("serialization error: {e}")))?;
+            // Only send AI-enrichable text fields — exclude IDs, FKs, timestamps, system fields
+            let json = serde_json::json!({
+                "term_name": row.term_name,
+                "definition": row.definition,
+                "abbreviation": row.abbreviation,
+                "business_context": row.business_context,
+                "examples": row.examples,
+                "definition_notes": row.definition_notes,
+                "counter_examples": row.counter_examples,
+                "formula": row.formula,
+                "source_reference": row.source_reference,
+                "regulatory_reference": row.regulatory_reference,
+                "used_in_reports": row.used_in_reports,
+                "used_in_policies": row.used_in_policies,
+                "regulatory_reporting_usage": row.regulatory_reporting_usage,
+                "golden_source": row.golden_source,
+                "external_reference": row.external_reference,
+            });
 
             // Track which fields already have values
             let mut existing = Vec::new();
@@ -49,20 +73,44 @@ async fn fetch_entity_data(
             if !row.definition.is_empty() {
                 existing.push("definition".to_string());
             }
+            if row.abbreviation.is_some() {
+                existing.push("abbreviation".to_string());
+            }
             if row.business_context.is_some() {
                 existing.push("business_context".to_string());
             }
             if row.examples.is_some() {
                 existing.push("examples".to_string());
             }
-            if row.abbreviation.is_some() {
-                existing.push("abbreviation".to_string());
+            if row.definition_notes.is_some() {
+                existing.push("definition_notes".to_string());
+            }
+            if row.counter_examples.is_some() {
+                existing.push("counter_examples".to_string());
+            }
+            if row.formula.is_some() {
+                existing.push("formula".to_string());
             }
             if row.source_reference.is_some() {
                 existing.push("source_reference".to_string());
             }
             if row.regulatory_reference.is_some() {
                 existing.push("regulatory_reference".to_string());
+            }
+            if row.used_in_reports.is_some() {
+                existing.push("used_in_reports".to_string());
+            }
+            if row.used_in_policies.is_some() {
+                existing.push("used_in_policies".to_string());
+            }
+            if row.regulatory_reporting_usage.is_some() {
+                existing.push("regulatory_reporting_usage".to_string());
+            }
+            if row.golden_source.is_some() {
+                existing.push("golden_source".to_string());
+            }
+            if row.external_reference.is_some() {
+                existing.push("external_reference".to_string());
             }
 
             Ok((json, existing))
@@ -90,8 +138,18 @@ async fn fetch_entity_data(
                 AppError::NotFound(format!("data element not found: {entity_id}"))
             })?;
 
-            let json = serde_json::to_value(&row)
-                .map_err(|e| AppError::Internal(anyhow::anyhow!("serialization error: {e}")))?;
+            // Only send AI-enrichable text fields — exclude IDs, FKs, timestamps, system fields
+            let json = serde_json::json!({
+                "element_name": row.element_name,
+                "element_code": row.element_code,
+                "description": row.description,
+                "business_definition": row.business_definition,
+                "business_rules": row.business_rules,
+                "data_type": row.data_type,
+                "format_pattern": row.format_pattern,
+                "default_value": row.default_value,
+                "sensitivity_level": row.sensitivity_level,
+            });
 
             let mut existing = Vec::new();
             if !row.element_name.is_empty() {
@@ -135,10 +193,13 @@ async fn apply_suggestion_to_entity(
 ) -> Result<(), AppError> {
     match entity_type {
         "glossary_term" => {
-            // Only allow updating known text fields
+            // Only allow updating known text fields — expanded for 45-field model
             let column = match field_name {
                 "definition" | "business_context" | "examples" | "abbreviation"
-                | "source_reference" | "regulatory_reference" => field_name,
+                | "source_reference" | "regulatory_reference"
+                | "definition_notes" | "counter_examples" | "formula"
+                | "used_in_reports" | "used_in_policies" | "regulatory_reporting_usage"
+                | "golden_source" | "external_reference" | "organisational_unit" => field_name,
                 _ => {
                     return Err(AppError::Validation(format!(
                         "Cannot auto-apply suggestion to field '{field_name}' on glossary_term"
@@ -224,10 +285,23 @@ pub async fn enrich(
     )
     .await?;
 
+    // Filter out any suggestions for ID/FK/system fields that slipped through
+    let filtered_suggestions: Vec<_> = result.suggestions.iter().filter(|s| {
+        !s.field_name.ends_with("_id")
+            && !s.field_name.ends_with("_at")
+            && !s.field_name.ends_with("_by")
+            && !matches!(
+                s.field_name.as_str(),
+                "status_id" | "version_number" | "is_current_version" | "is_cde"
+                    | "is_nullable" | "is_active" | "is_critical"
+            )
+            && !s.suggested_value.is_empty()
+    }).collect();
+
     // Store suggestions in the database
     let mut suggestion_responses = Vec::new();
 
-    for raw in &result.suggestions {
+    for raw in &filtered_suggestions {
         let row = sqlx::query_as::<_, AiSuggestion>(
             r#"
             INSERT INTO ai_suggestions (
@@ -465,7 +539,7 @@ pub async fn accept_suggestion(
         (status = 404, description = "Suggestion not found")
     ),
     security(("bearer_auth" = [])),
-    tag = "ai"
+    tag = "glossary"
 )]
 pub async fn reject_suggestion(
     State(state): State<AppState>,

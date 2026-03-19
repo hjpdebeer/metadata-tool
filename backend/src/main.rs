@@ -32,6 +32,20 @@ use metadata_tool::db::{self, AppState};
         api::glossary::update_term,
         api::glossary::list_domains,
         api::glossary::list_categories,
+        api::glossary::list_term_types,
+        api::glossary::list_review_frequencies,
+        api::glossary::list_confidence_levels,
+        api::glossary::list_visibility_levels,
+        api::glossary::list_units_of_measure,
+        api::glossary::list_regulatory_tags,
+        api::glossary::list_subject_areas,
+        api::glossary::list_languages,
+        api::glossary::attach_regulatory_tag,
+        api::glossary::detach_regulatory_tag,
+        api::glossary::attach_subject_area,
+        api::glossary::detach_subject_area,
+        api::glossary::attach_tag,
+        api::glossary::detach_tag,
         api::glossary::ai_enrich_term,
         api::glossary::get_stats,
         api::data_dictionary::list_elements,
@@ -215,8 +229,22 @@ async fn main() -> anyhow::Result<()> {
         .route("/api/v1/glossary/terms", get(api::glossary::list_terms).post(api::glossary::create_term))
         .route("/api/v1/glossary/terms/{term_id}", get(api::glossary::get_term).put(api::glossary::update_term))
         .route("/api/v1/glossary/terms/{term_id}/ai-enrich", post(api::glossary::ai_enrich_term))
+        .route("/api/v1/glossary/terms/{term_id}/regulatory-tags", post(api::glossary::attach_regulatory_tag))
+        .route("/api/v1/glossary/terms/{term_id}/regulatory-tags/{tag_id}", delete(api::glossary::detach_regulatory_tag))
+        .route("/api/v1/glossary/terms/{term_id}/subject-areas", post(api::glossary::attach_subject_area))
+        .route("/api/v1/glossary/terms/{term_id}/subject-areas/{area_id}", delete(api::glossary::detach_subject_area))
+        .route("/api/v1/glossary/terms/{term_id}/tags", post(api::glossary::attach_tag))
+        .route("/api/v1/glossary/terms/{term_id}/tags/{tag_id}", delete(api::glossary::detach_tag))
         .route("/api/v1/glossary/domains", get(api::glossary::list_domains))
         .route("/api/v1/glossary/categories", get(api::glossary::list_categories))
+        .route("/api/v1/glossary/term-types", get(api::glossary::list_term_types))
+        .route("/api/v1/glossary/review-frequencies", get(api::glossary::list_review_frequencies))
+        .route("/api/v1/glossary/confidence-levels", get(api::glossary::list_confidence_levels))
+        .route("/api/v1/glossary/visibility-levels", get(api::glossary::list_visibility_levels))
+        .route("/api/v1/glossary/units-of-measure", get(api::glossary::list_units_of_measure))
+        .route("/api/v1/glossary/regulatory-tags", get(api::glossary::list_regulatory_tags))
+        .route("/api/v1/glossary/subject-areas", get(api::glossary::list_subject_areas))
+        .route("/api/v1/glossary/languages", get(api::glossary::list_languages))
         // Dashboard
         .route("/api/v1/stats", get(api::glossary::get_stats))
         // Data Dictionary

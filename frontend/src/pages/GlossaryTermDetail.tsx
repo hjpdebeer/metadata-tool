@@ -1,17 +1,21 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useNavigate, useParams, Link } from 'react-router-dom';
 import {
+  Alert,
   Breadcrumb,
   Button,
   Card,
+  Collapse,
   Descriptions,
   Divider,
   Input,
   Modal,
+  Select,
   Space,
   Spin,
   Tag,
   Timeline,
+  Tooltip,
   Typography,
   message,
 } from 'antd';
@@ -20,15 +24,24 @@ import {
   CheckOutlined,
   CloseOutlined,
   EditOutlined,
+  ExperimentOutlined,
+  LinkOutlined,
+  PlusOutlined,
+  SafetyCertificateOutlined,
   SendOutlined,
   UndoOutlined,
 } from '@ant-design/icons';
 import { glossaryApi, workflowApi } from '../services/glossaryApi';
-import type { GlossaryTerm, WorkflowInstanceView } from '../services/glossaryApi';
+import type {
+  GlossaryTermDetailView,
+  GlossaryRegulatoryTag,
+  GlossarySubjectArea,
+  WorkflowInstanceView,
+} from '../services/glossaryApi';
 import { useAuth } from '../hooks/useAuth';
 import AiEnrichmentPanel from '../components/AiEnrichmentPanel';
 
-const { Title, Text } = Typography;
+const { Title, Text, Paragraph } = Typography;
 
 const statusColors: Record<string, string> = {
   DRAFT: 'default',
@@ -50,12 +63,26 @@ const statusLabels: Record<string, string> = {
   DEPRECATED: 'Deprecated',
 };
 
+/** Small sparkle icon for AI-suggestible fields */
+const AiHint: React.FC = () => (
+  <Tooltip title="This field can be populated by AI enrichment">
+    <ExperimentOutlined style={{ color: '#8B5CF6', fontSize: 12, marginLeft: 4 }} />
+  </Tooltip>
+);
+
+/** Placeholder for empty values */
+const EmptyValue: React.FC<{ text?: string }> = ({ text }) => (
+  <Text type="secondary" italic style={{ fontSize: 13 }}>
+    {text || 'Not yet populated'}
+  </Text>
+);
+
 const GlossaryTermDetail: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const { user } = useAuth();
 
-  const [term, setTerm] = useState<GlossaryTerm | null>(null);
+  const [detail, setDetail] = useState<GlossaryTermDetailView | null>(null);
   const [workflowInstance, setWorkflowInstance] = useState<WorkflowInstanceView | null>(null);
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState(false);
@@ -63,22 +90,57 @@ const GlossaryTermDetail: React.FC = () => {
   const [transitionAction, setTransitionAction] = useState('');
   const [transitionComments, setTransitionComments] = useState('');
 
+  // Tag management state
+  const [allRegulatoryTags, setAllRegulatoryTags] = useState<GlossaryRegulatoryTag[]>([]);
+  const [allSubjectAreas, setAllSubjectAreas] = useState<GlossarySubjectArea[]>([]);
+  const [addingRegTag, setAddingRegTag] = useState(false);
+  const [addingSubjectArea, setAddingSubjectArea] = useState(false);
+  const [newTagInput, setNewTagInput] = useState('');
+  const [addingFreeTag, setAddingFreeTag] = useState(false);
+
   const isSteward = user?.roles?.includes('data_steward') || user?.roles?.includes('admin');
 
-  const fetchTerm = useCallback(async () => {
+  const fetchDetail = useCallback(async () => {
     if (!id) return;
     setLoading(true);
     try {
-      const response = await glossaryApi.getTerm(id);
-      setTerm(response.data);
+      // Try the enhanced detail endpoint first; fall back to basic getTerm
+      let detailData: GlossaryTermDetailView;
+      try {
+        const response = await glossaryApi.getTermDetail(id);
+        detailData = response.data;
+      } catch {
+        // Fallback: use basic getTerm and build a minimal detail view
+        const response = await glossaryApi.getTerm(id);
+        detailData = {
+          term: response.data,
+          term_type_name: null,
+          unit_of_measure_name: null,
+          unit_of_measure_symbol: null,
+          classification_name: null,
+          review_frequency_name: null,
+          confidence_level_name: null,
+          visibility_name: null,
+          language_name: null,
+          domain_owner_name: null,
+          approver_name: null,
+          parent_term_name: null,
+          regulatory_tags: [],
+          subject_areas: [],
+          tags: [],
+          linked_processes: [],
+          related_terms: [],
+        };
+      }
+      setDetail(detailData);
 
-      // Fetch workflow instance if one exists
-      if (response.data.workflow_instance_id) {
+      // Fetch workflow instance
+      if (detailData.term.workflow_instance_id) {
         try {
-          const wfResponse = await workflowApi.getInstance(response.data.workflow_instance_id);
+          const wfResponse = await workflowApi.getInstance(detailData.term.workflow_instance_id);
           setWorkflowInstance(wfResponse.data);
         } catch {
-          // Workflow instance may not exist yet or endpoint may not be implemented
+          // Workflow may not be available
         }
       }
     } catch {
@@ -89,12 +151,98 @@ const GlossaryTermDetail: React.FC = () => {
     }
   }, [id, navigate]);
 
+  const fetchLookups = useCallback(async () => {
+    const [regRes, areaRes] = await Promise.allSettled([
+      glossaryApi.listRegulatoryTags(),
+      glossaryApi.listSubjectAreas(),
+    ]);
+    if (regRes.status === 'fulfilled') setAllRegulatoryTags(regRes.value.data);
+    if (areaRes.status === 'fulfilled') setAllSubjectAreas(areaRes.value.data);
+  }, []);
+
   useEffect(() => {
-    fetchTerm();
-  }, [fetchTerm]);
+    fetchDetail();
+    fetchLookups();
+  }, [fetchDetail, fetchLookups]);
+
+  // --- Junction management ---
+
+  const handleAttachRegTag = async (tagId: string) => {
+    if (!id) return;
+    try {
+      await glossaryApi.attachRegulatoryTag(id, tagId);
+      message.success('Regulatory tag added.');
+      setAddingRegTag(false);
+      fetchDetail();
+    } catch {
+      message.error('Failed to add regulatory tag.');
+    }
+  };
+
+  const handleDetachRegTag = async (tagId: string) => {
+    if (!id) return;
+    try {
+      await glossaryApi.detachRegulatoryTag(id, tagId);
+      message.success('Regulatory tag removed.');
+      fetchDetail();
+    } catch {
+      message.error('Failed to remove regulatory tag.');
+    }
+  };
+
+  const handleAttachSubjectArea = async (areaId: string) => {
+    if (!id) return;
+    try {
+      await glossaryApi.attachSubjectArea(id, areaId);
+      message.success('Subject area added.');
+      setAddingSubjectArea(false);
+      fetchDetail();
+    } catch {
+      message.error('Failed to add subject area.');
+    }
+  };
+
+  const handleDetachSubjectArea = async (areaId: string) => {
+    if (!id) return;
+    try {
+      await glossaryApi.detachSubjectArea(id, areaId);
+      message.success('Subject area removed.');
+      fetchDetail();
+    } catch {
+      message.error('Failed to remove subject area.');
+    }
+  };
+
+  const handleAddFreeTag = async () => {
+    if (!id || !newTagInput.trim()) return;
+    setAddingFreeTag(true);
+    try {
+      await glossaryApi.attachTag(id, newTagInput.trim());
+      message.success('Tag added.');
+      setNewTagInput('');
+      fetchDetail();
+    } catch {
+      message.error('Failed to add tag.');
+    } finally {
+      setAddingFreeTag(false);
+    }
+  };
+
+  const handleDetachFreeTag = async (tagId: string) => {
+    if (!id) return;
+    try {
+      await glossaryApi.detachTag(id, tagId);
+      message.success('Tag removed.');
+      fetchDetail();
+    } catch {
+      message.error('Failed to remove tag.');
+    }
+  };
+
+  // --- Workflow ---
 
   const handleWorkflowAction = (action: string) => {
-    if (!term?.workflow_instance_id) {
+    if (!detail?.term.workflow_instance_id) {
       message.error('No active workflow for this term.');
       return;
     }
@@ -104,18 +252,17 @@ const GlossaryTermDetail: React.FC = () => {
   };
 
   const submitTransition = async () => {
-    if (!term?.workflow_instance_id) return;
-
+    if (!detail?.term.workflow_instance_id) return;
     setActionLoading(true);
     try {
       await workflowApi.transitionWorkflow(
-        term.workflow_instance_id,
+        detail.term.workflow_instance_id,
         transitionAction,
         transitionComments || undefined,
       );
       message.success(`Workflow action "${transitionAction}" completed successfully.`);
       setTransitionModalOpen(false);
-      fetchTerm();
+      fetchDetail();
     } catch {
       message.error(`Failed to perform action "${transitionAction}".`);
     } finally {
@@ -123,14 +270,25 @@ const GlossaryTermDetail: React.FC = () => {
     }
   };
 
+  // --- Helpers ---
+
   const formatDate = (dateStr: string | null | undefined) => {
-    if (!dateStr) return '-';
+    if (!dateStr) return null;
     return new Date(dateStr).toLocaleString('en-ZA', {
       year: 'numeric',
       month: 'short',
       day: 'numeric',
       hour: '2-digit',
       minute: '2-digit',
+    });
+  };
+
+  const formatDateShort = (dateStr: string | null | undefined) => {
+    if (!dateStr) return null;
+    return new Date(dateStr).toLocaleDateString('en-ZA', {
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric',
     });
   };
 
@@ -142,11 +300,14 @@ const GlossaryTermDetail: React.FC = () => {
     );
   }
 
-  if (!term) {
+  if (!detail) {
     return null;
   }
 
+  const { term } = detail;
   const status = term.status_code || 'DRAFT';
+
+  // --- Action buttons ---
 
   const renderActionButtons = () => {
     const buttons: React.ReactNode[] = [];
@@ -220,6 +381,535 @@ const GlossaryTermDetail: React.FC = () => {
     return buttons;
   };
 
+  // Determine which relationship categories exist
+  const childTerms = detail.related_terms.filter(
+    (r) => r.relationship_type === 'CHILD' || r.relationship_type === 'HAS_PART',
+  );
+  const synonyms = detail.related_terms.filter((r) => r.relationship_type === 'SYNONYM');
+  const relatedTerms = detail.related_terms.filter((r) => r.relationship_type === 'RELATED');
+  const conflicting = detail.related_terms.filter((r) => r.relationship_type === 'CONFLICTING');
+  const isPartOf = detail.related_terms.filter((r) => r.relationship_type === 'IS_PART_OF');
+  const otherRelations = detail.related_terms.filter(
+    (r) =>
+      !['CHILD', 'HAS_PART', 'SYNONYM', 'RELATED', 'CONFLICTING', 'IS_PART_OF'].includes(
+        r.relationship_type,
+      ),
+  );
+
+  // Available tags/areas not yet attached
+  const attachedRegTagIds = new Set(detail.regulatory_tags.map((t) => t.tag_id));
+  const availableRegTags = allRegulatoryTags.filter((t) => !attachedRegTagIds.has(t.tag_id));
+  const attachedAreaIds = new Set(detail.subject_areas.map((a) => a.area_id));
+  const availableSubjectAreas = allSubjectAreas.filter((a) => !attachedAreaIds.has(a.area_id));
+
+  const renderTermLinks = (terms: { term_id: string; term_name: string }[]) => {
+    if (terms.length === 0) return <EmptyValue text="None" />;
+    return (
+      <Space wrap size={[4, 4]}>
+        {terms.map((t) => (
+          <Link key={t.term_id} to={`/glossary/${t.term_id}`}>
+            <Tag color="blue" style={{ cursor: 'pointer' }}>
+              <LinkOutlined /> {t.term_name}
+            </Tag>
+          </Link>
+        ))}
+      </Space>
+    );
+  };
+
+  // --- Collapse panels ---
+
+  const collapseItems = [
+    {
+      key: 'core',
+      label: <Text strong>Core Identity</Text>,
+      children: (
+        <Descriptions column={{ xs: 1, sm: 2, md: 3 }} bordered size="small">
+          <Descriptions.Item label="Term Name">{term.term_name}</Descriptions.Item>
+          <Descriptions.Item label="Term Code">
+            {term.term_code ? (
+              <Tag color="geekblue" style={{ fontFamily: 'monospace' }}>
+                {term.term_code}
+              </Tag>
+            ) : (
+              <EmptyValue text="Pending generation" />
+            )}
+          </Descriptions.Item>
+          <Descriptions.Item label="Abbreviation">
+            {term.abbreviation || <EmptyValue />}
+          </Descriptions.Item>
+          <Descriptions.Item label="Version">{term.version_number}</Descriptions.Item>
+          <Descriptions.Item label="Status">
+            <Tag color={statusColors[status] || 'default'}>
+              {statusLabels[status] || status}
+            </Tag>
+          </Descriptions.Item>
+          <Descriptions.Item label="Current Version">
+            {term.is_current_version ? (
+              <Tag color="green">Current</Tag>
+            ) : (
+              <Tag color="default">Superseded</Tag>
+            )}
+          </Descriptions.Item>
+        </Descriptions>
+      ),
+    },
+    {
+      key: 'definition',
+      label: (
+        <Text strong>
+          Definition & Semantics <AiHint />
+        </Text>
+      ),
+      children: (
+        <div>
+          <div style={{ marginBottom: 16 }}>
+            <Text type="secondary" style={{ fontSize: 12, display: 'block', marginBottom: 4 }}>
+              Definition
+            </Text>
+            <Paragraph style={{ fontSize: 15, marginBottom: 0 }}>
+              {term.definition}
+            </Paragraph>
+          </div>
+
+          <Descriptions column={{ xs: 1, sm: 1, md: 2 }} bordered size="small">
+            <Descriptions.Item label={<>Definition Notes <AiHint /></>} span={2}>
+              {term.definition_notes || <EmptyValue />}
+            </Descriptions.Item>
+            <Descriptions.Item label={<>Counter-Examples <AiHint /></>} span={2}>
+              {term.counter_examples || <EmptyValue />}
+            </Descriptions.Item>
+            <Descriptions.Item label={<>Formula <AiHint /></>} span={2}>
+              {term.formula ? (
+                <code
+                  style={{
+                    fontFamily: "'SF Mono', 'Fira Code', 'Consolas', monospace",
+                    backgroundColor: '#F5F5F5',
+                    padding: '4px 8px',
+                    borderRadius: 4,
+                    display: 'inline-block',
+                  }}
+                >
+                  {term.formula}
+                </code>
+              ) : (
+                <EmptyValue />
+              )}
+            </Descriptions.Item>
+            <Descriptions.Item label={<>Examples <AiHint /></>} span={2}>
+              {term.examples || <EmptyValue />}
+            </Descriptions.Item>
+            <Descriptions.Item label="Unit of Measure">
+              {detail.unit_of_measure_name ? (
+                <span>
+                  {detail.unit_of_measure_name}
+                  {detail.unit_of_measure_symbol && (
+                    <Text type="secondary"> ({detail.unit_of_measure_symbol})</Text>
+                  )}
+                </span>
+              ) : (
+                <EmptyValue />
+              )}
+            </Descriptions.Item>
+          </Descriptions>
+        </div>
+      ),
+    },
+    {
+      key: 'classification',
+      label: (
+        <Text strong>
+          Classification <AiHint />
+        </Text>
+      ),
+      children: (
+        <div>
+          <Descriptions column={{ xs: 1, sm: 2 }} bordered size="small" style={{ marginBottom: 16 }}>
+            <Descriptions.Item label={<>Domain <AiHint /></>}>
+              {term.domain_name || <EmptyValue />}
+            </Descriptions.Item>
+            <Descriptions.Item label={<>Category <AiHint /></>}>
+              {term.category_name || <EmptyValue />}
+            </Descriptions.Item>
+            <Descriptions.Item label={<>Term Type <AiHint /></>}>
+              {detail.term_type_name ? (
+                <Tag color="purple">{detail.term_type_name}</Tag>
+              ) : (
+                <EmptyValue />
+              )}
+            </Descriptions.Item>
+            <Descriptions.Item label="Sensitivity Classification">
+              {detail.classification_name ? (
+                <Tag color="volcano">{detail.classification_name}</Tag>
+              ) : (
+                <EmptyValue />
+              )}
+            </Descriptions.Item>
+          </Descriptions>
+
+          {/* Regulatory Tags */}
+          <div style={{ marginBottom: 16 }}>
+            <Text type="secondary" style={{ fontSize: 12, display: 'block', marginBottom: 8 }}>
+              Regulatory Tags
+            </Text>
+            <Space wrap size={[4, 8]}>
+              {detail.regulatory_tags.map((tag) => (
+                <Tag
+                  key={tag.tag_id}
+                  color="red"
+                  closable
+                  onClose={(e) => {
+                    e.preventDefault();
+                    handleDetachRegTag(tag.tag_id);
+                  }}
+                >
+                  {tag.tag_name}
+                </Tag>
+              ))}
+              {detail.regulatory_tags.length === 0 && !addingRegTag && (
+                <EmptyValue text="No regulatory tags" />
+              )}
+              {addingRegTag ? (
+                <Select
+                  placeholder="Select tag..."
+                  style={{ minWidth: 180 }}
+                  size="small"
+                  showSearch
+                  optionFilterProp="label"
+                  options={availableRegTags.map((t) => ({ value: t.tag_id, label: t.tag_name }))}
+                  onChange={handleAttachRegTag}
+                  onBlur={() => setAddingRegTag(false)}
+                  autoFocus
+                />
+              ) : (
+                <Tag
+                  style={{ borderStyle: 'dashed', cursor: 'pointer' }}
+                  onClick={() => setAddingRegTag(true)}
+                >
+                  <PlusOutlined /> Add
+                </Tag>
+              )}
+            </Space>
+          </div>
+
+          {/* Subject Areas */}
+          <div>
+            <Text type="secondary" style={{ fontSize: 12, display: 'block', marginBottom: 8 }}>
+              Subject Areas
+            </Text>
+            <Space wrap size={[4, 8]}>
+              {detail.subject_areas.map((area) => (
+                <Tag
+                  key={area.area_id}
+                  color="cyan"
+                  closable
+                  onClose={(e) => {
+                    e.preventDefault();
+                    handleDetachSubjectArea(area.area_id);
+                  }}
+                >
+                  {area.area_name}
+                </Tag>
+              ))}
+              {detail.subject_areas.length === 0 && !addingSubjectArea && (
+                <EmptyValue text="No subject areas" />
+              )}
+              {addingSubjectArea ? (
+                <Select
+                  placeholder="Select area..."
+                  style={{ minWidth: 200 }}
+                  size="small"
+                  showSearch
+                  optionFilterProp="label"
+                  options={availableSubjectAreas.map((a) => ({
+                    value: a.area_id,
+                    label: a.area_name,
+                  }))}
+                  onChange={handleAttachSubjectArea}
+                  onBlur={() => setAddingSubjectArea(false)}
+                  autoFocus
+                />
+              ) : (
+                <Tag
+                  style={{ borderStyle: 'dashed', cursor: 'pointer' }}
+                  onClick={() => setAddingSubjectArea(true)}
+                >
+                  <PlusOutlined /> Add
+                </Tag>
+              )}
+            </Space>
+          </div>
+        </div>
+      ),
+    },
+    {
+      key: 'ownership',
+      label: <Text strong>Ownership</Text>,
+      children: (
+        <Descriptions column={{ xs: 1, sm: 2 }} bordered size="small">
+          <Descriptions.Item label="Business Term Owner">
+            {term.owner_name || <EmptyValue />}
+          </Descriptions.Item>
+          <Descriptions.Item label="Data Steward">
+            {term.steward_name || <EmptyValue />}
+          </Descriptions.Item>
+          <Descriptions.Item label="Data Domain Owner">
+            {detail.domain_owner_name || <EmptyValue />}
+          </Descriptions.Item>
+          <Descriptions.Item label="Approver">
+            {detail.approver_name || <EmptyValue />}
+          </Descriptions.Item>
+          <Descriptions.Item label="Organisational Unit" span={2}>
+            {term.organisational_unit || <EmptyValue />}
+          </Descriptions.Item>
+        </Descriptions>
+      ),
+    },
+    {
+      key: 'lifecycle',
+      label: <Text strong>Lifecycle</Text>,
+      children: (
+        <Descriptions column={{ xs: 1, sm: 2 }} bordered size="small">
+          <Descriptions.Item label="Created">
+            {formatDate(term.created_at)}
+            {term.created_by_name ? <Text type="secondary"> by {term.created_by_name}</Text> : ''}
+          </Descriptions.Item>
+          <Descriptions.Item label="Last Modified">
+            {formatDate(term.updated_at)}
+            {term.updated_by_name ? <Text type="secondary"> by {term.updated_by_name}</Text> : ''}
+          </Descriptions.Item>
+          <Descriptions.Item label="Approved Date">
+            {formatDate(term.approved_at) || <EmptyValue text="Not yet approved" />}
+          </Descriptions.Item>
+          <Descriptions.Item label="Review Frequency">
+            {detail.review_frequency_name || <EmptyValue />}
+          </Descriptions.Item>
+          <Descriptions.Item label="Next Review Date">
+            {formatDateShort(term.next_review_date) || <EmptyValue text="Not scheduled" />}
+          </Descriptions.Item>
+        </Descriptions>
+      ),
+    },
+    {
+      key: 'relationships',
+      label: <Text strong>Relationships</Text>,
+      children: (
+        <div>
+          <Descriptions column={1} bordered size="small" style={{ marginBottom: 0 }}>
+            <Descriptions.Item label="Parent Term">
+              {term.parent_term_id && detail.parent_term_name ? (
+                <Link to={`/glossary/${term.parent_term_id}`}>
+                  <Tag color="blue" style={{ cursor: 'pointer' }}>
+                    <LinkOutlined /> {detail.parent_term_name}
+                  </Tag>
+                </Link>
+              ) : (
+                <EmptyValue text="No parent term" />
+              )}
+            </Descriptions.Item>
+            <Descriptions.Item label="Child Terms">
+              {renderTermLinks(childTerms)}
+            </Descriptions.Item>
+            <Descriptions.Item label="Synonyms">
+              {renderTermLinks(synonyms)}
+            </Descriptions.Item>
+            <Descriptions.Item label="Related Terms">
+              {renderTermLinks(relatedTerms)}
+            </Descriptions.Item>
+            <Descriptions.Item label="Conflicting Terms">
+              {renderTermLinks(conflicting)}
+            </Descriptions.Item>
+            <Descriptions.Item label="Is Part Of">
+              {renderTermLinks(isPartOf)}
+            </Descriptions.Item>
+            {otherRelations.length > 0 && (
+              <Descriptions.Item label="Other Relationships">
+                <Space wrap size={[4, 4]}>
+                  {otherRelations.map((r) => (
+                    <Link key={`${r.term_id}-${r.relationship_type}`} to={`/glossary/${r.term_id}`}>
+                      <Tag color="blue" style={{ cursor: 'pointer' }}>
+                        {r.relationship_type_name}: {r.term_name}
+                      </Tag>
+                    </Link>
+                  ))}
+                </Space>
+              </Descriptions.Item>
+            )}
+          </Descriptions>
+        </div>
+      ),
+    },
+    {
+      key: 'usage',
+      label: (
+        <Text strong>
+          Usage & Context <AiHint />
+        </Text>
+      ),
+      children: (
+        <div>
+          <Descriptions column={1} bordered size="small" style={{ marginBottom: 16 }}>
+            <Descriptions.Item label={<>Business Rules <AiHint /></>}>
+              {term.business_context || <EmptyValue />}
+            </Descriptions.Item>
+            <Descriptions.Item label="Used in Reports">
+              {term.used_in_reports || <EmptyValue />}
+            </Descriptions.Item>
+            <Descriptions.Item label="Used in Policies">
+              {term.used_in_policies || <EmptyValue />}
+            </Descriptions.Item>
+            <Descriptions.Item label={<>Regulatory Reporting Usage <AiHint /></>}>
+              {term.regulatory_reporting_usage || <EmptyValue />}
+            </Descriptions.Item>
+          </Descriptions>
+
+          {/* Linked Processes */}
+          <div style={{ marginTop: 12 }}>
+            <Text type="secondary" style={{ fontSize: 12, display: 'block', marginBottom: 8 }}>
+              Used in Processes
+            </Text>
+            {detail.linked_processes.length > 0 ? (
+              <Space wrap size={[4, 4]}>
+                {detail.linked_processes.map((p) => (
+                  <Link key={p.process_id} to={`/processes/${p.process_id}`}>
+                    <Tag color="green" style={{ cursor: 'pointer' }}>
+                      <LinkOutlined /> {p.process_name}
+                    </Tag>
+                  </Link>
+                ))}
+              </Space>
+            ) : (
+              <EmptyValue text="No linked processes" />
+            )}
+          </div>
+        </div>
+      ),
+    },
+    {
+      key: 'quality',
+      label: <Text strong>Quality</Text>,
+      children: (
+        <div>
+          {term.is_cde && (
+            <Alert
+              message="Critical Data Element"
+              description="This term has been designated as a Critical Data Element (CDE). CDEs require heightened governance, quality monitoring, and stewardship oversight."
+              type="error"
+              showIcon
+              icon={<SafetyCertificateOutlined />}
+              style={{ marginBottom: 16 }}
+            />
+          )}
+          <Descriptions column={{ xs: 1, sm: 2 }} bordered size="small">
+            <Descriptions.Item label="CDE Designation">
+              {term.is_cde ? (
+                <Tag color="red">
+                  <SafetyCertificateOutlined /> Critical Data Element
+                </Tag>
+              ) : (
+                <Tag color="default">Not CDE</Tag>
+              )}
+            </Descriptions.Item>
+            <Descriptions.Item label={<>Golden Source <AiHint /></>}>
+              {term.golden_source || <EmptyValue />}
+            </Descriptions.Item>
+            <Descriptions.Item label="Confidence Level">
+              {detail.confidence_level_name ? (
+                <Tag
+                  color={
+                    detail.confidence_level_name === 'High'
+                      ? 'green'
+                      : detail.confidence_level_name === 'Medium'
+                        ? 'gold'
+                        : 'orange'
+                  }
+                >
+                  {detail.confidence_level_name}
+                </Tag>
+              ) : (
+                <EmptyValue />
+              )}
+            </Descriptions.Item>
+          </Descriptions>
+        </div>
+      ),
+    },
+    {
+      key: 'discoverability',
+      label: <Text strong>Discoverability</Text>,
+      children: (
+        <div>
+          {/* Tags / Keywords */}
+          <div style={{ marginBottom: 16 }}>
+            <Text type="secondary" style={{ fontSize: 12, display: 'block', marginBottom: 8 }}>
+              Tags / Keywords
+            </Text>
+            <Space wrap size={[4, 8]}>
+              {detail.tags.map((tag) => (
+                <Tag
+                  key={tag.tag_id}
+                  color="blue"
+                  closable
+                  onClose={(e) => {
+                    e.preventDefault();
+                    handleDetachFreeTag(tag.tag_id);
+                  }}
+                >
+                  {tag.tag_name}
+                </Tag>
+              ))}
+              {detail.tags.length === 0 && <EmptyValue text="No tags" />}
+              <Space.Compact size="small">
+                <Input
+                  placeholder="Add tag..."
+                  value={newTagInput}
+                  onChange={(e) => setNewTagInput(e.target.value)}
+                  onPressEnter={handleAddFreeTag}
+                  style={{ width: 140 }}
+                  size="small"
+                />
+                <Button
+                  size="small"
+                  icon={<PlusOutlined />}
+                  onClick={handleAddFreeTag}
+                  loading={addingFreeTag}
+                />
+              </Space.Compact>
+            </Space>
+          </div>
+
+          <Descriptions column={{ xs: 1, sm: 2 }} bordered size="small">
+            <Descriptions.Item label="Visibility">
+              {detail.visibility_name || <EmptyValue />}
+            </Descriptions.Item>
+            <Descriptions.Item label="Language">
+              {detail.language_name || <EmptyValue />}
+            </Descriptions.Item>
+            <Descriptions.Item label={<>Source Reference <AiHint /></>}>
+              {term.source_reference || <EmptyValue />}
+            </Descriptions.Item>
+            <Descriptions.Item label={<>Regulatory Reference <AiHint /></>}>
+              {term.regulatory_reference || <EmptyValue />}
+            </Descriptions.Item>
+            <Descriptions.Item label="External Reference" span={2}>
+              {term.external_reference ? (
+                term.external_reference.startsWith('http') ? (
+                  <a href={term.external_reference} target="_blank" rel="noopener noreferrer">
+                    {term.external_reference} <LinkOutlined />
+                  </a>
+                ) : (
+                  term.external_reference
+                )
+              ) : (
+                <EmptyValue />
+              )}
+            </Descriptions.Item>
+          </Descriptions>
+        </div>
+      ),
+    },
+  ];
+
   return (
     <div>
       <Breadcrumb
@@ -230,15 +920,18 @@ const GlossaryTermDetail: React.FC = () => {
         ]}
       />
 
+      {/* --- Header --- */}
       <div
         style={{
           display: 'flex',
           justifyContent: 'space-between',
           alignItems: 'flex-start',
           marginBottom: 16,
+          flexWrap: 'wrap',
+          gap: 12,
         }}
       >
-        <Space align="center">
+        <Space align="center" wrap>
           <Button
             type="text"
             icon={<ArrowLeftOutlined />}
@@ -247,77 +940,69 @@ const GlossaryTermDetail: React.FC = () => {
           <Title level={3} style={{ margin: 0 }}>
             {term.term_name}
           </Title>
+          {term.term_code && (
+            <Tag color="geekblue" style={{ fontFamily: 'monospace', fontSize: 12 }}>
+              {term.term_code}
+            </Tag>
+          )}
           <Tag
             color={statusColors[status] || 'default'}
             style={{ fontSize: 14, padding: '2px 12px' }}
           >
             {statusLabels[status] || status}
           </Tag>
+          {term.is_cde && (
+            <Tag color="red">
+              <SafetyCertificateOutlined /> CDE
+            </Tag>
+          )}
+          {detail.term_type_name && (
+            <Tag color="purple">{detail.term_type_name}</Tag>
+          )}
         </Space>
-        <Space>{renderActionButtons()}</Space>
+        <Space wrap>{renderActionButtons()}</Space>
       </div>
 
-      <Card title="Term Details" style={{ marginBottom: 24 }}>
-        <Descriptions column={{ xs: 1, sm: 1, md: 2 }} bordered size="small">
-          <Descriptions.Item label="Term Name">{term.term_name}</Descriptions.Item>
-          <Descriptions.Item label="Abbreviation">
-            {term.abbreviation || '-'}
-          </Descriptions.Item>
-          <Descriptions.Item label="Definition" span={2}>
-            {term.definition}
-          </Descriptions.Item>
-          <Descriptions.Item label="Business Context" span={2}>
-            {term.business_context || '-'}
-          </Descriptions.Item>
-          <Descriptions.Item label="Examples" span={2}>
-            {term.examples || '-'}
-          </Descriptions.Item>
-          <Descriptions.Item label="Domain">
-            {term.domain_name || '-'}
-          </Descriptions.Item>
-          <Descriptions.Item label="Category">
-            {term.category_name || '-'}
-          </Descriptions.Item>
-          <Descriptions.Item label="Source Reference">
-            {term.source_reference || '-'}
-          </Descriptions.Item>
-          <Descriptions.Item label="Regulatory Reference">
-            {term.regulatory_reference || '-'}
-          </Descriptions.Item>
-          <Descriptions.Item label="Owner">
-            {term.owner_name || '-'}
-          </Descriptions.Item>
-          <Descriptions.Item label="Steward">
-            {term.steward_name || '-'}
-          </Descriptions.Item>
-          <Descriptions.Item label="Version">{term.version_number}</Descriptions.Item>
-          <Descriptions.Item label="Status">
-            <Tag color={statusColors[status] || 'default'}>
-              {statusLabels[status] || status}
-            </Tag>
-          </Descriptions.Item>
-          <Descriptions.Item label="Created">
-            {formatDate(term.created_at)}
-            {term.created_by_name ? ` by ${term.created_by_name}` : ''}
-          </Descriptions.Item>
-          <Descriptions.Item label="Last Updated">
-            {formatDate(term.updated_at)}
-            {term.updated_by_name ? ` by ${term.updated_by_name}` : ''}
-          </Descriptions.Item>
-        </Descriptions>
-      </Card>
+      {/* --- CDE Banner --- */}
+      {term.is_cde && (
+        <Alert
+          message="Critical Data Element"
+          description="This term is flagged as a Critical Data Element (CDE). It requires enhanced governance, quality controls, and regular review."
+          type="error"
+          showIcon
+          icon={<SafetyCertificateOutlined />}
+          style={{ marginBottom: 16 }}
+          banner
+        />
+      )}
 
+      {/* --- AI Enrichment Panel --- */}
       <AiEnrichmentPanel
         entityType="glossary_term"
         entityId={id!}
-        onSuggestionApplied={fetchTerm}
+        onSuggestionApplied={fetchDetail}
       />
 
+      {/* --- 9-Section Collapse --- */}
+      <Card style={{ marginBottom: 24 }}>
+        <Collapse
+          defaultActiveKey={['core', 'definition']}
+          ghost
+          items={collapseItems}
+          size="large"
+        />
+      </Card>
+
+      {/* --- Workflow Section --- */}
       {workflowInstance && (
         <Card title="Workflow" style={{ marginBottom: 24 }}>
           <Descriptions column={{ xs: 1, sm: 2 }} size="small" style={{ marginBottom: 16 }}>
             <Descriptions.Item label="Current State">
-              <Tag color={statusColors[workflowInstance.current_state_name?.toUpperCase()] || 'processing'}>
+              <Tag
+                color={
+                  statusColors[workflowInstance.current_state_name?.toUpperCase()] || 'processing'
+                }
+              >
                 {workflowInstance.current_state_name}
               </Tag>
             </Descriptions.Item>
@@ -377,6 +1062,7 @@ const GlossaryTermDetail: React.FC = () => {
         </Card>
       )}
 
+      {/* --- Workflow Transition Modal --- */}
       <Modal
         title={`Workflow Action: ${transitionAction}`}
         open={transitionModalOpen}

@@ -46,12 +46,16 @@ pub async fn list_terms(
           AND ($2::UUID IS NULL OR gt.domain_id = $2)
           AND ($3::UUID IS NULL OR gt.category_id = $3)
           AND ($4::TEXT IS NULL OR es.status_code = $4)
+          AND ($5::UUID IS NULL OR gt.term_type_id = $5)
+          AND ($6::BOOLEAN IS NULL OR gt.is_cde = $6)
         "#,
     )
     .bind(params.query.as_deref())
     .bind(params.domain_id)
     .bind(params.category_id)
     .bind(params.status.as_deref())
+    .bind(params.term_type_id)
+    .bind(params.is_cde)
     .fetch_one(&state.pool)
     .await?;
 
@@ -61,14 +65,17 @@ pub async fn list_terms(
         SELECT
             gt.term_id,
             gt.term_name,
+            gt.term_code,
             gt.definition,
             gt.abbreviation,
             gd.domain_name                AS domain_name,
             gc.category_name              AS category_name,
+            gtt.type_name                 AS term_type_name,
             es.status_code                AS status_code,
             es.status_name                AS status_name,
             uo.display_name               AS owner_name,
             us.display_name               AS steward_name,
+            gt.is_cde,
             gt.version_number,
             gt.created_at,
             gt.updated_at
@@ -76,6 +83,7 @@ pub async fn list_terms(
         JOIN entity_statuses es ON es.status_id = gt.status_id
         LEFT JOIN glossary_domains gd ON gd.domain_id = gt.domain_id
         LEFT JOIN glossary_categories gc ON gc.category_id = gt.category_id
+        LEFT JOIN glossary_term_types gtt ON gtt.term_type_id = gt.term_type_id
         LEFT JOIN users uo ON uo.user_id = gt.owner_user_id
         LEFT JOIN users us ON us.user_id = gt.steward_user_id
         WHERE gt.is_current_version = TRUE
@@ -84,15 +92,19 @@ pub async fn list_terms(
           AND ($2::UUID IS NULL OR gt.domain_id = $2)
           AND ($3::UUID IS NULL OR gt.category_id = $3)
           AND ($4::TEXT IS NULL OR es.status_code = $4)
+          AND ($5::UUID IS NULL OR gt.term_type_id = $5)
+          AND ($6::BOOLEAN IS NULL OR gt.is_cde = $6)
         ORDER BY gt.term_name ASC
-        LIMIT $5
-        OFFSET $6
+        LIMIT $7
+        OFFSET $8
         "#,
     )
     .bind(params.query.as_deref())
     .bind(params.domain_id)
     .bind(params.category_id)
     .bind(params.status.as_deref())
+    .bind(params.term_type_id)
+    .bind(params.is_cde)
     .bind(page_size)
     .bind(offset)
     .fetch_all(&state.pool)
@@ -110,12 +122,29 @@ pub async fn list_terms(
 // get_term — GET /api/v1/glossary/terms/:term_id
 // ---------------------------------------------------------------------------
 
+/// All 45 column names for SELECT in the glossary_terms table
+const GLOSSARY_TERM_COLUMNS: &str = r#"
+    term_id, term_name, term_code, definition, abbreviation,
+    business_context, examples, definition_notes, counter_examples,
+    formula, unit_of_measure_id,
+    term_type_id, domain_id, category_id, classification_id,
+    owner_user_id, steward_user_id, domain_owner_user_id,
+    approver_user_id, organisational_unit,
+    status_id, version_number, is_current_version,
+    approved_at, review_frequency_id, next_review_date,
+    parent_term_id, source_reference, regulatory_reference,
+    used_in_reports, used_in_policies, regulatory_reporting_usage,
+    is_cde, golden_source, confidence_level_id,
+    visibility_id, language_id, external_reference,
+    created_by, updated_by, created_at, updated_at
+"#;
+
 #[utoipa::path(
     get,
     path = "/api/v1/glossary/terms/{term_id}",
     params(("term_id" = Uuid, Path, description = "Term ID")),
     responses(
-        (status = 200, description = "Glossary term details", body = GlossaryTerm),
+        (status = 200, description = "Glossary term details", body = GlossaryTermDetailView),
         (status = 404, description = "Term not found")
     ),
     security(("bearer_auth" = [])),
@@ -124,25 +153,78 @@ pub async fn list_terms(
 pub async fn get_term(
     State(state): State<AppState>,
     Path(term_id): Path<Uuid>,
-) -> AppResult<Json<GlossaryTerm>> {
-    let term = sqlx::query_as::<_, GlossaryTerm>(
+) -> AppResult<Json<GlossaryTermDetailView>> {
+    // Fetch the term with all 45 columns
+    let query = format!(
+        "SELECT {cols} FROM glossary_terms WHERE term_id = $1 AND deleted_at IS NULL",
+        cols = GLOSSARY_TERM_COLUMNS
+    );
+    let term = sqlx::query_as::<_, GlossaryTerm>(&query)
+        .bind(term_id)
+        .fetch_optional(&state.pool)
+        .await?
+        .ok_or_else(|| AppError::NotFound(format!("glossary term not found: {term_id}")))?;
+
+    // Fetch junction data in parallel-ish (sequential for simplicity, all fast indexed queries)
+    let regulatory_tags = sqlx::query_as::<_, GlossaryRegulatoryTagItem>(
         r#"
-        SELECT
-            term_id, term_name, definition, business_context, examples,
-            abbreviation, domain_id, category_id, status_id,
-            owner_user_id, steward_user_id, version_number,
-            is_current_version, source_reference, regulatory_reference,
-            created_by, updated_by, created_at, updated_at
-        FROM glossary_terms
-        WHERE term_id = $1 AND deleted_at IS NULL
+        SELECT grt.tag_id, grt.tag_code, grt.tag_name, grt.description
+        FROM glossary_term_regulatory_tags jtrt
+        JOIN glossary_regulatory_tags grt ON grt.tag_id = jtrt.tag_id
+        WHERE jtrt.term_id = $1
+        ORDER BY grt.display_order
         "#,
     )
     .bind(term_id)
-    .fetch_optional(&state.pool)
-    .await?
-    .ok_or_else(|| AppError::NotFound(format!("glossary term not found: {term_id}")))?;
+    .fetch_all(&state.pool)
+    .await?;
 
-    Ok(Json(term))
+    let subject_areas = sqlx::query_as::<_, GlossarySubjectAreaItem>(
+        r#"
+        SELECT gsa.subject_area_id, gsa.area_code, gsa.area_name, jtsa.is_primary
+        FROM glossary_term_subject_areas jtsa
+        JOIN glossary_subject_areas gsa ON gsa.subject_area_id = jtsa.subject_area_id
+        WHERE jtsa.term_id = $1
+        ORDER BY gsa.display_order
+        "#,
+    )
+    .bind(term_id)
+    .fetch_all(&state.pool)
+    .await?;
+
+    let tags = sqlx::query_as::<_, GlossaryTagItem>(
+        r#"
+        SELECT gt.tag_id, gt.tag_name
+        FROM glossary_term_tags jtt
+        JOIN glossary_tags gt ON gt.tag_id = jtt.tag_id
+        WHERE jtt.term_id = $1
+        ORDER BY gt.tag_name
+        "#,
+    )
+    .bind(term_id)
+    .fetch_all(&state.pool)
+    .await?;
+
+    let linked_processes = sqlx::query_as::<_, GlossaryLinkedProcess>(
+        r#"
+        SELECT bp.process_id, bp.process_name, jtp.usage_context
+        FROM glossary_term_processes jtp
+        JOIN business_processes bp ON bp.process_id = jtp.process_id
+        WHERE jtp.term_id = $1
+        ORDER BY bp.process_name
+        "#,
+    )
+    .bind(term_id)
+    .fetch_all(&state.pool)
+    .await?;
+
+    Ok(Json(GlossaryTermDetailView {
+        term,
+        regulatory_tags,
+        subject_areas,
+        tags,
+        linked_processes,
+    }))
 }
 
 // ---------------------------------------------------------------------------
@@ -183,37 +265,27 @@ pub async fn create_term(
     .fetch_one(&state.pool)
     .await?;
 
-    // Insert the new glossary term
-    let term = sqlx::query_as::<_, GlossaryTerm>(
+    // Insert the new glossary term — minimal fields, all new columns default to NULL
+    let insert_query = format!(
         r#"
         INSERT INTO glossary_terms (
-            term_name, definition, business_context, examples,
-            abbreviation, domain_id, category_id, status_id,
-            source_reference, regulatory_reference,
+            term_name, definition, domain_id, category_id, status_id,
             version_number, is_current_version, created_by
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 1, TRUE, $11)
-        RETURNING
-            term_id, term_name, definition, business_context, examples,
-            abbreviation, domain_id, category_id, status_id,
-            owner_user_id, steward_user_id, version_number,
-            is_current_version, source_reference, regulatory_reference,
-            created_by, updated_by, created_at, updated_at
+        VALUES ($1, $2, $3, $4, $5, 1, TRUE, $6)
+        RETURNING {cols}
         "#,
-    )
-    .bind(&term_name)
-    .bind(&definition)
-    .bind(body.business_context.as_deref())
-    .bind(body.examples.as_deref())
-    .bind(body.abbreviation.as_deref())
-    .bind(body.domain_id)
-    .bind(body.category_id)
-    .bind(draft_status_id)
-    .bind(body.source_reference.as_deref())
-    .bind(body.regulatory_reference.as_deref())
-    .bind(claims.sub)
-    .fetch_one(&state.pool)
-    .await?;
+        cols = GLOSSARY_TERM_COLUMNS,
+    );
+    let term = sqlx::query_as::<_, GlossaryTerm>(&insert_query)
+        .bind(&term_name)
+        .bind(&definition)
+        .bind(body.domain_id)
+        .bind(body.category_id)
+        .bind(draft_status_id)
+        .bind(claims.sub)
+        .fetch_one(&state.pool)
+        .await?;
 
     // Initiate the workflow instance for this new term
     workflow::service::initiate_workflow(
@@ -265,42 +337,86 @@ pub async fn update_term(
     }
 
     // Update using COALESCE to only change provided fields
-    let term = sqlx::query_as::<_, GlossaryTerm>(
+    let update_query = format!(
         r#"
         UPDATE glossary_terms
-        SET term_name            = COALESCE($1, term_name),
-            definition           = COALESCE($2, definition),
-            business_context     = COALESCE($3, business_context),
-            examples             = COALESCE($4, examples),
-            abbreviation         = COALESCE($5, abbreviation),
-            domain_id            = COALESCE($6, domain_id),
-            category_id          = COALESCE($7, category_id),
-            source_reference     = COALESCE($8, source_reference),
-            regulatory_reference = COALESCE($9, regulatory_reference),
-            updated_by           = $10,
-            updated_at           = CURRENT_TIMESTAMP
-        WHERE term_id = $11 AND deleted_at IS NULL
-        RETURNING
-            term_id, term_name, definition, business_context, examples,
-            abbreviation, domain_id, category_id, status_id,
-            owner_user_id, steward_user_id, version_number,
-            is_current_version, source_reference, regulatory_reference,
-            created_by, updated_by, created_at, updated_at
+        SET term_name                = COALESCE($1, term_name),
+            definition               = COALESCE($2, definition),
+            abbreviation             = COALESCE($3, abbreviation),
+            business_context         = COALESCE($4, business_context),
+            examples                 = COALESCE($5, examples),
+            definition_notes         = COALESCE($6, definition_notes),
+            counter_examples         = COALESCE($7, counter_examples),
+            formula                  = COALESCE($8, formula),
+            unit_of_measure_id       = COALESCE($9, unit_of_measure_id),
+            term_type_id             = COALESCE($10, term_type_id),
+            domain_id                = COALESCE($11, domain_id),
+            category_id              = COALESCE($12, category_id),
+            classification_id        = COALESCE($13, classification_id),
+            owner_user_id            = COALESCE($14, owner_user_id),
+            steward_user_id          = COALESCE($15, steward_user_id),
+            domain_owner_user_id     = COALESCE($16, domain_owner_user_id),
+            approver_user_id         = COALESCE($17, approver_user_id),
+            organisational_unit      = COALESCE($18, organisational_unit),
+            approved_at              = COALESCE($19, approved_at),
+            review_frequency_id      = COALESCE($20, review_frequency_id),
+            parent_term_id           = COALESCE($21, parent_term_id),
+            source_reference         = COALESCE($22, source_reference),
+            regulatory_reference     = COALESCE($23, regulatory_reference),
+            used_in_reports          = COALESCE($24, used_in_reports),
+            used_in_policies         = COALESCE($25, used_in_policies),
+            regulatory_reporting_usage = COALESCE($26, regulatory_reporting_usage),
+            is_cde                   = COALESCE($27, is_cde),
+            golden_source            = COALESCE($28, golden_source),
+            confidence_level_id      = COALESCE($29, confidence_level_id),
+            visibility_id            = COALESCE($30, visibility_id),
+            language_id              = COALESCE($31, language_id),
+            external_reference       = COALESCE($32, external_reference),
+            updated_by               = $33,
+            updated_at               = CURRENT_TIMESTAMP
+        WHERE term_id = $34 AND deleted_at IS NULL
+        RETURNING {cols}
         "#,
-    )
-    .bind(body.term_name.as_deref())
-    .bind(body.definition.as_deref())
-    .bind(body.business_context.as_deref())
-    .bind(body.examples.as_deref())
-    .bind(body.abbreviation.as_deref())
-    .bind(body.domain_id)
-    .bind(body.category_id)
-    .bind(body.source_reference.as_deref())
-    .bind(body.regulatory_reference.as_deref())
-    .bind(claims.sub)
-    .bind(term_id)
-    .fetch_one(&state.pool)
-    .await?;
+        cols = GLOSSARY_TERM_COLUMNS,
+    );
+
+    let term = sqlx::query_as::<_, GlossaryTerm>(&update_query)
+        .bind(body.term_name.as_deref())
+        .bind(body.definition.as_deref())
+        .bind(body.abbreviation.as_deref())
+        .bind(body.business_context.as_deref())
+        .bind(body.examples.as_deref())
+        .bind(body.definition_notes.as_deref())
+        .bind(body.counter_examples.as_deref())
+        .bind(body.formula.as_deref())
+        .bind(body.unit_of_measure_id)
+        .bind(body.term_type_id)
+        .bind(body.domain_id)
+        .bind(body.category_id)
+        .bind(body.classification_id)
+        .bind(body.owner_user_id)
+        .bind(body.steward_user_id)
+        .bind(body.domain_owner_user_id)
+        .bind(body.approver_user_id)
+        .bind(body.organisational_unit.as_deref())
+        .bind(body.approved_at)
+        .bind(body.review_frequency_id)
+        .bind(body.parent_term_id)
+        .bind(body.source_reference.as_deref())
+        .bind(body.regulatory_reference.as_deref())
+        .bind(body.used_in_reports.as_deref())
+        .bind(body.used_in_policies.as_deref())
+        .bind(body.regulatory_reporting_usage.as_deref())
+        .bind(body.is_cde)
+        .bind(body.golden_source.as_deref())
+        .bind(body.confidence_level_id)
+        .bind(body.visibility_id)
+        .bind(body.language_id)
+        .bind(body.external_reference.as_deref())
+        .bind(claims.sub)
+        .bind(term_id)
+        .fetch_one(&state.pool)
+        .await?;
 
     Ok(Json(term))
 }
@@ -363,6 +479,500 @@ pub async fn list_categories(
     Ok(Json(categories))
 }
 
+// ===========================================================================
+// NEW LOOKUP ENDPOINTS
+// ===========================================================================
+
+// ---------------------------------------------------------------------------
+// list_term_types — GET /api/v1/glossary/term-types
+// ---------------------------------------------------------------------------
+
+#[utoipa::path(
+    get,
+    path = "/api/v1/glossary/term-types",
+    responses(
+        (status = 200, description = "List term types", body = Vec<GlossaryTermType>)
+    ),
+    security(("bearer_auth" = [])),
+    tag = "glossary"
+)]
+pub async fn list_term_types(
+    State(state): State<AppState>,
+) -> AppResult<Json<Vec<GlossaryTermType>>> {
+    let rows = sqlx::query_as::<_, GlossaryTermType>(
+        r#"
+        SELECT term_type_id, type_code, type_name, description
+        FROM glossary_term_types
+        ORDER BY display_order ASC
+        "#,
+    )
+    .fetch_all(&state.pool)
+    .await?;
+
+    Ok(Json(rows))
+}
+
+// ---------------------------------------------------------------------------
+// list_review_frequencies — GET /api/v1/glossary/review-frequencies
+// ---------------------------------------------------------------------------
+
+#[utoipa::path(
+    get,
+    path = "/api/v1/glossary/review-frequencies",
+    responses(
+        (status = 200, description = "List review frequencies", body = Vec<GlossaryReviewFrequency>)
+    ),
+    security(("bearer_auth" = [])),
+    tag = "glossary"
+)]
+pub async fn list_review_frequencies(
+    State(state): State<AppState>,
+) -> AppResult<Json<Vec<GlossaryReviewFrequency>>> {
+    let rows = sqlx::query_as::<_, GlossaryReviewFrequency>(
+        r#"
+        SELECT frequency_id, frequency_code, frequency_name, months_interval
+        FROM glossary_review_frequencies
+        ORDER BY display_order ASC
+        "#,
+    )
+    .fetch_all(&state.pool)
+    .await?;
+
+    Ok(Json(rows))
+}
+
+// ---------------------------------------------------------------------------
+// list_confidence_levels — GET /api/v1/glossary/confidence-levels
+// ---------------------------------------------------------------------------
+
+#[utoipa::path(
+    get,
+    path = "/api/v1/glossary/confidence-levels",
+    responses(
+        (status = 200, description = "List confidence levels", body = Vec<GlossaryConfidenceLevel>)
+    ),
+    security(("bearer_auth" = [])),
+    tag = "glossary"
+)]
+pub async fn list_confidence_levels(
+    State(state): State<AppState>,
+) -> AppResult<Json<Vec<GlossaryConfidenceLevel>>> {
+    let rows = sqlx::query_as::<_, GlossaryConfidenceLevel>(
+        r#"
+        SELECT confidence_id, level_code, level_name, description
+        FROM glossary_confidence_levels
+        ORDER BY display_order ASC
+        "#,
+    )
+    .fetch_all(&state.pool)
+    .await?;
+
+    Ok(Json(rows))
+}
+
+// ---------------------------------------------------------------------------
+// list_visibility_levels — GET /api/v1/glossary/visibility-levels
+// ---------------------------------------------------------------------------
+
+#[utoipa::path(
+    get,
+    path = "/api/v1/glossary/visibility-levels",
+    responses(
+        (status = 200, description = "List visibility levels", body = Vec<GlossaryVisibilityLevel>)
+    ),
+    security(("bearer_auth" = [])),
+    tag = "glossary"
+)]
+pub async fn list_visibility_levels(
+    State(state): State<AppState>,
+) -> AppResult<Json<Vec<GlossaryVisibilityLevel>>> {
+    let rows = sqlx::query_as::<_, GlossaryVisibilityLevel>(
+        r#"
+        SELECT visibility_id, visibility_code, visibility_name, description
+        FROM glossary_visibility_levels
+        ORDER BY display_order ASC
+        "#,
+    )
+    .fetch_all(&state.pool)
+    .await?;
+
+    Ok(Json(rows))
+}
+
+// ---------------------------------------------------------------------------
+// list_units_of_measure — GET /api/v1/glossary/units-of-measure
+// ---------------------------------------------------------------------------
+
+#[utoipa::path(
+    get,
+    path = "/api/v1/glossary/units-of-measure",
+    responses(
+        (status = 200, description = "List units of measure", body = Vec<GlossaryUnitOfMeasure>)
+    ),
+    security(("bearer_auth" = [])),
+    tag = "glossary"
+)]
+pub async fn list_units_of_measure(
+    State(state): State<AppState>,
+) -> AppResult<Json<Vec<GlossaryUnitOfMeasure>>> {
+    let rows = sqlx::query_as::<_, GlossaryUnitOfMeasure>(
+        r#"
+        SELECT unit_id, unit_code, unit_name, unit_symbol
+        FROM glossary_units_of_measure
+        ORDER BY display_order ASC
+        "#,
+    )
+    .fetch_all(&state.pool)
+    .await?;
+
+    Ok(Json(rows))
+}
+
+// ---------------------------------------------------------------------------
+// list_regulatory_tags — GET /api/v1/glossary/regulatory-tags
+// ---------------------------------------------------------------------------
+
+#[utoipa::path(
+    get,
+    path = "/api/v1/glossary/regulatory-tags",
+    responses(
+        (status = 200, description = "List regulatory tags", body = Vec<GlossaryRegulatoryTag>)
+    ),
+    security(("bearer_auth" = [])),
+    tag = "glossary"
+)]
+pub async fn list_regulatory_tags(
+    State(state): State<AppState>,
+) -> AppResult<Json<Vec<GlossaryRegulatoryTag>>> {
+    let rows = sqlx::query_as::<_, GlossaryRegulatoryTag>(
+        r#"
+        SELECT tag_id, tag_code, tag_name, description
+        FROM glossary_regulatory_tags
+        ORDER BY display_order ASC
+        "#,
+    )
+    .fetch_all(&state.pool)
+    .await?;
+
+    Ok(Json(rows))
+}
+
+// ---------------------------------------------------------------------------
+// list_subject_areas — GET /api/v1/glossary/subject-areas
+// ---------------------------------------------------------------------------
+
+#[utoipa::path(
+    get,
+    path = "/api/v1/glossary/subject-areas",
+    responses(
+        (status = 200, description = "List subject areas", body = Vec<GlossarySubjectArea>)
+    ),
+    security(("bearer_auth" = [])),
+    tag = "glossary"
+)]
+pub async fn list_subject_areas(
+    State(state): State<AppState>,
+) -> AppResult<Json<Vec<GlossarySubjectArea>>> {
+    let rows = sqlx::query_as::<_, GlossarySubjectArea>(
+        r#"
+        SELECT subject_area_id, area_code, area_name, description
+        FROM glossary_subject_areas
+        ORDER BY display_order ASC
+        "#,
+    )
+    .fetch_all(&state.pool)
+    .await?;
+
+    Ok(Json(rows))
+}
+
+// ---------------------------------------------------------------------------
+// list_languages — GET /api/v1/glossary/languages
+// ---------------------------------------------------------------------------
+
+#[utoipa::path(
+    get,
+    path = "/api/v1/glossary/languages",
+    responses(
+        (status = 200, description = "List languages", body = Vec<GlossaryLanguage>)
+    ),
+    security(("bearer_auth" = [])),
+    tag = "glossary"
+)]
+pub async fn list_languages(
+    State(state): State<AppState>,
+) -> AppResult<Json<Vec<GlossaryLanguage>>> {
+    let rows = sqlx::query_as::<_, GlossaryLanguage>(
+        r#"
+        SELECT language_id, language_code, language_name
+        FROM glossary_languages
+        ORDER BY language_name ASC
+        "#,
+    )
+    .fetch_all(&state.pool)
+    .await?;
+
+    Ok(Json(rows))
+}
+
+// ===========================================================================
+// JUNCTION MANAGEMENT ENDPOINTS
+// ===========================================================================
+
+// ---------------------------------------------------------------------------
+// attach_regulatory_tag — POST /api/v1/glossary/terms/:term_id/regulatory-tags
+// ---------------------------------------------------------------------------
+
+#[utoipa::path(
+    post,
+    path = "/api/v1/glossary/terms/{term_id}/regulatory-tags",
+    params(("term_id" = Uuid, Path, description = "Term ID")),
+    request_body = AttachRegulatoryTagRequest,
+    responses(
+        (status = 201, description = "Regulatory tag attached"),
+        (status = 409, description = "Tag already attached")
+    ),
+    security(("bearer_auth" = [])),
+    tag = "glossary"
+)]
+pub async fn attach_regulatory_tag(
+    State(state): State<AppState>,
+    Extension(claims): Extension<Claims>,
+    Path(term_id): Path<Uuid>,
+    Json(body): Json<AttachRegulatoryTagRequest>,
+) -> AppResult<StatusCode> {
+    sqlx::query(
+        r#"
+        INSERT INTO glossary_term_regulatory_tags (term_id, tag_id, created_by)
+        VALUES ($1, $2, $3)
+        ON CONFLICT (term_id, tag_id) DO NOTHING
+        "#,
+    )
+    .bind(term_id)
+    .bind(body.tag_id)
+    .bind(claims.sub)
+    .execute(&state.pool)
+    .await?;
+
+    Ok(StatusCode::CREATED)
+}
+
+// ---------------------------------------------------------------------------
+// detach_regulatory_tag — DELETE /api/v1/glossary/terms/:term_id/regulatory-tags/:tag_id
+// ---------------------------------------------------------------------------
+
+#[utoipa::path(
+    delete,
+    path = "/api/v1/glossary/terms/{term_id}/regulatory-tags/{tag_id}",
+    params(
+        ("term_id" = Uuid, Path, description = "Term ID"),
+        ("tag_id" = Uuid, Path, description = "Regulatory Tag ID")
+    ),
+    responses(
+        (status = 204, description = "Regulatory tag removed"),
+        (status = 404, description = "Attachment not found")
+    ),
+    security(("bearer_auth" = [])),
+    tag = "glossary"
+)]
+pub async fn detach_regulatory_tag(
+    State(state): State<AppState>,
+    Path((term_id, tag_id)): Path<(Uuid, Uuid)>,
+) -> AppResult<StatusCode> {
+    let result = sqlx::query(
+        "DELETE FROM glossary_term_regulatory_tags WHERE term_id = $1 AND tag_id = $2",
+    )
+    .bind(term_id)
+    .bind(tag_id)
+    .execute(&state.pool)
+    .await?;
+
+    if result.rows_affected() == 0 {
+        return Err(AppError::NotFound(
+            "regulatory tag attachment not found".into(),
+        ));
+    }
+
+    Ok(StatusCode::NO_CONTENT)
+}
+
+// ---------------------------------------------------------------------------
+// attach_subject_area — POST /api/v1/glossary/terms/:term_id/subject-areas
+// ---------------------------------------------------------------------------
+
+#[utoipa::path(
+    post,
+    path = "/api/v1/glossary/terms/{term_id}/subject-areas",
+    params(("term_id" = Uuid, Path, description = "Term ID")),
+    request_body = AttachSubjectAreaRequest,
+    responses(
+        (status = 201, description = "Subject area attached"),
+        (status = 409, description = "Subject area already attached")
+    ),
+    security(("bearer_auth" = [])),
+    tag = "glossary"
+)]
+pub async fn attach_subject_area(
+    State(state): State<AppState>,
+    Extension(claims): Extension<Claims>,
+    Path(term_id): Path<Uuid>,
+    Json(body): Json<AttachSubjectAreaRequest>,
+) -> AppResult<StatusCode> {
+    sqlx::query(
+        r#"
+        INSERT INTO glossary_term_subject_areas (term_id, subject_area_id, is_primary, created_by)
+        VALUES ($1, $2, $3, $4)
+        ON CONFLICT (term_id, subject_area_id) DO NOTHING
+        "#,
+    )
+    .bind(term_id)
+    .bind(body.area_id)
+    .bind(body.is_primary.unwrap_or(false))
+    .bind(claims.sub)
+    .execute(&state.pool)
+    .await?;
+
+    Ok(StatusCode::CREATED)
+}
+
+// ---------------------------------------------------------------------------
+// detach_subject_area — DELETE /api/v1/glossary/terms/:term_id/subject-areas/:area_id
+// ---------------------------------------------------------------------------
+
+#[utoipa::path(
+    delete,
+    path = "/api/v1/glossary/terms/{term_id}/subject-areas/{area_id}",
+    params(
+        ("term_id" = Uuid, Path, description = "Term ID"),
+        ("area_id" = Uuid, Path, description = "Subject Area ID")
+    ),
+    responses(
+        (status = 204, description = "Subject area removed"),
+        (status = 404, description = "Attachment not found")
+    ),
+    security(("bearer_auth" = [])),
+    tag = "glossary"
+)]
+pub async fn detach_subject_area(
+    State(state): State<AppState>,
+    Path((term_id, area_id)): Path<(Uuid, Uuid)>,
+) -> AppResult<StatusCode> {
+    let result = sqlx::query(
+        "DELETE FROM glossary_term_subject_areas WHERE term_id = $1 AND subject_area_id = $2",
+    )
+    .bind(term_id)
+    .bind(area_id)
+    .execute(&state.pool)
+    .await?;
+
+    if result.rows_affected() == 0 {
+        return Err(AppError::NotFound(
+            "subject area attachment not found".into(),
+        ));
+    }
+
+    Ok(StatusCode::NO_CONTENT)
+}
+
+// ---------------------------------------------------------------------------
+// attach_tag — POST /api/v1/glossary/terms/:term_id/tags
+// ---------------------------------------------------------------------------
+
+#[utoipa::path(
+    post,
+    path = "/api/v1/glossary/terms/{term_id}/tags",
+    params(("term_id" = Uuid, Path, description = "Term ID")),
+    request_body = AttachTagRequest,
+    responses(
+        (status = 201, description = "Tag attached (created if not exists)"),
+        (status = 409, description = "Tag already attached")
+    ),
+    security(("bearer_auth" = [])),
+    tag = "glossary"
+)]
+pub async fn attach_tag(
+    State(state): State<AppState>,
+    Extension(claims): Extension<Claims>,
+    Path(term_id): Path<Uuid>,
+    Json(body): Json<AttachTagRequest>,
+) -> AppResult<StatusCode> {
+    let tag_name = body.tag_name.trim().to_lowercase();
+    if tag_name.is_empty() {
+        return Err(AppError::Validation("tag_name is required".into()));
+    }
+
+    // Upsert the tag (create if not exists)
+    let tag_id = sqlx::query_scalar::<_, Uuid>(
+        r#"
+        INSERT INTO glossary_tags (tag_name, created_by)
+        VALUES ($1, $2)
+        ON CONFLICT (tag_name) DO UPDATE SET tag_name = glossary_tags.tag_name
+        RETURNING tag_id
+        "#,
+    )
+    .bind(&tag_name)
+    .bind(claims.sub)
+    .fetch_one(&state.pool)
+    .await?;
+
+    // Attach the tag to the term
+    sqlx::query(
+        r#"
+        INSERT INTO glossary_term_tags (term_id, tag_id, created_by)
+        VALUES ($1, $2, $3)
+        ON CONFLICT (term_id, tag_id) DO NOTHING
+        "#,
+    )
+    .bind(term_id)
+    .bind(tag_id)
+    .bind(claims.sub)
+    .execute(&state.pool)
+    .await?;
+
+    Ok(StatusCode::CREATED)
+}
+
+// ---------------------------------------------------------------------------
+// detach_tag — DELETE /api/v1/glossary/terms/:term_id/tags/:tag_id
+// ---------------------------------------------------------------------------
+
+#[utoipa::path(
+    delete,
+    path = "/api/v1/glossary/terms/{term_id}/tags/{tag_id}",
+    params(
+        ("term_id" = Uuid, Path, description = "Term ID"),
+        ("tag_id" = Uuid, Path, description = "Tag ID")
+    ),
+    responses(
+        (status = 204, description = "Tag removed"),
+        (status = 404, description = "Attachment not found")
+    ),
+    security(("bearer_auth" = [])),
+    tag = "glossary"
+)]
+pub async fn detach_tag(
+    State(state): State<AppState>,
+    Path((term_id, tag_id)): Path<(Uuid, Uuid)>,
+) -> AppResult<StatusCode> {
+    let result = sqlx::query(
+        "DELETE FROM glossary_term_tags WHERE term_id = $1 AND tag_id = $2",
+    )
+    .bind(term_id)
+    .bind(tag_id)
+    .execute(&state.pool)
+    .await?;
+
+    if result.rows_affected() == 0 {
+        return Err(AppError::NotFound("tag attachment not found".into()));
+    }
+
+    Ok(StatusCode::NO_CONTENT)
+}
+
+// ===========================================================================
+// AI ENRICHMENT CONVENIENCE ENDPOINT
+// ===========================================================================
+
 // ---------------------------------------------------------------------------
 // ai_enrich_term — POST /api/v1/glossary/terms/:term_id/ai-enrich
 // ---------------------------------------------------------------------------
@@ -395,6 +1005,10 @@ pub async fn ai_enrich_term(
     .await?;
     Ok(result)
 }
+
+// ===========================================================================
+// DASHBOARD STATS
+// ===========================================================================
 
 // ---------------------------------------------------------------------------
 // get_stats — GET /api/v1/stats

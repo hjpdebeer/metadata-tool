@@ -41,11 +41,31 @@ struct OpenAiMessage {
 // Suggestion type returned by the AI enrichment service
 // ---------------------------------------------------------------------------
 
+fn deserialize_string_or_null<'de, D>(deserializer: D) -> Result<String, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let opt: Option<String> = Option::deserialize(deserializer)?;
+    Ok(opt.unwrap_or_default())
+}
+
+fn deserialize_f64_or_null<'de, D>(deserializer: D) -> Result<f64, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let opt: Option<f64> = Option::deserialize(deserializer)?;
+    Ok(opt.unwrap_or(0.0))
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RawAiSuggestion {
+    #[serde(default, deserialize_with = "deserialize_string_or_null")]
     pub field_name: String,
+    #[serde(default, deserialize_with = "deserialize_string_or_null")]
     pub suggested_value: String,
+    #[serde(default, deserialize_with = "deserialize_f64_or_null")]
     pub confidence: f64,
+    #[serde(default, deserialize_with = "deserialize_string_or_null")]
     pub rationale: String,
 }
 
@@ -75,6 +95,67 @@ fn build_prompt(
         existing_fields.join(", ")
     };
 
+    match entity_type {
+        "glossary_term" => build_glossary_term_prompt(entity_data, &existing_list),
+        _ => build_generic_prompt(entity_type, entity_data, &existing_list),
+    }
+}
+
+/// Specialised prompt for glossary terms covering all 22 AI-suggestible fields
+fn build_glossary_term_prompt(
+    entity_data: &serde_json::Value,
+    existing_list: &str,
+) -> String {
+    format!(
+        r#"You are a metadata governance expert for financial institutions. Given a business glossary term, suggest values for empty metadata fields based on industry standards (DAMA DMBOK, BCBS 239, ISO 8000).
+
+Entity: glossary_term
+Current field values:
+{entity_json}
+
+Fields that already have values: {existing_list}
+
+Suggest values for ONLY these text fields (never suggest ID fields, FK fields, or ownership fields):
+- abbreviation: common abbreviation or acronym
+- definition_notes: additional clarifying notes on the definition
+- counter_examples: what this term does NOT mean, common confusions
+- formula: calculation formula if this is a KPI/metric (null if not applicable)
+- unit_of_measure: suggest the unit name (e.g., "Percentage (%)", "Currency", "Count") — user will map to dropdown
+- term_type: suggest the type name (e.g., "KPI / Financial Metric", "Business Concept", "Regulatory Term", "Technical Term", "Process Term", "Product Term", "Risk Term", "Compliance Term") — user will map to dropdown
+- business_context: business rules, operational rules, and calculation methodology
+- examples: concrete examples of this term in use
+- source_reference: authoritative source for this definition
+- regulatory_reference: relevant regulatory references
+- regulatory_tags: suggest regulatory framework names as comma-separated (e.g., "BCBS 239, IFRS 9")
+- subject_areas: suggest business areas as comma-separated (e.g., "Retail Banking, Treasury")
+- regulatory_reporting_usage: how this term is used in regulatory reports
+- external_reference: external standard references (e.g., "BCBS 239 Principle 6")
+- tags: suggest keywords for discoverability as comma-separated
+- parent_term: suggest a logical parent term name if hierarchical
+- related_terms: suggest related terms as comma-separated
+- used_in_reports: reports where this term is used
+- used_in_policies: policies referencing this term
+- golden_source: authoritative source system for this term's data
+
+For each suggestion provide: field_name, suggested_value (non-null string), confidence (0.0-1.0), rationale.
+
+IMPORTANT:
+- Never suggest values for fields ending in _id, _at, or _by
+- Never suggest owner, steward, approver, organisational_unit, or domain_owner
+- For dropdown fields (unit_of_measure, term_type), suggest the DISPLAY NAME not an ID
+- Only suggest for fields that are empty or missing — skip fields in the "already have values" list
+- Return a JSON array of objects. Return [] if no suggestions are needed."#,
+        entity_json = serde_json::to_string_pretty(entity_data).unwrap_or_default(),
+        existing_list = existing_list,
+    )
+}
+
+/// Generic prompt for non-glossary entity types (data_element, etc.)
+fn build_generic_prompt(
+    entity_type: &str,
+    entity_data: &serde_json::Value,
+    existing_list: &str,
+) -> String {
     format!(
         r#"You are a metadata governance expert for financial institutions. Given the following {entity_type}, suggest improvements for empty or incomplete fields based on industry standards (DAMA DMBOK, BCBS 239, ISO 8000).
 
@@ -84,11 +165,16 @@ Current field values:
 
 Fields that already have values: {existing_list}
 
-For each empty or improvable field, provide:
+IMPORTANT: Only suggest values for TEXT fields shown above. NEVER suggest values for:
+- Any field ending in _id (domain_id, category_id, owner_user_id, steward_user_id, classification_id, glossary_term_id, etc.)
+- Any field ending in _at (timestamps)
+- System fields like status_id, created_by, updated_by, version_number, is_current_version, is_cde, is_nullable
+
+For each empty or improvable text field, provide:
 1. field_name: the exact field name from the entity
-2. suggested_value: your suggestion
+2. suggested_value: your suggestion (must be a non-null string)
 3. confidence: 0.0-1.0 how confident you are
-4. rationale: why this suggestion, citing standards where applicable
+4. rationale: why this suggestion, citing standards where applicable (must be a non-null string)
 
 Return ONLY a JSON array of suggestions. Only suggest for fields that are empty, missing, or could be significantly improved. Do not suggest for fields that are already well-populated.
 
@@ -424,14 +510,37 @@ Hope this helps!"#;
     }
 
     #[test]
-    fn prompt_includes_entity_type() {
+    fn prompt_includes_entity_type_for_generic() {
         let prompt = build_prompt(
-            "glossary_term",
-            &serde_json::json!({"term_name": "Test"}),
-            &["term_name".to_string()],
+            "data_element",
+            &serde_json::json!({"element_name": "Test"}),
+            &["element_name".to_string()],
         );
-        assert!(prompt.contains("glossary_term"));
+        assert!(prompt.contains("data_element"));
         assert!(prompt.contains("DAMA DMBOK"));
         assert!(prompt.contains("BCBS 239"));
+    }
+
+    #[test]
+    fn glossary_prompt_includes_all_enrichable_fields() {
+        let prompt = build_prompt(
+            "glossary_term",
+            &serde_json::json!({"term_name": "NPL Ratio", "definition": "Non-performing loan ratio"}),
+            &["term_name".to_string(), "definition".to_string()],
+        );
+        assert!(prompt.contains("glossary_term"));
+        assert!(prompt.contains("definition_notes"));
+        assert!(prompt.contains("counter_examples"));
+        assert!(prompt.contains("formula"));
+        assert!(prompt.contains("unit_of_measure"));
+        assert!(prompt.contains("term_type"));
+        assert!(prompt.contains("regulatory_tags"));
+        assert!(prompt.contains("subject_areas"));
+        assert!(prompt.contains("regulatory_reporting_usage"));
+        assert!(prompt.contains("external_reference"));
+        assert!(prompt.contains("golden_source"));
+        assert!(prompt.contains("used_in_reports"));
+        assert!(prompt.contains("used_in_policies"));
+        assert!(prompt.contains("parent_term"));
     }
 }

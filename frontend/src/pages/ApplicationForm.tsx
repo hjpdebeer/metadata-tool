@@ -76,7 +76,7 @@ const ApplicationForm: React.FC = () => {
       applicationsApi.listRiskRatings(),
       glossaryApi.listClassifications(),
       glossaryApi.listReviewFrequencies(),
-      usersApi.listUsers({ page_size: 500, is_active: true }),
+      usersApi.lookupUsers(),
     ]);
 
     if (results[0].status === 'fulfilled') setClassifications(results[0].value.data);
@@ -87,12 +87,7 @@ const ApplicationForm: React.FC = () => {
     if (results[5].status === 'fulfilled') setDataClassifications(results[5].value.data);
     if (results[6].status === 'fulfilled') setReviewFrequencies(results[6].value.data);
     if (results[7].status === 'fulfilled') {
-      const userData = results[7].value.data;
-      if (Array.isArray(userData)) {
-        setUsers(userData);
-      } else {
-        setUsers((userData as unknown as { data: UserListItem[] }).data || []);
-      }
+      setUsers(results[7].value.data);
     }
   }, []);
 

@@ -142,7 +142,6 @@ export interface GlossaryTerm {
   version_number: number;
   is_current_version: boolean;
   is_cbt: boolean;
-  golden_source: string | null;
   golden_source_app_id: string | null;
   used_in_reports: string | null;
   used_in_policies: string | null;
@@ -205,7 +204,6 @@ export interface GlossaryTermDetailView {
   used_in_policies: string | null;
   regulatory_reporting_usage: string | null;
   is_cbt: boolean;
-  golden_source: string | null;
   golden_source_app_id: string | null;
   confidence_level_id: string | null;
   visibility_id: string | null;
@@ -276,7 +274,6 @@ export interface UpdateGlossaryTermRequest {
   organisational_unit?: string;
   review_frequency_id?: string;
   is_cbt?: boolean;
-  golden_source?: string;
   golden_source_app_id?: string;
   confidence_level_id?: string;
   visibility_id?: string;

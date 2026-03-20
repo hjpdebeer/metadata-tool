@@ -37,7 +37,7 @@ const { Text, Paragraph } = Typography;
 const LOOKUP_FIELDS = ['domain', 'category', 'data_classification', 'term_type', 'unit_of_measure'];
 
 interface AiEnrichmentPanelProps {
-  entityType: string; // "glossary_term" or "data_element"
+  entityType: string; // "glossary_term", "data_element", or "application"
   entityId: string;
   onSuggestionApplied?: () => void; // callback to refresh parent data
 }
@@ -105,42 +105,53 @@ const AiEnrichmentPanel: React.FC<AiEnrichmentPanelProps> = ({
 
   // Fetch lookup tables to resolve UUIDs → display names for lookup field suggestions
   const fetchLookupNames = useCallback(async () => {
-    if (entityType !== 'glossary_term') return;
+    const map: Record<string, string> = {};
+    const opts: Record<string, { value: string; label: string }[]> = {};
+
     try {
-      const [domains, categories, classifications, termTypes, units] = await Promise.allSettled([
-        glossaryApi.listDomains(),
-        glossaryApi.listCategories(),
-        glossaryApi.listClassifications(),
-        glossaryApi.listTermTypes(),
-        glossaryApi.listUnitsOfMeasure(),
-      ]);
-      const map: Record<string, string> = {};
-      const opts: Record<string, { value: string; label: string }[]> = {};
-      if (domains.status === 'fulfilled') {
-        domains.value.data.forEach((d) => { map[d.domain_id] = d.domain_name; });
-        opts['domain'] = domains.value.data.map((d) => ({ value: d.domain_id, label: d.domain_name }));
+      if (entityType === 'glossary_term') {
+        const [domains, categories, classifications, termTypes, units] = await Promise.allSettled([
+          glossaryApi.listDomains(),
+          glossaryApi.listCategories(),
+          glossaryApi.listClassifications(),
+          glossaryApi.listTermTypes(),
+          glossaryApi.listUnitsOfMeasure(),
+        ]);
+        if (domains.status === 'fulfilled') {
+          domains.value.data.forEach((d) => { map[d.domain_id] = d.domain_name; });
+          opts['domain'] = domains.value.data.map((d) => ({ value: d.domain_id, label: d.domain_name }));
+        }
+        if (categories.status === 'fulfilled') {
+          categories.value.data.forEach((c) => { map[c.category_id] = c.category_name; });
+          opts['category'] = categories.value.data.map((c) => ({ value: c.category_id, label: c.category_name }));
+        }
+        if (classifications.status === 'fulfilled') {
+          classifications.value.data.forEach((c) => { map[c.classification_id] = c.classification_name; });
+          opts['data_classification'] = classifications.value.data.map((c) => ({ value: c.classification_id, label: c.classification_name }));
+        }
+        if (termTypes.status === 'fulfilled') {
+          termTypes.value.data.forEach((t) => { map[t.term_type_id] = t.type_name; });
+          opts['term_type'] = termTypes.value.data.map((t) => ({ value: t.term_type_id, label: t.type_name }));
+        }
+        if (units.status === 'fulfilled') {
+          units.value.data.forEach((u) => { map[u.unit_id] = u.unit_name; });
+          opts['unit_of_measure'] = units.value.data.map((u) => ({ value: u.unit_id, label: u.unit_name }));
+        }
+      } else if (entityType === 'application') {
+        const [classifications] = await Promise.allSettled([
+          glossaryApi.listClassifications(),
+        ]);
+        if (classifications.status === 'fulfilled') {
+          classifications.value.data.forEach((c) => { map[c.classification_id] = c.classification_name; });
+          opts['data_classification'] = classifications.value.data.map((c) => ({ value: c.classification_id, label: c.classification_name }));
+        }
       }
-      if (categories.status === 'fulfilled') {
-        categories.value.data.forEach((c) => { map[c.category_id] = c.category_name; });
-        opts['category'] = categories.value.data.map((c) => ({ value: c.category_id, label: c.category_name }));
-      }
-      if (classifications.status === 'fulfilled') {
-        classifications.value.data.forEach((c) => { map[c.classification_id] = c.classification_name; });
-        opts['data_classification'] = classifications.value.data.map((c) => ({ value: c.classification_id, label: c.classification_name }));
-      }
-      if (termTypes.status === 'fulfilled') {
-        termTypes.value.data.forEach((t) => { map[t.term_type_id] = t.type_name; });
-        opts['term_type'] = termTypes.value.data.map((t) => ({ value: t.term_type_id, label: t.type_name }));
-      }
-      if (units.status === 'fulfilled') {
-        units.value.data.forEach((u) => { map[u.unit_id] = u.unit_name; });
-        opts['unit_of_measure'] = units.value.data.map((u) => ({ value: u.unit_id, label: u.unit_name }));
-      }
-      setLookupNames(map);
-      setLookupOptions(opts);
     } catch {
       // Non-critical
     }
+
+    setLookupNames(map);
+    setLookupOptions(opts);
   }, [entityType]);
 
   const fetchSuggestions = useCallback(async () => {

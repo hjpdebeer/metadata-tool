@@ -47,6 +47,7 @@ import type {
 } from '../services/applicationsApi';
 import type { DataElementListItem } from '../services/dataDictionaryApi';
 import type { WorkflowInstanceView, OrganisationalUnit } from '../services/glossaryApi';
+import AiEnrichmentPanel from '../components/AiEnrichmentPanel';
 import type { UserListItem } from '../services/usersApi';
 import { useAuth } from '../hooks/useAuth';
 import { glossaryApi } from '../services/glossaryApi';
@@ -176,13 +177,10 @@ const ApplicationDetail: React.FC = () => {
 
   const fetchLookups = useCallback(async () => {
     const [usersRes, orgRes] = await Promise.allSettled([
-      usersApi.listUsers({ page_size: 500, is_active: true }),
+      usersApi.lookupUsers(),
       glossaryApi.listOrganisationalUnits(),
     ]);
-    if (usersRes.status === 'fulfilled') {
-      const data = usersRes.value.data;
-      setAllUsers(Array.isArray(data) ? data : (data as unknown as { data: UserListItem[] }).data || []);
-    }
+    if (usersRes.status === 'fulfilled') setAllUsers(usersRes.value.data);
     if (orgRes.status === 'fulfilled') setAllOrgUnits(orgRes.value.data);
   }, []);
 
@@ -468,7 +466,7 @@ const ApplicationDetail: React.FC = () => {
     return buttons;
   };
 
-  const showOwnershipSection = allUsers.length > 0 && (status === 'DRAFT' || status === 'REVISED');
+  const showOwnershipSection = detail && allUsers.length > 0 && (status === 'DRAFT' || status === 'REVISED');
 
   const elementColumns = [
     {
@@ -966,6 +964,13 @@ const ApplicationDetail: React.FC = () => {
           </Card>
         </Col>
       </Row>
+
+      {/* --- AI Enrichment Panel --- */}
+      <AiEnrichmentPanel
+        entityType="application"
+        entityId={id!}
+        onSuggestionApplied={() => fetchApplication()}
+      />
 
       {/* --- Ownership Assignment (shown in DRAFT/REVISED status) --- */}
       {showOwnershipSection && (

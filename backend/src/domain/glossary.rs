@@ -82,7 +82,6 @@ pub struct GlossaryTerm {
 
     // Section 8: Quality
     pub is_cbt: bool,
-    pub golden_source: Option<String>,
     pub golden_source_app_id: Option<Uuid>,
     pub confidence_level_id: Option<Uuid>,
 
@@ -144,7 +143,6 @@ pub struct GlossaryTermDetailRow {
     pub used_in_policies: Option<String>,
     pub regulatory_reporting_usage: Option<String>,
     pub is_cbt: bool,
-    pub golden_source: Option<String>,
     pub golden_source_app_id: Option<Uuid>,
     pub confidence_level_id: Option<Uuid>,
     pub visibility_id: Option<Uuid>,
@@ -214,7 +212,6 @@ pub struct GlossaryTermDetail {
     pub used_in_policies: Option<String>,
     pub regulatory_reporting_usage: Option<String>,
     pub is_cbt: bool,
-    pub golden_source: Option<String>,
     pub golden_source_app_id: Option<Uuid>,
     pub confidence_level_id: Option<Uuid>,
     pub visibility_id: Option<Uuid>,
@@ -321,7 +318,6 @@ impl GlossaryTermDetail {
             used_in_policies: row.used_in_policies,
             regulatory_reporting_usage: row.regulatory_reporting_usage,
             is_cbt: row.is_cbt,
-            golden_source: row.golden_source,
             golden_source_app_id: row.golden_source_app_id,
             confidence_level_id: row.confidence_level_id,
             visibility_id: row.visibility_id,
@@ -475,7 +471,6 @@ pub struct UpdateGlossaryTermRequest {
 
     // Quality
     pub is_cbt: Option<bool>,
-    pub golden_source: Option<String>,
     pub golden_source_app_id: Option<Uuid>,
     pub confidence_level_id: Option<Uuid>,
 

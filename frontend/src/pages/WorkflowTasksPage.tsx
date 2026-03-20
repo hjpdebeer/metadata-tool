@@ -8,7 +8,14 @@ import type { PendingTask } from '../services/glossaryApi';
 const { Title, Text } = Typography;
 
 /** Map entity_type strings to route prefixes. */
+/** Map entity_type strings to route prefixes (handles both DB type_name and type_code formats). */
 const entityRoutes: Record<string, string> = {
+  'Glossary Term': '/glossary',
+  'Data Element': '/data-dictionary',
+  'Quality Rule': '/data-quality',
+  'Application': '/applications',
+  'Business Process': '/processes',
+  // Legacy lowercase keys
   glossary_term: '/glossary',
   data_element: '/data-dictionary',
   quality_rule: '/data-quality',
@@ -17,6 +24,11 @@ const entityRoutes: Record<string, string> = {
 };
 
 const entityTypeLabels: Record<string, string> = {
+  'Glossary Term': 'Glossary Term',
+  'Data Element': 'Data Element',
+  'Quality Rule': 'Quality Rule',
+  'Application': 'Application',
+  'Business Process': 'Business Process',
   glossary_term: 'Glossary Term',
   data_element: 'Data Element',
   quality_rule: 'Quality Rule',

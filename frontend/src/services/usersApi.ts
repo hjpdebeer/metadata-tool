@@ -76,6 +76,11 @@ export const usersApi = {
     return api.get('/users', { params });
   },
 
+  /** Lightweight user lookup for dropdowns. Available to all authenticated users (no admin required). */
+  lookupUsers(): Promise<AxiosResponse<UserListItem[]>> {
+    return api.get('/users/lookup');
+  },
+
   getUser(userId: string): Promise<AxiosResponse<UserWithRoles>> {
     return api.get(`/users/${userId}`);
   },

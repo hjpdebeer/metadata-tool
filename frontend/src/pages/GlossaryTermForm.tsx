@@ -84,7 +84,7 @@ const GlossaryTermForm: React.FC = () => {
       glossaryApi.listConfidenceLevels(),
       glossaryApi.listVisibilityLevels(),
       glossaryApi.listLanguages(),
-      usersApi.listUsers({ page_size: 500, is_active: true }),
+      usersApi.lookupUsers(),
       glossaryApi.listTerms({ page_size: 500 }),
       applicationsApi.listApplications({ page_size: 500 }),
     ]);
@@ -98,15 +98,7 @@ const GlossaryTermForm: React.FC = () => {
     if (results[6].status === 'fulfilled') setConfidenceLevels(results[6].value.data);
     if (results[7].status === 'fulfilled') setVisibilityLevels(results[7].value.data);
     if (results[8].status === 'fulfilled') setLanguages(results[8].value.data);
-    if (results[9].status === 'fulfilled') {
-      const userData = results[9].value.data;
-      // Handle paginated or flat response
-      if (Array.isArray(userData)) {
-        setUsers(userData);
-      } else {
-        setUsers((userData as unknown as { data: UserListItem[] }).data || []);
-      }
-    }
+    if (results[9].status === 'fulfilled') setUsers(results[9].value.data);
     if (results[10].status === 'fulfilled') {
       const termData = results[10].value.data;
       if (Array.isArray(termData)) {
@@ -155,9 +147,8 @@ const GlossaryTermForm: React.FC = () => {
         organisational_unit: detail.organisational_unit || undefined,
         review_frequency_id: detail.review_frequency_id || undefined,
         is_cbt: detail.is_cbt,
-        golden_source: detail.golden_source || undefined,
         golden_source_app_id: detail.golden_source_app_id || undefined,
-        confidence_level_id: detail.confidence_level_id || undefined,
+        // confidence_level_id is read-only — managed by the Data Quality module
         visibility_id: detail.visibility_id || undefined,
         language_id: detail.language_id || undefined,
         used_in_reports: detail.used_in_reports || undefined,
@@ -230,7 +221,7 @@ const GlossaryTermForm: React.FC = () => {
         'term_type_id', 'unit_of_measure_id', 'classification_id',
         'owner_user_id', 'steward_user_id', 'domain_owner_user_id', 'approver_user_id',
         'organisational_unit', 'review_frequency_id',
-        'golden_source', 'golden_source_app_id', 'confidence_level_id', 'visibility_id', 'language_id',
+        'golden_source_app_id', 'visibility_id', 'language_id',
         'used_in_reports', 'used_in_policies', 'regulatory_reporting_usage',
         'source_reference', 'regulatory_reference', 'external_reference',
         'parent_term_id',
@@ -810,15 +801,10 @@ const GlossaryTermForm: React.FC = () => {
                 <Switch checkedChildren="CBT" unCheckedChildren="No" />
               </Form.Item>
             </Col>
-            <Col xs={24} md={9}>
-              <Form.Item name="golden_source" label="Golden Source">
-                <Input placeholder="Authoritative source system" />
-              </Form.Item>
-            </Col>
-            <Col xs={24} md={9}>
-              <Form.Item name="golden_source_app_id" label="Golden Source Application">
+            <Col xs={24} md={10}>
+              <Form.Item name="golden_source_app_id" label="Golden Source">
                 <Select
-                  placeholder="Select application"
+                  placeholder="Select application from register"
                   options={applicationOptions}
                   allowClear
                   showSearch

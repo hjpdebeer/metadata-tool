@@ -59,6 +59,7 @@ const statusColors: Record<string, string> = {
   ACCEPTED: 'success',
   REJECTED: 'error',
   DEPRECATED: 'default',
+  SUPERSEDED: 'default',
 };
 
 const statusLabels: Record<string, string> = {
@@ -70,6 +71,7 @@ const statusLabels: Record<string, string> = {
   ACCEPTED: 'Accepted',
   REJECTED: 'Rejected',
   DEPRECATED: 'Deprecated',
+  SUPERSEDED: 'Superseded',
 };
 
 /** Small sparkle icon for AI-suggestible fields */
@@ -137,15 +139,12 @@ const GlossaryTermDetail: React.FC = () => {
     const [regRes, areaRes, usersRes, orgRes] = await Promise.allSettled([
       glossaryApi.listRegulatoryTags(),
       glossaryApi.listSubjectAreas(),
-      usersApi.listUsers({ page_size: 500, is_active: true }),
+      usersApi.lookupUsers(),
       glossaryApi.listOrganisationalUnits(),
     ]);
     if (regRes.status === 'fulfilled') setAllRegulatoryTags(regRes.value.data);
     if (areaRes.status === 'fulfilled') setAllSubjectAreas(areaRes.value.data);
-    if (usersRes.status === 'fulfilled') {
-      const data = usersRes.value.data;
-      setAllUsers(Array.isArray(data) ? data : (data as unknown as { data: UserListItem[] }).data || []);
-    }
+    if (usersRes.status === 'fulfilled') setAllUsers(usersRes.value.data);
     if (orgRes.status === 'fulfilled') setAllOrgUnits(orgRes.value.data);
   }, []);
 
@@ -962,10 +961,7 @@ const GlossaryTermDetail: React.FC = () => {
                 <Tag color="default">Not CBT</Tag>
               )}
             </Descriptions.Item>
-            <Descriptions.Item label={<>Golden Source <AiHint /></>}>
-              {term.golden_source || <EmptyValue />}
-            </Descriptions.Item>
-            <Descriptions.Item label="Golden Source Application">
+            <Descriptions.Item label="Golden Source">
               {detail.golden_source_app_id && detail.golden_source_app_name ? (
                 <Link to={`/applications/${detail.golden_source_app_id}`}>
                   <Tag color="blue" style={{ cursor: 'pointer' }}>

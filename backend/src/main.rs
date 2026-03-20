@@ -128,6 +128,7 @@ use metadata_tool::db::{self, AppState};
         api::users::assign_role,
         api::users::remove_role,
         api::users::list_roles,
+        api::users::lookup_users,
         // Notifications
         api::notifications::list_notifications,
         api::notifications::mark_read,
@@ -363,6 +364,7 @@ async fn main() -> anyhow::Result<()> {
         .route("/api/v1/workflow/tasks/{task_id}/complete", post(api::workflow::complete_task))
         // Users
         .route("/api/v1/users", get(api::users::list_users))
+        .route("/api/v1/users/lookup", get(api::users::lookup_users))
         .route("/api/v1/users/{user_id}", get(api::users::get_user).put(api::users::update_user))
         .route("/api/v1/users/{user_id}/roles", post(api::users::assign_role))
         .route("/api/v1/users/{user_id}/roles/{role_id}", delete(api::users::remove_role))

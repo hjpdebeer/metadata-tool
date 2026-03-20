@@ -26,10 +26,12 @@ const statusLabels: Record<string, string> = {
   DRAFT: 'Draft',
   PROPOSED: 'Proposed',
   UNDER_REVIEW: 'Under Review',
+  PENDING_APPROVAL: 'Pending Approval',
   REVISED: 'Revised',
   ACCEPTED: 'Accepted',
   REJECTED: 'Rejected',
   DEPRECATED: 'Deprecated',
+  SUPERSEDED: 'Superseded',
 };
 
 const statusOptions = Object.entries(statusLabels).map(([value, label]) => ({

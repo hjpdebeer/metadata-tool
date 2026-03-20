@@ -361,3 +361,38 @@ pub async fn list_roles(State(state): State<AppState>) -> AppResult<Json<Vec<Rol
 
     Ok(Json(roles))
 }
+
+// ---------------------------------------------------------------------------
+// lookup_users — GET /api/v1/users/lookup
+// ---------------------------------------------------------------------------
+
+/// Lightweight user lookup for dropdown population. Returns active users
+/// with user_id, display_name, and email. Available to all authenticated users.
+#[utoipa::path(
+    get,
+    path = "/api/v1/users/lookup",
+    responses(
+        (status = 200, description = "Active users for dropdown selection",
+         body = Vec<UserListItem>)
+    ),
+    security(("bearer_auth" = [])),
+    tag = "users"
+)]
+pub async fn lookup_users(
+    State(state): State<AppState>,
+) -> AppResult<Json<Vec<UserListItem>>> {
+    let users = sqlx::query_as::<_, UserListItem>(
+        r#"
+        SELECT user_id, username, email, display_name,
+               department, job_title, is_active,
+               last_login_at, created_at
+        FROM users
+        WHERE is_active = TRUE AND deleted_at IS NULL
+        ORDER BY display_name ASC
+        "#,
+    )
+    .fetch_all(&state.pool)
+    .await?;
+
+    Ok(Json(users))
+}

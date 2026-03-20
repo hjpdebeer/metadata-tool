@@ -51,7 +51,7 @@ pub async fn list_terms(
                   OR gt.approver_user_id = $7
                   OR $8::BOOLEAN = TRUE
               ))
-              OR (gt.is_current_version = FALSE AND (
+              OR (gt.is_current_version = FALSE AND es.status_code NOT IN ('SUPERSEDED', 'REJECTED') AND (
                   gt.created_by = $7
                   OR gt.owner_user_id = $7
                   OR gt.steward_user_id = $7
@@ -172,7 +172,7 @@ const GLOSSARY_TERM_COLUMNS: &str = r#"
     approved_at, review_frequency_id, next_review_date,
     parent_term_id, source_reference, regulatory_reference,
     used_in_reports, used_in_policies, regulatory_reporting_usage,
-    is_cbt, golden_source, golden_source_app_id, confidence_level_id,
+    is_cbt, golden_source_app_id, confidence_level_id,
     visibility_id, language_id, external_reference,
     previous_version_id,
     created_by, updated_by, created_at, updated_at
@@ -211,7 +211,7 @@ pub async fn get_term(
             gt.parent_term_id, gt.source_reference, gt.regulatory_reference,
             gt.used_in_reports, gt.used_in_policies,
             gt.regulatory_reporting_usage,
-            gt.is_cbt, gt.golden_source, gt.golden_source_app_id, gt.confidence_level_id,
+            gt.is_cbt, gt.golden_source_app_id, gt.confidence_level_id,
             gt.visibility_id, gt.language_id, gt.external_reference,
             gt.previous_version_id,
             gt.created_by, gt.updated_by, gt.created_at, gt.updated_at,
@@ -260,7 +260,7 @@ pub async fn get_term(
 
     // Visibility check: non-public terms visible only to involved users or admins
     let status_code = row.status_code.as_deref().unwrap_or("DRAFT");
-    if !matches!(status_code, "ACCEPTED" | "DEPRECATED") {
+    if !matches!(status_code, "ACCEPTED" | "DEPRECATED" | "SUPERSEDED") {
         let is_admin = claims.roles.iter().any(|r| r == "ADMIN" || r == "admin");
         let is_involved = row.created_by == claims.sub
             || row.owner_user_id == Some(claims.sub)
@@ -338,18 +338,20 @@ pub async fn get_term(
     .fetch_all(&state.pool)
     .await?;
 
-    // Fetch child terms (terms where parent_term_id = this term)
+    // Fetch child terms (terms where parent_term_id = this term OR its previous version).
+    // For amendments, children still point to the original version's term_id.
     let child_terms = sqlx::query_as::<_, ChildTermRef>(
         r#"
         SELECT term_id, term_name
         FROM glossary_terms
-        WHERE parent_term_id = $1
+        WHERE (parent_term_id = $1 OR parent_term_id = $2)
           AND deleted_at IS NULL
           AND is_current_version = TRUE
         ORDER BY term_name
         "#,
     )
     .bind(term_id)
+    .bind(row.previous_version_id)
     .fetch_all(&state.pool)
     .await?;
 
@@ -521,12 +523,6 @@ pub async fn update_term(
     {
         return Err(AppError::Validation("external_reference exceeds 2000 characters".into()));
     }
-    if let Some(ref val) = body.golden_source
-        && val.trim().len() > 500
-    {
-        return Err(AppError::Validation("golden_source exceeds 500 characters".into()));
-    }
-
     // Update using COALESCE to only change provided fields
     let update_query = format!(
         r#"
@@ -558,15 +554,14 @@ pub async fn update_term(
             used_in_policies         = COALESCE($25, used_in_policies),
             regulatory_reporting_usage = COALESCE($26, regulatory_reporting_usage),
             is_cbt                   = COALESCE($27, is_cbt),
-            golden_source            = COALESCE($28, golden_source),
-            golden_source_app_id     = COALESCE($29, golden_source_app_id),
-            confidence_level_id      = COALESCE($30, confidence_level_id),
-            visibility_id            = COALESCE($31, visibility_id),
-            language_id              = COALESCE($32, language_id),
-            external_reference       = COALESCE($33, external_reference),
-            updated_by               = $34,
+            golden_source_app_id     = COALESCE($28, golden_source_app_id),
+            confidence_level_id      = COALESCE($29, confidence_level_id),
+            visibility_id            = COALESCE($30, visibility_id),
+            language_id              = COALESCE($31, language_id),
+            external_reference       = COALESCE($32, external_reference),
+            updated_by               = $33,
             updated_at               = CURRENT_TIMESTAMP
-        WHERE term_id = $35 AND deleted_at IS NULL
+        WHERE term_id = $34 AND deleted_at IS NULL
         RETURNING {cols}
         "#,
         cols = GLOSSARY_TERM_COLUMNS,
@@ -600,7 +595,6 @@ pub async fn update_term(
         .bind(body.used_in_policies.as_deref())
         .bind(body.regulatory_reporting_usage.as_deref())
         .bind(body.is_cbt)
-        .bind(body.golden_source.as_deref())
         .bind(body.golden_source_app_id)
         .bind(body.confidence_level_id)
         .bind(body.visibility_id)
@@ -701,7 +695,7 @@ pub async fn amend_term(
                 review_frequency_id,
                 parent_term_id, source_reference, regulatory_reference,
                 used_in_reports, used_in_policies, regulatory_reporting_usage,
-                is_cbt, golden_source, golden_source_app_id, confidence_level_id,
+                is_cbt, golden_source_app_id, confidence_level_id,
                 visibility_id, language_id, external_reference,
                 previous_version_id, created_by
             )
@@ -710,8 +704,8 @@ pub async fn amend_term(
                 $11, $12, $13, $14, $15, $16, $17, $18, $19,
                 $20, $21, FALSE,
                 $22, $23, $24, $25, $26, $27, $28,
-                $29, $30, $31, $32, $33, $34, $35,
-                $36, $37
+                $29, $30, $31, $32, $33, $34,
+                $35, $36
             )
             RETURNING {cols}
             "#,
@@ -747,7 +741,6 @@ pub async fn amend_term(
     .bind(original.used_in_policies.as_deref())
     .bind(original.regulatory_reporting_usage.as_deref())
     .bind(original.is_cbt)                  // $29
-    .bind(original.golden_source.as_deref())
     .bind(original.golden_source_app_id)
     .bind(original.confidence_level_id)
     .bind(original.visibility_id)

@@ -270,6 +270,20 @@ pub async fn transition_workflow(
     .fetch_one(pool)
     .await?;
 
+    // Complete all existing PENDING tasks for this instance before creating new ones.
+    // This ensures tasks from the previous state don't linger as duplicates.
+    sqlx::query(
+        "UPDATE workflow_tasks
+         SET status = $1, completed_at = CURRENT_TIMESTAMP, completed_by = $2, updated_at = CURRENT_TIMESTAMP
+         WHERE instance_id = $3 AND status = $4",
+    )
+    .bind(TASK_STATUS_COMPLETED)
+    .bind(performed_by)
+    .bind(instance_id)
+    .bind(TASK_STATUS_PENDING)
+    .execute(pool)
+    .await?;
+
     // If entering UNDER_REVIEW, create review task for Data Steward
     if new_state.state_code == STATE_UNDER_REVIEW {
         create_steward_review_task(pool, &updated_instance).await?;
@@ -823,10 +837,32 @@ async fn update_entity_status(
                 .await?;
 
                 if let Some(old_term_id) = previous_id {
+                    // Mark old version as SUPERSEDED (not just is_current_version = false)
+                    let superseded_status_id = sqlx::query_scalar::<_, Uuid>(
+                        "SELECT status_id FROM entity_statuses WHERE status_code = 'SUPERSEDED'",
+                    )
+                    .fetch_one(pool)
+                    .await?;
+
                     sqlx::query(
                         "UPDATE glossary_terms
-                         SET is_current_version = FALSE, updated_at = CURRENT_TIMESTAMP
-                         WHERE term_id = $1",
+                         SET is_current_version = FALSE,
+                             status_id = $1,
+                             updated_at = CURRENT_TIMESTAMP
+                         WHERE term_id = $2",
+                    )
+                    .bind(superseded_status_id)
+                    .bind(old_term_id)
+                    .execute(pool)
+                    .await?;
+
+                    // Also mark the old version's workflow instance as completed
+                    sqlx::query(
+                        "UPDATE workflow_instances
+                         SET completed_at = CURRENT_TIMESTAMP,
+                             completion_notes = 'Superseded by newer version',
+                             updated_at = CURRENT_TIMESTAMP
+                         WHERE entity_id = $1 AND completed_at IS NULL",
                     )
                     .bind(old_term_id)
                     .execute(pool)

@@ -36,6 +36,7 @@ import {
   notificationsApi,
   type InAppNotification,
 } from '../services/notificationsApi';
+import { workflowApi } from '../services/glossaryApi';
 
 const { Header, Sider, Content } = Layout;
 
@@ -51,6 +52,7 @@ const AppLayout: React.FC = () => {
   const [collapsed, setCollapsed] = useState(false);
   const [notifDrawerOpen, setNotifDrawerOpen] = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);
+  const [pendingTaskCount, setPendingTaskCount] = useState(0);
   const [notifications, setNotifications] = useState<InAppNotification[]>([]);
   const [notifLoading, setNotifLoading] = useState(false);
   const navigate = useNavigate();
@@ -92,7 +94,7 @@ const AppLayout: React.FC = () => {
     { key: '/lineage', icon: <ApartmentOutlined />, label: 'Data Lineage' },
     { key: '/applications', icon: <AppstoreOutlined />, label: 'Applications' },
     { key: '/processes', icon: <PartitionOutlined />, label: 'Business Processes' },
-    { key: '/workflow', icon: <CheckSquareOutlined />, label: 'My Tasks' },
+    { key: '/workflow', icon: <CheckSquareOutlined />, label: <span>My Tasks{pendingTaskCount > 0 && <Badge count={pendingTaskCount} size="small" offset={[6, -2]} />}</span> },
     ...(isAdmin
       ? [{ key: '/admin', icon: <SettingOutlined />, label: 'Admin Panel' }]
       : []),
@@ -108,16 +110,30 @@ const AppLayout: React.FC = () => {
     }
   }, []);
 
-  // Fetch unread count on mount and on navigation
+  // Fetch pending task count
+  const fetchPendingTaskCount = useCallback(async () => {
+    try {
+      const response = await workflowApi.getPendingTasks();
+      setPendingTaskCount(response.data.length);
+    } catch {
+      // Silently ignore
+    }
+  }, []);
+
+  // Fetch counts on mount and on navigation
   useEffect(() => {
     fetchUnreadCount();
-  }, [fetchUnreadCount, location.pathname]);
+    fetchPendingTaskCount();
+  }, [fetchUnreadCount, fetchPendingTaskCount, location.pathname]);
 
-  // Poll for new notifications every 30 seconds
+  // Poll every 30 seconds
   useEffect(() => {
-    const interval = setInterval(fetchUnreadCount, 30000);
+    const interval = setInterval(() => {
+      fetchUnreadCount();
+      fetchPendingTaskCount();
+    }, 30000);
     return () => clearInterval(interval);
-  }, [fetchUnreadCount]);
+  }, [fetchUnreadCount, fetchPendingTaskCount]);
 
   // Fetch notifications when drawer opens
   const handleOpenNotifDrawer = async () => {

@@ -1,4 +1,6 @@
-use sqlx::postgres::{PgConnectOptions, PgSslMode};
+use std::time::Duration;
+
+use sqlx::postgres::{PgConnectOptions, PgPoolOptions, PgSslMode};
 use sqlx::PgPool;
 use uuid::Uuid;
 
@@ -83,13 +85,23 @@ pub async fn resolve_lookup(
 
 /// Create a connection pool from a DATABASE_URL string.
 ///
-/// Parses the URL and disables SSL for local development (Docker PostgreSQL
-/// does not have SSL configured). In production, configure SSL via the
-/// connection string or environment.
+/// Configures health checks, timeouts, and automatic reconnection so the
+/// application recovers gracefully from database restarts without requiring
+/// a backend restart.
 pub async fn create_pool(database_url: &str) -> Result<PgPool, sqlx::Error> {
     let options: PgConnectOptions = database_url
         .parse::<PgConnectOptions>()?
         .ssl_mode(PgSslMode::Prefer);
 
-    PgPool::connect_with(options).await
+    PgPoolOptions::new()
+        .max_connections(20)
+        .min_connections(2)
+        .acquire_timeout(Duration::from_secs(10))
+        .idle_timeout(Duration::from_secs(600))
+        .max_lifetime(Duration::from_secs(1800))
+        // Test connections before handing them out — detects stale connections
+        // after a database restart without requiring an application restart.
+        .test_before_acquire(true)
+        .connect_with(options)
+        .await
 }

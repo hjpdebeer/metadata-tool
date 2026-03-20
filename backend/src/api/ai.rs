@@ -116,7 +116,6 @@ async fn fetch_entity_data(
                 "used_in_reports": row.used_in_reports,
                 "used_in_policies": row.used_in_policies,
                 "regulatory_reporting_usage": row.regulatory_reporting_usage,
-                "golden_source": row.golden_source,
                 "external_reference": row.external_reference,
             });
 
@@ -160,9 +159,6 @@ async fn fetch_entity_data(
             }
             if row.regulatory_reporting_usage.is_some() {
                 existing.push("regulatory_reporting_usage".to_string());
-            }
-            if row.golden_source.is_some() {
-                existing.push("golden_source".to_string());
             }
             if row.external_reference.is_some() {
                 existing.push("external_reference".to_string());
@@ -353,10 +349,6 @@ async fn apply_suggestion_to_entity(
                     sqlx::query("UPDATE glossary_terms SET regulatory_reporting_usage = $1, updated_by = $2, updated_at = CURRENT_TIMESTAMP WHERE term_id = $3 AND deleted_at IS NULL")
                         .bind(value).bind(user_id).bind(entity_id).execute(pool).await?;
                 }
-                "golden_source" => {
-                    sqlx::query("UPDATE glossary_terms SET golden_source = $1, updated_by = $2, updated_at = CURRENT_TIMESTAMP WHERE term_id = $3 AND deleted_at IS NULL")
-                        .bind(value).bind(user_id).bind(entity_id).execute(pool).await?;
-                }
                 "external_reference" => {
                     sqlx::query("UPDATE glossary_terms SET external_reference = $1, updated_by = $2, updated_at = CURRENT_TIMESTAMP WHERE term_id = $3 AND deleted_at IS NULL")
                         .bind(value).bind(user_id).bind(entity_id).execute(pool).await?;
@@ -525,6 +517,18 @@ async fn apply_suggestion_to_entity(
                     sqlx::query("UPDATE applications SET license_type = $1, updated_by = $2, updated_at = CURRENT_TIMESTAMP WHERE application_id = $3 AND deleted_at IS NULL")
                         .bind(value).bind(user_id).bind(entity_id).execute(pool).await?;
                 }
+                "vendor" => {
+                    sqlx::query("UPDATE applications SET vendor = $1, updated_by = $2, updated_at = CURRENT_TIMESTAMP WHERE application_id = $3 AND deleted_at IS NULL")
+                        .bind(value).bind(user_id).bind(entity_id).execute(pool).await?;
+                }
+                "vendor_product_name" => {
+                    sqlx::query("UPDATE applications SET vendor_product_name = $1, updated_by = $2, updated_at = CURRENT_TIMESTAMP WHERE application_id = $3 AND deleted_at IS NULL")
+                        .bind(value).bind(user_id).bind(entity_id).execute(pool).await?;
+                }
+                "deployment_type" => {
+                    sqlx::query("UPDATE applications SET deployment_type = $1, updated_by = $2, updated_at = CURRENT_TIMESTAMP WHERE application_id = $3 AND deleted_at IS NULL")
+                        .bind(value).bind(user_id).bind(entity_id).execute(pool).await?;
+                }
                 // Lookup field: data_classification (UUID from embedded prompt)
                 "data_classification" => {
                     if let Ok(uuid) = Uuid::parse_str(value) {
@@ -617,7 +621,7 @@ pub async fn enrich(
                 "status_id" | "version_number" | "is_current_version" | "is_cbt" | "is_cde" | "is_cba"
                     | "is_nullable" | "is_active" | "is_critical"
                     | "parent_term" | "child_terms" | "related_terms"
-                    | "golden_source" | "golden_source_app_id"
+                    | "golden_source_app_id"
             )
         {
             return false;

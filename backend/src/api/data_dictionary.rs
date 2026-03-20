@@ -1,7 +1,7 @@
-use axum::extract::{Path, Query, State};
-use axum::http::StatusCode;
 use axum::Extension;
 use axum::Json;
+use axum::extract::{Path, Query, State};
+use axum::http::StatusCode;
 use uuid::Uuid;
 
 use crate::auth::Claims;
@@ -12,11 +12,25 @@ use crate::error::{AppError, AppResult};
 use crate::naming;
 use crate::workflow;
 
+/// All column names for SELECT in the data_elements table (used by RETURNING clauses)
+const DATA_ELEMENT_COLUMNS: &str = r#"
+    element_id, element_name, element_code, description,
+    business_definition, business_rules, data_type, format_pattern,
+    allowed_values, default_value, is_nullable, is_cde,
+    cde_rationale, cde_designated_at, glossary_term_id,
+    domain_id, classification_id, sensitivity_level,
+    status_id, owner_user_id, steward_user_id,
+    approver_user_id, organisational_unit,
+    review_frequency_id, next_review_date, approved_at,
+    is_pii, version_number, is_current_version, previous_version_id,
+    created_by, updated_by, created_at, updated_at
+"#;
+
 // ---------------------------------------------------------------------------
 // list_elements — GET /api/v1/data-dictionary/elements
 // ---------------------------------------------------------------------------
 
-/// List data elements with optional filtering and pagination.
+/// List data elements with optional filtering, pagination, and visibility filtering.
 /// Requires authentication. Supports full-text search via `query` parameter.
 #[utoipa::path(
     get,
@@ -31,14 +45,40 @@ use crate::workflow;
 )]
 pub async fn list_elements(
     State(state): State<AppState>,
+    Extension(claims): Extension<Claims>,
     Query(params): Query<SearchDataElementsRequest>,
 ) -> AppResult<Json<PaginatedResponse<DataElementListItem>>> {
     let page = params.page.unwrap_or(1).max(1);
     let page_size = params.page_size.unwrap_or(20).clamp(1, 100);
     let offset = (page - 1) * page_size;
+    let is_admin = claims.roles.iter().any(|r| r == "ADMIN" || r == "admin");
+
+    // Visibility + version filter (same pattern as glossary/applications):
+    // - Current versions: ACCEPTED/DEPRECATED visible to all, others to involved users/admins.
+    // - Non-current versions (amendments): visible only to involved users/admins,
+    //   excluding SUPERSEDED/REJECTED.
+    let visibility_clause = r#"
+          AND (
+              (de.is_current_version = TRUE AND (
+                  es.status_code IN ('ACCEPTED', 'DEPRECATED')
+                  OR de.created_by = $7
+                  OR de.owner_user_id = $7
+                  OR de.steward_user_id = $7
+                  OR de.approver_user_id = $7
+                  OR $8::BOOLEAN = TRUE
+              ))
+              OR (de.is_current_version = FALSE AND es.status_code NOT IN ('SUPERSEDED', 'REJECTED') AND (
+                  de.created_by = $7
+                  OR de.owner_user_id = $7
+                  OR de.steward_user_id = $7
+                  OR de.approver_user_id = $7
+                  OR $8::BOOLEAN = TRUE
+              ))
+          )
+    "#;
 
     // Count query — mirrors the same WHERE conditions as the data query
-    let total_count = sqlx::query_scalar::<_, i64>(
+    let count_query = format!(
         r#"
         SELECT COUNT(*)
         FROM data_elements de
@@ -50,19 +90,25 @@ pub async fn list_elements(
           AND ($4::TEXT IS NULL OR es.status_code = $4)
           AND ($5::UUID IS NULL OR de.glossary_term_id = $5)
           AND ($6::UUID IS NULL OR de.classification_id = $6)
+          {visibility}
         "#,
-    )
-    .bind(params.query.as_deref())
-    .bind(params.domain_id)
-    .bind(params.is_cde)
-    .bind(params.status.as_deref())
-    .bind(params.glossary_term_id)
-    .bind(params.classification_id)
-    .fetch_one(&state.pool)
-    .await?;
+        visibility = visibility_clause,
+    );
+
+    let total_count = sqlx::query_scalar::<_, i64>(&count_query)
+        .bind(params.query.as_deref())
+        .bind(params.domain_id)
+        .bind(params.is_cde)
+        .bind(params.status.as_deref())
+        .bind(params.glossary_term_id)
+        .bind(params.classification_id)
+        .bind(claims.sub)
+        .bind(is_admin)
+        .fetch_one(&state.pool)
+        .await?;
 
     // Data query with joins for display fields
-    let items = sqlx::query_as::<_, DataElementListItem>(
+    let data_query = format!(
         r#"
         SELECT
             de.element_id,
@@ -92,21 +138,27 @@ pub async fn list_elements(
           AND ($4::TEXT IS NULL OR es.status_code = $4)
           AND ($5::UUID IS NULL OR de.glossary_term_id = $5)
           AND ($6::UUID IS NULL OR de.classification_id = $6)
-        ORDER BY de.element_name ASC
-        LIMIT $7
-        OFFSET $8
+          {visibility}
+        ORDER BY de.element_name ASC, de.version_number DESC
+        LIMIT $9
+        OFFSET $10
         "#,
-    )
-    .bind(params.query.as_deref())
-    .bind(params.domain_id)
-    .bind(params.is_cde)
-    .bind(params.status.as_deref())
-    .bind(params.glossary_term_id)
-    .bind(params.classification_id)
-    .bind(page_size)
-    .bind(offset)
-    .fetch_all(&state.pool)
-    .await?;
+        visibility = visibility_clause,
+    );
+
+    let items = sqlx::query_as::<_, DataElementListItem>(&data_query)
+        .bind(params.query.as_deref())
+        .bind(params.domain_id)
+        .bind(params.is_cde)
+        .bind(params.status.as_deref())
+        .bind(params.glossary_term_id)
+        .bind(params.classification_id)
+        .bind(claims.sub)
+        .bind(is_admin)
+        .bind(page_size)
+        .bind(offset)
+        .fetch_all(&state.pool)
+        .await?;
 
     Ok(Json(PaginatedResponse {
         data: items,
@@ -121,7 +173,7 @@ pub async fn list_elements(
 // ---------------------------------------------------------------------------
 
 /// Retrieve a single data element with full detail including linked technical columns.
-/// Requires authentication.
+/// Requires authentication. Includes visibility check.
 #[utoipa::path(
     get,
     path = "/api/v1/data-dictionary/elements/{element_id}",
@@ -135,6 +187,7 @@ pub async fn list_elements(
 )]
 pub async fn get_element(
     State(state): State<AppState>,
+    Extension(claims): Extension<Claims>,
     Path(element_id): Path<Uuid>,
 ) -> AppResult<Json<DataElementFullView>> {
     // Single JOIN query resolving all FK lookups (ADR-0006 Pattern 1)
@@ -147,12 +200,17 @@ pub async fn get_element(
             de.cde_rationale, de.cde_designated_at, de.glossary_term_id,
             de.domain_id, de.classification_id, de.sensitivity_level,
             de.status_id, de.owner_user_id, de.steward_user_id,
+            de.approver_user_id, de.organisational_unit,
+            de.review_frequency_id, de.next_review_date, de.approved_at,
+            de.is_pii, de.version_number, de.is_current_version, de.previous_version_id,
             de.created_by, de.updated_by, de.created_at, de.updated_at,
             gt.term_name                  AS glossary_term_name,
             gd.domain_name,
             dc.classification_name,
             uo.display_name               AS owner_name,
             us.display_name               AS steward_name,
+            uap.display_name              AS approver_name,
+            grf.frequency_name            AS review_frequency_name,
             es.status_code,
             es.status_name,
             ucb.display_name              AS created_by_name,
@@ -164,6 +222,8 @@ pub async fn get_element(
         LEFT JOIN data_classifications dc ON dc.classification_id = de.classification_id
         LEFT JOIN users uo ON uo.user_id = de.owner_user_id
         LEFT JOIN users us ON us.user_id = de.steward_user_id
+        LEFT JOIN users uap ON uap.user_id = de.approver_user_id
+        LEFT JOIN glossary_review_frequencies grf ON grf.frequency_id = de.review_frequency_id
         LEFT JOIN entity_statuses es ON es.status_id = de.status_id
         LEFT JOIN users ucb ON ucb.user_id = de.created_by
         LEFT JOIN users uub ON uub.user_id = de.updated_by
@@ -176,6 +236,21 @@ pub async fn get_element(
     .fetch_optional(&state.pool)
     .await?
     .ok_or_else(|| AppError::NotFound(format!("data element not found: {element_id}")))?;
+
+    // Visibility check: non-public elements visible only to involved users or admins
+    let status_code = row.status_code.as_deref().unwrap_or("DRAFT");
+    if !matches!(status_code, "ACCEPTED" | "DEPRECATED") {
+        let is_admin = claims.roles.iter().any(|r| r == "ADMIN" || r == "admin");
+        let is_involved = row.created_by == claims.sub
+            || row.owner_user_id == Some(claims.sub)
+            || row.steward_user_id == Some(claims.sub)
+            || row.approver_user_id == Some(claims.sub);
+        if !is_admin && !is_involved {
+            return Err(AppError::NotFound(format!(
+                "data element not found: {element_id}"
+            )));
+        }
+    }
 
     // Separate queries for junction/aggregate data only
     let technical_columns = sqlx::query_as::<_, TechnicalColumn>(
@@ -272,7 +347,7 @@ pub async fn create_element(
     .await?;
 
     // Insert the new data element
-    let element = sqlx::query_as::<_, DataElement>(
+    let insert_query = format!(
         r#"
         INSERT INTO data_elements (
             element_name, element_code, description,
@@ -280,37 +355,32 @@ pub async fn create_element(
             format_pattern, allowed_values, default_value,
             is_nullable, glossary_term_id, domain_id,
             classification_id, sensitivity_level, status_id,
-            created_by
+            version_number, is_current_version, created_by
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
-        RETURNING
-            element_id, element_name, element_code, description,
-            business_definition, business_rules, data_type, format_pattern,
-            allowed_values, default_value, is_nullable, is_cde,
-            cde_rationale, cde_designated_at, glossary_term_id,
-            domain_id, classification_id, sensitivity_level,
-            status_id, owner_user_id, steward_user_id,
-            created_by, updated_by, created_at, updated_at
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, 1, TRUE, $16)
+        RETURNING {cols}
         "#,
-    )
-    .bind(&element_name)
-    .bind(&element_code)
-    .bind(&description)
-    .bind(body.business_definition.as_deref())
-    .bind(body.business_rules.as_deref())
-    .bind(&data_type)
-    .bind(body.format_pattern.as_deref())
-    .bind(&body.allowed_values)
-    .bind(body.default_value.as_deref())
-    .bind(body.is_nullable.unwrap_or(true))
-    .bind(body.glossary_term_id)
-    .bind(body.domain_id)
-    .bind(body.classification_id)
-    .bind(body.sensitivity_level.as_deref())
-    .bind(draft_status_id)
-    .bind(claims.sub)
-    .fetch_one(&state.pool)
-    .await?;
+        cols = DATA_ELEMENT_COLUMNS,
+    );
+    let element = sqlx::query_as::<_, DataElement>(&insert_query)
+        .bind(&element_name)
+        .bind(&element_code)
+        .bind(&description)
+        .bind(body.business_definition.as_deref())
+        .bind(body.business_rules.as_deref())
+        .bind(&data_type)
+        .bind(body.format_pattern.as_deref())
+        .bind(&body.allowed_values)
+        .bind(body.default_value.as_deref())
+        .bind(body.is_nullable.unwrap_or(true))
+        .bind(body.glossary_term_id)
+        .bind(body.domain_id)
+        .bind(body.classification_id)
+        .bind(body.sensitivity_level.as_deref())
+        .bind(draft_status_id)
+        .bind(claims.sub)
+        .fetch_one(&state.pool)
+        .await?;
 
     // Initiate the workflow instance for this new data element
     workflow::service::initiate_workflow(
@@ -363,7 +433,7 @@ pub async fn update_element(
     }
 
     // Update using COALESCE to only change provided fields
-    let element = sqlx::query_as::<_, DataElement>(
+    let update_query = format!(
         r#"
         UPDATE data_elements
         SET element_name        = COALESCE($1, element_name),
@@ -380,39 +450,287 @@ pub async fn update_element(
             domain_id           = COALESCE($12, domain_id),
             classification_id   = COALESCE($13, classification_id),
             sensitivity_level   = COALESCE($14, sensitivity_level),
-            updated_by          = $15,
+            owner_user_id       = COALESCE($15, owner_user_id),
+            steward_user_id     = COALESCE($16, steward_user_id),
+            approver_user_id    = COALESCE($17, approver_user_id),
+            organisational_unit = COALESCE($18, organisational_unit),
+            review_frequency_id = COALESCE($19, review_frequency_id),
+            is_pii              = COALESCE($20, is_pii),
+            updated_by          = $21,
             updated_at          = CURRENT_TIMESTAMP
-        WHERE element_id = $16 AND deleted_at IS NULL
-        RETURNING
-            element_id, element_name, element_code, description,
-            business_definition, business_rules, data_type, format_pattern,
-            allowed_values, default_value, is_nullable, is_cde,
-            cde_rationale, cde_designated_at, glossary_term_id,
-            domain_id, classification_id, sensitivity_level,
-            status_id, owner_user_id, steward_user_id,
-            created_by, updated_by, created_at, updated_at
+        WHERE element_id = $22 AND deleted_at IS NULL
+        RETURNING {cols}
         "#,
-    )
-    .bind(body.element_name.as_deref())
-    .bind(body.element_code.as_deref())
-    .bind(body.description.as_deref())
-    .bind(body.business_definition.as_deref())
-    .bind(body.business_rules.as_deref())
-    .bind(body.data_type.as_deref())
-    .bind(body.format_pattern.as_deref())
-    .bind(&body.allowed_values)
-    .bind(body.default_value.as_deref())
-    .bind(body.is_nullable)
-    .bind(body.glossary_term_id)
-    .bind(body.domain_id)
-    .bind(body.classification_id)
-    .bind(body.sensitivity_level.as_deref())
-    .bind(claims.sub)
+        cols = DATA_ELEMENT_COLUMNS,
+    );
+
+    let element = sqlx::query_as::<_, DataElement>(&update_query)
+        .bind(body.element_name.as_deref())
+        .bind(body.element_code.as_deref())
+        .bind(body.description.as_deref())
+        .bind(body.business_definition.as_deref())
+        .bind(body.business_rules.as_deref())
+        .bind(body.data_type.as_deref())
+        .bind(body.format_pattern.as_deref())
+        .bind(&body.allowed_values)
+        .bind(body.default_value.as_deref())
+        .bind(body.is_nullable)
+        .bind(body.glossary_term_id)
+        .bind(body.domain_id)
+        .bind(body.classification_id)
+        .bind(body.sensitivity_level.as_deref())
+        .bind(body.owner_user_id)
+        .bind(body.steward_user_id)
+        .bind(body.approver_user_id)
+        .bind(body.organisational_unit.as_deref())
+        .bind(body.review_frequency_id)
+        .bind(body.is_pii)
+        .bind(claims.sub)
+        .bind(element_id)
+        .fetch_one(&state.pool)
+        .await?;
+
+    Ok(Json(element))
+}
+
+// ---------------------------------------------------------------------------
+// amend_element — POST /api/v1/data-dictionary/elements/:element_id/amend
+// ---------------------------------------------------------------------------
+
+/// Create a new draft amendment of an accepted data element.
+/// Copies all fields to a new row with incremented version_number.
+#[utoipa::path(
+    post,
+    path = "/api/v1/data-dictionary/elements/{element_id}/amend",
+    params(("element_id" = Uuid, Path, description = "Element ID of the accepted element to amend")),
+    responses(
+        (status = 201, description = "Amendment created in DRAFT status", body = DataElement),
+        (status = 200, description = "Existing amendment returned", body = DataElement),
+        (status = 422, description = "Element is not in ACCEPTED status")
+    ),
+    security(("bearer_auth" = [])),
+    tag = "data_dictionary"
+)]
+pub async fn amend_element(
+    State(state): State<AppState>,
+    Extension(claims): Extension<Claims>,
+    Path(element_id): Path<Uuid>,
+) -> AppResult<(StatusCode, Json<DataElement>)> {
+    // Verify the element exists
+    let original = sqlx::query_as::<_, DataElement>(&format!(
+        "SELECT {cols} FROM data_elements WHERE element_id = $1 AND deleted_at IS NULL",
+        cols = DATA_ELEMENT_COLUMNS
+    ))
     .bind(element_id)
+    .fetch_optional(&state.pool)
+    .await?
+    .ok_or_else(|| AppError::NotFound(format!("data element not found: {element_id}")))?;
+
+    // Check status is ACCEPTED
+    let status_code = sqlx::query_scalar::<_, String>(
+        "SELECT status_code FROM entity_statuses WHERE status_id = $1",
+    )
+    .bind(original.status_id)
     .fetch_one(&state.pool)
     .await?;
 
-    Ok(Json(element))
+    if status_code != "ACCEPTED" {
+        return Err(AppError::Validation(
+            "only accepted data elements can be amended".into(),
+        ));
+    }
+
+    // If an amendment already exists, return it instead of creating a new one
+    let existing_amendment = sqlx::query_as::<_, DataElement>(
+        &format!(
+            "SELECT {cols} FROM data_elements WHERE previous_version_id = $1 AND deleted_at IS NULL AND is_current_version = FALSE LIMIT 1",
+            cols = DATA_ELEMENT_COLUMNS
+        ),
+    )
+    .bind(element_id)
+    .fetch_optional(&state.pool)
+    .await?;
+
+    if let Some(existing) = existing_amendment {
+        return Ok((StatusCode::OK, Json(existing)));
+    }
+
+    let draft_status_id = sqlx::query_scalar::<_, Uuid>(
+        "SELECT status_id FROM entity_statuses WHERE status_code = 'DRAFT'",
+    )
+    .fetch_one(&state.pool)
+    .await?;
+
+    let new_version = original.version_number + 1;
+
+    // Insert new version with all fields copied, new element_id, DRAFT status
+    let amendment = sqlx::query_as::<_, DataElement>(
+        &format!(
+            r#"
+            INSERT INTO data_elements (
+                element_name, element_code, description,
+                business_definition, business_rules, data_type,
+                format_pattern, allowed_values, default_value,
+                is_nullable, is_cde, cde_rationale, cde_designated_at,
+                glossary_term_id, domain_id, classification_id, sensitivity_level,
+                status_id, owner_user_id, steward_user_id,
+                approver_user_id, organisational_unit,
+                review_frequency_id, is_pii,
+                version_number, is_current_version, previous_version_id,
+                created_by
+            )
+            VALUES (
+                $1, $2, $3, $4, $5, $6, $7, $8, $9, $10,
+                $11, $12, $13, $14, $15, $16, $17, $18, $19, $20,
+                $21, $22, $23, $24,
+                $25, FALSE, $26, $27
+            )
+            RETURNING {cols}
+            "#,
+            cols = DATA_ELEMENT_COLUMNS
+        ),
+    )
+    .bind(&original.element_name)            // $1
+    .bind(&original.element_code)            // $2 — same code, new version
+    .bind(&original.description)             // $3
+    .bind(original.business_definition.as_deref()) // $4
+    .bind(original.business_rules.as_deref()) // $5
+    .bind(&original.data_type)               // $6
+    .bind(original.format_pattern.as_deref()) // $7
+    .bind(&original.allowed_values)          // $8
+    .bind(original.default_value.as_deref()) // $9
+    .bind(original.is_nullable)              // $10
+    .bind(original.is_cde)                   // $11
+    .bind(original.cde_rationale.as_deref()) // $12
+    .bind(original.cde_designated_at)        // $13
+    .bind(original.glossary_term_id)         // $14
+    .bind(original.domain_id)                // $15
+    .bind(original.classification_id)        // $16
+    .bind(original.sensitivity_level.as_deref()) // $17
+    .bind(draft_status_id)                   // $18
+    .bind(original.owner_user_id)            // $19
+    .bind(original.steward_user_id)          // $20
+    .bind(original.approver_user_id)         // $21
+    .bind(original.organisational_unit.as_deref()) // $22
+    .bind(original.review_frequency_id)      // $23
+    .bind(original.is_pii)                   // $24
+    .bind(new_version)                       // $25
+    .bind(element_id)                        // $26 = previous_version_id
+    .bind(claims.sub)                        // $27 = created_by
+    .fetch_one(&state.pool)
+    .await?;
+
+    // Initiate workflow for the amendment
+    workflow::service::initiate_workflow(
+        &state.pool,
+        workflow::ENTITY_DATA_ELEMENT,
+        amendment.element_id,
+        claims.sub,
+    )
+    .await?;
+
+    Ok((StatusCode::CREATED, Json(amendment)))
+}
+
+// ---------------------------------------------------------------------------
+// discard_amendment — DELETE /api/v1/data-dictionary/elements/:element_id/discard
+// ---------------------------------------------------------------------------
+
+/// Discard a draft data element amendment. Only the creator or admin can discard,
+/// and only in DRAFT status. Hard deletes the amendment (never-submitted drafts
+/// have no governance value).
+#[utoipa::path(
+    delete,
+    path = "/api/v1/data-dictionary/elements/{element_id}/discard",
+    params(("element_id" = Uuid, Path, description = "Amendment element ID to discard")),
+    responses(
+        (status = 204, description = "Amendment discarded"),
+        (status = 403, description = "Only the creator can discard"),
+        (status = 422, description = "Element is not a draft amendment")
+    ),
+    security(("bearer_auth" = [])),
+    tag = "data_dictionary"
+)]
+pub async fn discard_amendment(
+    State(state): State<AppState>,
+    Extension(claims): Extension<Claims>,
+    Path(element_id): Path<Uuid>,
+) -> AppResult<StatusCode> {
+    // Fetch the element
+    let row = sqlx::query_as::<_, DataElement>(&format!(
+        "SELECT {cols} FROM data_elements WHERE element_id = $1 AND deleted_at IS NULL",
+        cols = DATA_ELEMENT_COLUMNS
+    ))
+    .bind(element_id)
+    .fetch_optional(&state.pool)
+    .await?
+    .ok_or_else(|| AppError::NotFound(format!("data element not found: {element_id}")))?;
+
+    // Must be an amendment (has previous_version_id)
+    if row.previous_version_id.is_none() {
+        return Err(AppError::Validation(
+            "only amendments can be discarded — use the workflow to manage original data elements"
+                .into(),
+        ));
+    }
+
+    // Must be in DRAFT status
+    let status_code = sqlx::query_scalar::<_, String>(
+        "SELECT status_code FROM entity_statuses WHERE status_id = $1",
+    )
+    .bind(row.status_id)
+    .fetch_one(&state.pool)
+    .await?;
+
+    if status_code != "DRAFT" {
+        return Err(AppError::Validation(
+            "only draft amendments can be discarded — submitted amendments must be rejected through the workflow".into(),
+        ));
+    }
+
+    // Only the creator or admin can discard
+    let is_admin = claims.roles.iter().any(|r| r == "ADMIN" || r == "admin");
+    if row.created_by != claims.sub && !is_admin {
+        return Err(AppError::Forbidden(
+            "only the amendment creator or an admin can discard it".into(),
+        ));
+    }
+
+    // Hard delete: a never-submitted draft has no governance value.
+
+    // Delete workflow tasks and history, then the instance
+    sqlx::query(
+        r#"
+        DELETE FROM workflow_tasks
+        WHERE instance_id IN (SELECT instance_id FROM workflow_instances WHERE entity_id = $1)
+        "#,
+    )
+    .bind(element_id)
+    .execute(&state.pool)
+    .await?;
+
+    sqlx::query(
+        r#"
+        DELETE FROM workflow_history
+        WHERE instance_id IN (SELECT instance_id FROM workflow_instances WHERE entity_id = $1)
+        "#,
+    )
+    .bind(element_id)
+    .execute(&state.pool)
+    .await?;
+
+    sqlx::query("DELETE FROM workflow_instances WHERE entity_id = $1")
+        .bind(element_id)
+        .execute(&state.pool)
+        .await?;
+
+    // Delete the amendment element itself
+    sqlx::query("DELETE FROM data_elements WHERE element_id = $1")
+        .bind(element_id)
+        .execute(&state.pool)
+        .await?;
+
+    Ok(StatusCode::NO_CONTENT)
 }
 
 // ---------------------------------------------------------------------------
@@ -431,9 +749,7 @@ pub async fn update_element(
     security(("bearer_auth" = [])),
     tag = "data_dictionary"
 )]
-pub async fn list_cde(
-    State(state): State<AppState>,
-) -> AppResult<Json<Vec<DataElementListItem>>> {
+pub async fn list_cde(State(state): State<AppState>) -> AppResult<Json<Vec<DataElementListItem>>> {
     let items = sqlx::query_as::<_, DataElementListItem>(
         r#"
         SELECT
@@ -459,6 +775,7 @@ pub async fn list_cde(
         LEFT JOIN glossary_terms gt ON gt.term_id = de.glossary_term_id
         WHERE de.is_cde = TRUE
           AND de.deleted_at IS NULL
+          AND de.is_current_version = TRUE
         ORDER BY de.element_name ASC
         "#,
     )
@@ -506,7 +823,7 @@ pub async fn designate_cde(
         )));
     }
 
-    let element = sqlx::query_as::<_, DataElement>(
+    let designate_query = format!(
         r#"
         UPDATE data_elements
         SET is_cde             = $1,
@@ -516,22 +833,18 @@ pub async fn designate_cde(
             updated_by         = $3,
             updated_at         = CURRENT_TIMESTAMP
         WHERE element_id = $4 AND deleted_at IS NULL
-        RETURNING
-            element_id, element_name, element_code, description,
-            business_definition, business_rules, data_type, format_pattern,
-            allowed_values, default_value, is_nullable, is_cde,
-            cde_rationale, cde_designated_at, glossary_term_id,
-            domain_id, classification_id, sensitivity_level,
-            status_id, owner_user_id, steward_user_id,
-            created_by, updated_by, created_at, updated_at
+        RETURNING {cols}
         "#,
-    )
-    .bind(body.is_cde)
-    .bind(body.cde_rationale.as_deref())
-    .bind(claims.sub)
-    .bind(element_id)
-    .fetch_one(&state.pool)
-    .await?;
+        cols = DATA_ELEMENT_COLUMNS,
+    );
+
+    let element = sqlx::query_as::<_, DataElement>(&designate_query)
+        .bind(body.is_cde)
+        .bind(body.cde_rationale.as_deref())
+        .bind(claims.sub)
+        .bind(element_id)
+        .fetch_one(&state.pool)
+        .await?;
 
     Ok(Json(element))
 }
@@ -557,7 +870,8 @@ pub async fn list_source_systems(
     let systems = sqlx::query_as::<_, SourceSystem>(
         r#"
         SELECT system_id, system_name, system_code, system_type,
-               description, connection_details
+               description, connection_details,
+               application_id, vendor, environment
         FROM source_systems
         WHERE deleted_at IS NULL
         ORDER BY system_name ASC
@@ -605,9 +919,13 @@ pub async fn create_source_system(
 
     let system = sqlx::query_as::<_, SourceSystem>(
         r#"
-        INSERT INTO source_systems (system_name, system_code, system_type, description, connection_details)
-        VALUES ($1, $2, $3, $4, $5)
-        RETURNING system_id, system_name, system_code, system_type, description, connection_details
+        INSERT INTO source_systems (
+            system_name, system_code, system_type, description, connection_details,
+            application_id, vendor, environment
+        )
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+        RETURNING system_id, system_name, system_code, system_type, description,
+                  connection_details, application_id, vendor, environment
         "#,
     )
     .bind(&system_name)
@@ -615,6 +933,9 @@ pub async fn create_source_system(
     .bind(&system_type)
     .bind(body.description.as_deref())
     .bind(&body.connection_details)
+    .bind(body.application_id)
+    .bind(body.vendor.as_deref())
+    .bind(body.environment.as_deref())
     .fetch_one(&state.pool)
     .await?;
 

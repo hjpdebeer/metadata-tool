@@ -21,13 +21,13 @@
 //! All code must comply with the 14 foundational principles in
 //! `METADATA_TOOL_PRINCIPLES.md` and coding standards in `CODING_STANDARDS.md`.
 
+pub mod ai;
 pub mod api;
 pub mod auth;
 pub mod config;
 pub mod db;
 pub mod domain;
 pub mod error;
-pub mod ai;
 pub mod naming;
 pub mod notifications;
 pub mod settings;

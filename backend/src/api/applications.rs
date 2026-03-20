@@ -1,7 +1,7 @@
-use axum::extract::{Path, Query, State};
-use axum::http::StatusCode;
 use axum::Extension;
 use axum::Json;
+use axum::extract::{Path, Query, State};
+use axum::http::StatusCode;
 use uuid::Uuid;
 
 use crate::auth::Claims;
@@ -77,15 +77,15 @@ pub async fn list_applications(
     );
 
     let total_count = sqlx::query_scalar::<_, i64>(&count_query)
-    .bind(params.query.as_deref())
-    .bind(params.classification_id)
-    .bind(params.status.as_deref())
-    .bind(params.is_cba)
-    .bind(params.deployment_type.as_deref())
-    .bind(claims.sub)
-    .bind(is_admin)
-    .fetch_one(&state.pool)
-    .await?;
+        .bind(params.query.as_deref())
+        .bind(params.classification_id)
+        .bind(params.status.as_deref())
+        .bind(params.is_cba)
+        .bind(params.deployment_type.as_deref())
+        .bind(claims.sub)
+        .bind(is_admin)
+        .fetch_one(&state.pool)
+        .await?;
 
     let data_query = format!(
         r#"
@@ -128,17 +128,17 @@ pub async fn list_applications(
     );
 
     let items = sqlx::query_as::<_, ApplicationListItem>(&data_query)
-    .bind(params.query.as_deref())
-    .bind(params.classification_id)
-    .bind(params.status.as_deref())
-    .bind(params.is_cba)
-    .bind(params.deployment_type.as_deref())
-    .bind(claims.sub)
-    .bind(is_admin)
-    .bind(page_size)
-    .bind(offset)
-    .fetch_all(&state.pool)
-    .await?;
+        .bind(params.query.as_deref())
+        .bind(params.classification_id)
+        .bind(params.status.as_deref())
+        .bind(params.is_cba)
+        .bind(params.deployment_type.as_deref())
+        .bind(claims.sub)
+        .bind(is_admin)
+        .bind(page_size)
+        .bind(offset)
+        .fetch_all(&state.pool)
+        .await?;
 
     Ok(Json(PaginatedResponse {
         data: items,
@@ -242,7 +242,9 @@ pub async fn get_application(
             || row.steward_user_id == Some(claims.sub)
             || row.approver_user_id == Some(claims.sub);
         if !is_admin && !is_involved {
-            return Err(AppError::NotFound(format!("application not found: {app_id}")));
+            return Err(AppError::NotFound(format!(
+                "application not found: {app_id}"
+            )));
         }
     }
 
@@ -407,7 +409,9 @@ pub async fn update_application(
     .await?;
 
     if !exists {
-        return Err(AppError::NotFound(format!("application not found: {app_id}")));
+        return Err(AppError::NotFound(format!(
+            "application not found: {app_id}"
+        )));
     }
 
     if let Some(ref dt) = body.deployment_type
@@ -630,7 +634,9 @@ pub async fn link_data_element(
     .fetch_one(&state.pool)
     .await?;
     if !app_exists {
-        return Err(AppError::NotFound(format!("application not found: {app_id}")));
+        return Err(AppError::NotFound(format!(
+            "application not found: {app_id}"
+        )));
     }
 
     let element_exists = sqlx::query_scalar::<_, bool>(
@@ -640,7 +646,10 @@ pub async fn link_data_element(
     .fetch_one(&state.pool)
     .await?;
     if !element_exists {
-        return Err(AppError::NotFound(format!("data element not found: {}", body.element_id)));
+        return Err(AppError::NotFound(format!(
+            "data element not found: {}",
+            body.element_id
+        )));
     }
 
     let usage_type = body.usage_type.as_deref().unwrap_or("BOTH").to_string();
@@ -697,7 +706,9 @@ pub async fn list_app_elements(
     .fetch_one(&state.pool)
     .await?;
     if !exists {
-        return Err(AppError::NotFound(format!("application not found: {app_id}")));
+        return Err(AppError::NotFound(format!(
+            "application not found: {app_id}"
+        )));
     }
 
     let links = sqlx::query_as::<_, ApplicationDataElementLink>(
@@ -742,7 +753,9 @@ pub async fn list_interfaces(
     .fetch_one(&state.pool)
     .await?;
     if !exists {
-        return Err(AppError::NotFound(format!("application not found: {app_id}")));
+        return Err(AppError::NotFound(format!(
+            "application not found: {app_id}"
+        )));
     }
 
     let interfaces = sqlx::query_as::<_, ApplicationInterface>(
@@ -949,7 +962,8 @@ pub async fn discard_amendment(
     // Must be an amendment (has previous_version_id)
     if row.previous_version_id.is_none() {
         return Err(AppError::Validation(
-            "only amendments can be discarded — use the workflow to manage original applications".into(),
+            "only amendments can be discarded — use the workflow to manage original applications"
+                .into(),
         ));
     }
 
@@ -999,11 +1013,15 @@ pub async fn discard_amendment(
     .await?;
 
     sqlx::query("DELETE FROM workflow_instances WHERE entity_id = $1")
-        .bind(app_id).execute(&state.pool).await?;
+        .bind(app_id)
+        .execute(&state.pool)
+        .await?;
 
     // Delete the amendment application itself
     sqlx::query("DELETE FROM applications WHERE application_id = $1")
-        .bind(app_id).execute(&state.pool).await?;
+        .bind(app_id)
+        .execute(&state.pool)
+        .await?;
 
     Ok(StatusCode::NO_CONTENT)
 }

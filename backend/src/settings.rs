@@ -73,9 +73,8 @@ fn decrypt_value(encrypted_b64: &str, secret: &str) -> AppResult<String> {
         return Ok(String::new());
     }
 
-    let combined = base64_decode(encrypted_b64).map_err(|e| {
-        AppError::Internal(anyhow::anyhow!("base64 decode failed: {e}"))
-    })?;
+    let combined = base64_decode(encrypted_b64)
+        .map_err(|e| AppError::Internal(anyhow::anyhow!("base64 decode failed: {e}")))?;
 
     if combined.len() < 13 {
         return Err(AppError::Internal(anyhow::anyhow!(
@@ -158,9 +157,21 @@ fn base64_decode(input: &str) -> Result<Vec<u8>, String> {
     let mut i = 0;
     while i < bytes.len() {
         let a = decode_char(bytes[i])?;
-        let b = if i + 1 < bytes.len() { decode_char(bytes[i + 1])? } else { 0 };
-        let c = if i + 2 < bytes.len() { decode_char(bytes[i + 2])? } else { 0 };
-        let d = if i + 3 < bytes.len() { decode_char(bytes[i + 3])? } else { 0 };
+        let b = if i + 1 < bytes.len() {
+            decode_char(bytes[i + 1])?
+        } else {
+            0
+        };
+        let c = if i + 2 < bytes.len() {
+            decode_char(bytes[i + 2])?
+        } else {
+            0
+        };
+        let d = if i + 3 < bytes.len() {
+            decode_char(bytes[i + 3])?
+        } else {
+            0
+        };
 
         let n = (a << 18) | (b << 12) | (c << 6) | d;
         result.push(((n >> 16) & 0xff) as u8);
@@ -465,7 +476,8 @@ mod tests {
 
     #[test]
     fn decrypt_wrong_key_fails() {
-        let encrypted = encrypt_value("secret-data", "correct-key-at-least-32-chars-xxxxx").unwrap();
+        let encrypted =
+            encrypt_value("secret-data", "correct-key-at-least-32-chars-xxxxx").unwrap();
         let result = decrypt_value(&encrypted, "wrong-key-at-least-32-chars-xxxxxx");
         assert!(result.is_err());
     }

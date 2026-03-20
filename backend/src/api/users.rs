@@ -1,7 +1,7 @@
-use axum::extract::{Path, Query, State};
-use axum::http::StatusCode;
 use axum::Extension;
 use axum::Json;
+use axum::extract::{Path, Query, State};
+use axum::http::StatusCode;
 use uuid::Uuid;
 
 use crate::auth::Claims;
@@ -236,24 +236,22 @@ pub async fn assign_role(
     require_admin(&claims)?;
 
     // Verify user exists
-    let user_exists = sqlx::query_scalar::<_, bool>(
-        "SELECT EXISTS(SELECT 1 FROM users WHERE user_id = $1)",
-    )
-    .bind(user_id)
-    .fetch_one(&state.pool)
-    .await?;
+    let user_exists =
+        sqlx::query_scalar::<_, bool>("SELECT EXISTS(SELECT 1 FROM users WHERE user_id = $1)")
+            .bind(user_id)
+            .fetch_one(&state.pool)
+            .await?;
 
     if !user_exists {
         return Err(AppError::NotFound(format!("user not found: {user_id}")));
     }
 
     // Verify role exists
-    let role_exists = sqlx::query_scalar::<_, bool>(
-        "SELECT EXISTS(SELECT 1 FROM roles WHERE role_id = $1)",
-    )
-    .bind(body.role_id)
-    .fetch_one(&state.pool)
-    .await?;
+    let role_exists =
+        sqlx::query_scalar::<_, bool>("SELECT EXISTS(SELECT 1 FROM roles WHERE role_id = $1)")
+            .bind(body.role_id)
+            .fetch_one(&state.pool)
+            .await?;
 
     if !role_exists {
         return Err(AppError::NotFound(format!(
@@ -277,13 +275,11 @@ pub async fn assign_role(
         ));
     }
 
-    sqlx::query(
-        "INSERT INTO user_roles (user_id, role_id) VALUES ($1, $2)",
-    )
-    .bind(user_id)
-    .bind(body.role_id)
-    .execute(&state.pool)
-    .await?;
+    sqlx::query("INSERT INTO user_roles (user_id, role_id) VALUES ($1, $2)")
+        .bind(user_id)
+        .bind(body.role_id)
+        .execute(&state.pool)
+        .await?;
 
     Ok(StatusCode::CREATED)
 }
@@ -315,19 +311,15 @@ pub async fn remove_role(
 ) -> AppResult<StatusCode> {
     require_admin(&claims)?;
 
-    let rows_affected = sqlx::query(
-        "DELETE FROM user_roles WHERE user_id = $1 AND role_id = $2",
-    )
-    .bind(user_id)
-    .bind(role_id)
-    .execute(&state.pool)
-    .await?
-    .rows_affected();
+    let rows_affected = sqlx::query("DELETE FROM user_roles WHERE user_id = $1 AND role_id = $2")
+        .bind(user_id)
+        .bind(role_id)
+        .execute(&state.pool)
+        .await?
+        .rows_affected();
 
     if rows_affected == 0 {
-        return Err(AppError::NotFound(
-            "user-role assignment not found".into(),
-        ));
+        return Err(AppError::NotFound("user-role assignment not found".into()));
     }
 
     Ok(StatusCode::NO_CONTENT)
@@ -378,9 +370,7 @@ pub async fn list_roles(State(state): State<AppState>) -> AppResult<Json<Vec<Rol
     security(("bearer_auth" = [])),
     tag = "users"
 )]
-pub async fn lookup_users(
-    State(state): State<AppState>,
-) -> AppResult<Json<Vec<UserListItem>>> {
+pub async fn lookup_users(State(state): State<AppState>) -> AppResult<Json<Vec<UserListItem>>> {
     let users = sqlx::query_as::<_, UserListItem>(
         r#"
         SELECT user_id, username, email, display_name,

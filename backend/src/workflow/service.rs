@@ -9,8 +9,8 @@ use crate::error::{AppError, AppResult};
 use crate::notifications;
 
 use super::{
-    ACTION_APPROVE, ACTION_REJECT, ACTION_REVISE, STATE_DRAFT, STATE_UNDER_REVIEW,
-    STATE_PENDING_APPROVAL, TASK_STATUS_CANCELLED, TASK_STATUS_COMPLETED, TASK_STATUS_PENDING,
+    ACTION_APPROVE, ACTION_REJECT, ACTION_REVISE, STATE_DRAFT, STATE_PENDING_APPROVAL,
+    STATE_UNDER_REVIEW, TASK_STATUS_CANCELLED, TASK_STATUS_COMPLETED, TASK_STATUS_PENDING,
 };
 
 // ---------------------------------------------------------------------------
@@ -185,9 +185,7 @@ pub async fn transition_workflow(
     .bind(instance_id)
     .fetch_optional(pool)
     .await?
-    .ok_or_else(|| {
-        AppError::NotFound(format!("workflow instance not found: {instance_id}"))
-    })?;
+    .ok_or_else(|| AppError::NotFound(format!("workflow instance not found: {instance_id}")))?;
 
     if instance.completed_at.is_some() {
         return Err(AppError::Workflow(
@@ -317,12 +315,8 @@ pub async fn transition_workflow(
         .await?
         .unwrap_or_else(|| "Entity".to_string());
 
-        let entity_name = resolve_entity_name(
-            pool,
-            &entity_type_name,
-            updated_instance.entity_id,
-        )
-        .await?;
+        let entity_name =
+            resolve_entity_name(pool, &entity_type_name, updated_instance.entity_id).await?;
 
         // Resolve the old state name for the notification message
         let old_state_name = sqlx::query_scalar::<_, String>(
@@ -374,12 +368,10 @@ pub async fn get_pending_tasks(
     let role_ids: Vec<Uuid> = if role_codes.is_empty() {
         vec![]
     } else {
-        sqlx::query_scalar::<_, Uuid>(
-            "SELECT role_id FROM roles WHERE role_code = ANY($1)",
-        )
-        .bind(role_codes)
-        .fetch_all(pool)
-        .await?
+        sqlx::query_scalar::<_, Uuid>("SELECT role_id FROM roles WHERE role_code = ANY($1)")
+            .bind(role_codes)
+            .fetch_all(pool)
+            .await?
     };
 
     let rows = sqlx::query_as::<_, PendingTaskRow>(
@@ -511,14 +503,7 @@ pub async fn complete_task(
     .await?;
 
     // Advance the workflow based on the decision
-    transition_workflow(
-        pool,
-        task.instance_id,
-        action_code,
-        completed_by,
-        comments,
-    )
-    .await?;
+    transition_workflow(pool, task.instance_id, action_code, completed_by, comments).await?;
 
     Ok(updated_task)
 }
@@ -550,9 +535,7 @@ pub async fn get_workflow_instance(
     .bind(instance_id)
     .fetch_optional(pool)
     .await?
-    .ok_or_else(|| {
-        AppError::NotFound(format!("workflow instance not found: {instance_id}"))
-    })?;
+    .ok_or_else(|| AppError::NotFound(format!("workflow instance not found: {instance_id}")))?;
 
     // Fetch tasks for this instance
     let tasks = sqlx::query_as::<_, WorkflowTask>(
@@ -626,20 +609,21 @@ pub async fn get_workflow_instance_by_entity(
 
 /// Create a review task assigned to the entity's Data Steward.
 /// Called when entering UNDER_REVIEW state.
-async fn create_steward_review_task(
-    pool: &PgPool,
-    instance: &WorkflowInstance,
-) -> AppResult<()> {
+async fn create_steward_review_task(pool: &PgPool, instance: &WorkflowInstance) -> AppResult<()> {
     create_task_for_entity_role(pool, instance, "steward_user_id", "REVIEW", "Review").await
 }
 
 /// Create a final approval task assigned to the entity's Business Term Owner.
 /// Called when entering PENDING_APPROVAL state.
-async fn create_owner_approval_task(
-    pool: &PgPool,
-    instance: &WorkflowInstance,
-) -> AppResult<()> {
-    create_task_for_entity_role(pool, instance, "owner_user_id", ACTION_APPROVE, "Final Approval").await
+async fn create_owner_approval_task(pool: &PgPool, instance: &WorkflowInstance) -> AppResult<()> {
+    create_task_for_entity_role(
+        pool,
+        instance,
+        "owner_user_id",
+        ACTION_APPROVE,
+        "Final Approval",
+    )
+    .await
 }
 
 /// Generic helper: create a workflow task assigned to a specific user looked up
@@ -715,14 +699,25 @@ async fn create_task_for_entity_role(
                 .await?
                 .flatten()
         }
+        ("data_elements", "steward_user_id") => {
+            sqlx::query_scalar("SELECT steward_user_id FROM data_elements WHERE element_id = $1 AND deleted_at IS NULL")
+                .bind(instance.entity_id)
+                .fetch_optional(pool)
+                .await?
+                .flatten()
+        }
+        ("data_elements", "owner_user_id") => {
+            sqlx::query_scalar("SELECT owner_user_id FROM data_elements WHERE element_id = $1 AND deleted_at IS NULL")
+                .bind(instance.entity_id)
+                .fetch_optional(pool)
+                .await?
+                .flatten()
+        }
         _ => None,
     };
 
     let task_name = format!("{} — {}", task_label, entity_name);
-    let description = format!(
-        "{} for {} '{}'.",
-        task_label, entity_type_name, entity_name,
-    );
+    let description = format!("{} for {} '{}'.", task_label, entity_type_name, entity_name,);
     let due_date_str = due_date.format("%Y-%m-%d %H:%M UTC").to_string();
 
     sqlx::query(
@@ -885,13 +880,78 @@ async fn update_entity_status(
             }
         }
         "data_elements" => {
-            sqlx::query(
-                "UPDATE data_elements SET status_id = $1, updated_at = CURRENT_TIMESTAMP WHERE element_id = $2",
-            )
-            .bind(status_id)
-            .bind(instance.entity_id)
-            .execute(pool)
-            .await?;
+            if state_code == super::STATE_ACCEPTED {
+                sqlx::query(
+                    "UPDATE data_elements
+                     SET status_id = $1,
+                         approved_at = CURRENT_TIMESTAMP,
+                         is_current_version = TRUE,
+                         next_review_date = CURRENT_DATE + (
+                             SELECT COALESCE(grf.months_interval, 12) * INTERVAL '1 month'
+                             FROM glossary_review_frequencies grf
+                             WHERE grf.frequency_id = data_elements.review_frequency_id
+                         ),
+                         updated_at = CURRENT_TIMESTAMP
+                     WHERE element_id = $2",
+                )
+                .bind(status_id)
+                .bind(instance.entity_id)
+                .execute(pool)
+                .await?;
+
+                // Version swap: if this is an amendment, mark old version as SUPERSEDED
+                let previous_id = sqlx::query_scalar::<_, Option<Uuid>>(
+                    "SELECT previous_version_id FROM data_elements WHERE element_id = $1",
+                )
+                .bind(instance.entity_id)
+                .fetch_one(pool)
+                .await?;
+
+                if let Some(old_element_id) = previous_id {
+                    let superseded_status_id = sqlx::query_scalar::<_, Uuid>(
+                        "SELECT status_id FROM entity_statuses WHERE status_code = 'SUPERSEDED'",
+                    )
+                    .fetch_one(pool)
+                    .await?;
+
+                    sqlx::query(
+                        "UPDATE data_elements
+                         SET is_current_version = FALSE,
+                             status_id = $1,
+                             updated_at = CURRENT_TIMESTAMP
+                         WHERE element_id = $2",
+                    )
+                    .bind(superseded_status_id)
+                    .bind(old_element_id)
+                    .execute(pool)
+                    .await?;
+
+                    sqlx::query(
+                        "UPDATE workflow_instances
+                         SET completed_at = CURRENT_TIMESTAMP,
+                             completion_notes = 'Superseded by newer version',
+                             updated_at = CURRENT_TIMESTAMP
+                         WHERE entity_id = $1 AND completed_at IS NULL",
+                    )
+                    .bind(old_element_id)
+                    .execute(pool)
+                    .await?;
+
+                    tracing::info!(
+                        new_element_id = %instance.entity_id,
+                        old_element_id = %old_element_id,
+                        "version swap: data element amendment approved, old version superseded"
+                    );
+                }
+            } else {
+                sqlx::query(
+                    "UPDATE data_elements SET status_id = $1, updated_at = CURRENT_TIMESTAMP WHERE element_id = $2",
+                )
+                .bind(status_id)
+                .bind(instance.entity_id)
+                .execute(pool)
+                .await?;
+            }
         }
         "quality_rules" => {
             sqlx::query(
@@ -1130,6 +1190,39 @@ async fn validate_ownership_before_submit(
         }
         if row.technical_owner_id.is_none() {
             missing.push("Technical Owner");
+        }
+        if row.steward_user_id.is_none() {
+            missing.push("Data Steward");
+        }
+        if row.approver_user_id.is_none() {
+            missing.push("Approver");
+        }
+
+        if !missing.is_empty() {
+            return Err(AppError::Validation(format!(
+                "cannot submit for review — the following ownership fields must be assigned: {}",
+                missing.join(", ")
+            )));
+        }
+    } else if entity_type.as_str() == "data_elements" {
+        #[derive(sqlx::FromRow)]
+        struct DeOwnershipCheck {
+            owner_user_id: Option<Uuid>,
+            steward_user_id: Option<Uuid>,
+            approver_user_id: Option<Uuid>,
+        }
+
+        let row = sqlx::query_as::<_, DeOwnershipCheck>(
+            "SELECT owner_user_id, steward_user_id, approver_user_id FROM data_elements WHERE element_id = $1 AND deleted_at IS NULL",
+        )
+        .bind(instance.entity_id)
+        .fetch_optional(pool)
+        .await?
+        .ok_or_else(|| AppError::NotFound("entity not found for ownership check".into()))?;
+
+        let mut missing = Vec::new();
+        if row.owner_user_id.is_none() {
+            missing.push("Data Owner");
         }
         if row.steward_user_id.is_none() {
             missing.push("Data Steward");

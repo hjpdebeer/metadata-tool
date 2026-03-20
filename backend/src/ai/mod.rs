@@ -166,8 +166,7 @@ fn build_glossary_term_prompt(
     let classifications_json =
         serde_json::to_string_pretty(&lookups["data_classification"]).unwrap_or_default();
     let term_types_json = serde_json::to_string_pretty(&lookups["term_type"]).unwrap_or_default();
-    let units_json =
-        serde_json::to_string_pretty(&lookups["unit_of_measure"]).unwrap_or_default();
+    let units_json = serde_json::to_string_pretty(&lookups["unit_of_measure"]).unwrap_or_default();
 
     format!(
         r#"You are a metadata governance expert for financial institutions. Given a business glossary term, suggest values for empty metadata fields based on industry standards (DAMA DMBOK, BCBS 239, ISO 8000).
@@ -293,10 +292,7 @@ Return an empty array [] if no suggestions are needed."#,
 // Claude client
 // ---------------------------------------------------------------------------
 
-async fn call_claude(
-    config: &AiConfig,
-    prompt: &str,
-) -> Result<(String, String), AppError> {
+async fn call_claude(config: &AiConfig, prompt: &str) -> Result<(String, String), AppError> {
     let api_key = config
         .anthropic_api_key
         .as_ref()
@@ -374,10 +370,7 @@ async fn call_claude(
 // OpenAI client
 // ---------------------------------------------------------------------------
 
-async fn call_openai(
-    config: &AiConfig,
-    prompt: &str,
-) -> Result<(String, String), AppError> {
+async fn call_openai(config: &AiConfig, prompt: &str) -> Result<(String, String), AppError> {
     let api_key = config
         .openai_api_key
         .as_ref()
@@ -476,9 +469,8 @@ fn parse_suggestions(text: &str) -> Result<Vec<RawAiSuggestion>, AppError> {
         ));
     };
 
-    let suggestions: Vec<RawAiSuggestion> = serde_json::from_str(&json_to_parse).map_err(|e| {
-        AppError::AiService(format!("failed to parse AI suggestions as JSON: {e}"))
-    })?;
+    let suggestions: Vec<RawAiSuggestion> = serde_json::from_str(&json_to_parse)
+        .map_err(|e| AppError::AiService(format!("failed to parse AI suggestions as JSON: {e}")))?;
 
     // Validate and clean each suggestion per CODING_STANDARDS Section 15.2
     let suggestions = suggestions
@@ -499,13 +491,15 @@ fn parse_suggestions(text: &str) -> Result<Vec<RawAiSuggestion>, AppError> {
             }
 
             // 3. Content cleaning: strip control chars and excessive whitespace
-            s.suggested_value = s.suggested_value
+            s.suggested_value = s
+                .suggested_value
                 .chars()
                 .filter(|c| !c.is_control() || *c == '\n')
                 .collect::<String>()
                 .trim()
                 .to_string();
-            s.rationale = s.rationale
+            s.rationale = s
+                .rationale
                 .chars()
                 .filter(|c| !c.is_control() || *c == '\n')
                 .collect::<String>()

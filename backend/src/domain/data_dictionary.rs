@@ -1,4 +1,4 @@
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, NaiveDate, Utc};
 use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
 use utoipa::{IntoParams, ToSchema};
@@ -32,6 +32,15 @@ pub struct DataElement {
     pub status_id: Uuid,
     pub owner_user_id: Option<Uuid>,
     pub steward_user_id: Option<Uuid>,
+    pub approver_user_id: Option<Uuid>,
+    pub organisational_unit: Option<String>,
+    pub review_frequency_id: Option<Uuid>,
+    pub next_review_date: Option<NaiveDate>,
+    pub approved_at: Option<DateTime<Utc>>,
+    pub is_pii: bool,
+    pub version_number: i32,
+    pub is_current_version: bool,
+    pub previous_version_id: Option<Uuid>,
     pub created_by: Uuid,
     pub updated_by: Option<Uuid>,
     pub created_at: DateTime<Utc>,
@@ -104,6 +113,15 @@ pub struct DataElementDetailRow {
     pub status_id: Uuid,
     pub owner_user_id: Option<Uuid>,
     pub steward_user_id: Option<Uuid>,
+    pub approver_user_id: Option<Uuid>,
+    pub organisational_unit: Option<String>,
+    pub review_frequency_id: Option<Uuid>,
+    pub next_review_date: Option<NaiveDate>,
+    pub approved_at: Option<DateTime<Utc>>,
+    pub is_pii: bool,
+    pub version_number: i32,
+    pub is_current_version: bool,
+    pub previous_version_id: Option<Uuid>,
     pub created_by: Uuid,
     pub updated_by: Option<Uuid>,
     pub created_at: DateTime<Utc>,
@@ -114,6 +132,8 @@ pub struct DataElementDetailRow {
     pub classification_name: Option<String>,
     pub owner_name: Option<String>,
     pub steward_name: Option<String>,
+    pub approver_name: Option<String>,
+    pub review_frequency_name: Option<String>,
     pub status_code: Option<String>,
     pub status_name: Option<String>,
     pub created_by_name: Option<String>,
@@ -147,6 +167,16 @@ pub struct DataElementFullView {
     pub status_id: Uuid,
     pub owner_user_id: Option<Uuid>,
     pub steward_user_id: Option<Uuid>,
+    pub approver_user_id: Option<Uuid>,
+    pub organisational_unit: Option<String>,
+    pub review_frequency_id: Option<Uuid>,
+    pub review_frequency_name: Option<String>,
+    pub next_review_date: Option<NaiveDate>,
+    pub approved_at: Option<DateTime<Utc>>,
+    pub is_pii: bool,
+    pub version_number: i32,
+    pub is_current_version: bool,
+    pub previous_version_id: Option<Uuid>,
     pub created_by: Uuid,
     pub updated_by: Option<Uuid>,
     pub created_at: DateTime<Utc>,
@@ -157,6 +187,7 @@ pub struct DataElementFullView {
     pub classification_name: Option<String>,
     pub owner_name: Option<String>,
     pub steward_name: Option<String>,
+    pub approver_name: Option<String>,
     pub status_code: Option<String>,
     pub status_name: Option<String>,
     pub created_by_name: Option<String>,
@@ -200,6 +231,16 @@ impl DataElementFullView {
             status_id: row.status_id,
             owner_user_id: row.owner_user_id,
             steward_user_id: row.steward_user_id,
+            approver_user_id: row.approver_user_id,
+            organisational_unit: row.organisational_unit,
+            review_frequency_id: row.review_frequency_id,
+            review_frequency_name: row.review_frequency_name,
+            next_review_date: row.next_review_date,
+            approved_at: row.approved_at,
+            is_pii: row.is_pii,
+            version_number: row.version_number,
+            is_current_version: row.is_current_version,
+            previous_version_id: row.previous_version_id,
             created_by: row.created_by,
             updated_by: row.updated_by,
             created_at: row.created_at,
@@ -209,6 +250,7 @@ impl DataElementFullView {
             classification_name: row.classification_name,
             owner_name: row.owner_name,
             steward_name: row.steward_name,
+            approver_name: row.approver_name,
             status_code: row.status_code,
             status_name: row.status_name,
             created_by_name: row.created_by_name,
@@ -262,6 +304,14 @@ pub struct UpdateDataElementRequest {
     pub domain_id: Option<Uuid>,
     pub classification_id: Option<Uuid>,
     pub sensitivity_level: Option<String>,
+    // Ownership
+    pub owner_user_id: Option<Uuid>,
+    pub steward_user_id: Option<Uuid>,
+    pub approver_user_id: Option<Uuid>,
+    pub organisational_unit: Option<String>,
+    // Lifecycle
+    pub review_frequency_id: Option<Uuid>,
+    pub is_pii: Option<bool>,
 }
 
 /// Query parameters for searching and filtering data elements with pagination.
@@ -297,6 +347,9 @@ pub struct SourceSystem {
     pub system_type: String,
     pub description: Option<String>,
     pub connection_details: Option<serde_json::Value>,
+    pub application_id: Option<Uuid>,
+    pub vendor: Option<String>,
+    pub environment: Option<String>,
 }
 
 /// Request body for registering a new source system.
@@ -307,6 +360,9 @@ pub struct CreateSourceSystemRequest {
     pub system_type: String,
     pub description: Option<String>,
     pub connection_details: Option<serde_json::Value>,
+    pub application_id: Option<Uuid>,
+    pub vendor: Option<String>,
+    pub environment: Option<String>,
 }
 
 // ---------------------------------------------------------------------------

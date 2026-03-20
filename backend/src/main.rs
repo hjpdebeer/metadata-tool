@@ -1,7 +1,7 @@
+use axum::Router;
 use axum::extract::DefaultBodyLimit;
 use axum::middleware;
 use axum::routing::{delete, get, post, put};
-use axum::Router;
 use tower_http::cors::CorsLayer;
 use tower_http::trace::TraceLayer;
 use tracing_subscriber::EnvFilter;
@@ -59,6 +59,8 @@ use metadata_tool::db::{self, AppState};
         api::data_dictionary::get_element,
         api::data_dictionary::create_element,
         api::data_dictionary::update_element,
+        api::data_dictionary::amend_element,
+        api::data_dictionary::discard_amendment,
         api::data_dictionary::list_cde,
         api::data_dictionary::designate_cde,
         api::data_dictionary::list_source_systems,
@@ -70,6 +72,10 @@ use metadata_tool::db::{self, AppState};
         api::data_dictionary::create_table,
         api::data_dictionary::list_columns,
         api::data_dictionary::create_column,
+        // Data Dictionary — technical metadata ingestion
+        api::ingestion::ingest_technical,
+        api::ingestion::ingest_elements,
+        api::ingestion::link_columns,
         api::data_quality::list_dimensions,
         api::data_quality::list_rule_types,
         api::data_quality::list_rules,
@@ -90,6 +96,9 @@ use metadata_tool::db::{self, AppState};
         api::lineage::delete_edge,
         api::lineage::list_node_types,
         api::lineage::impact_analysis,
+        // Data Dictionary — bulk upload
+        api::de_bulk_upload::download_de_template,
+        api::de_bulk_upload::bulk_upload_elements,
         // Applications — bulk upload
         api::app_bulk_upload::download_app_template,
         api::app_bulk_upload::bulk_upload_apps,
@@ -157,6 +166,10 @@ use metadata_tool::db::{self, AppState};
         api::admin::update_lookup,
         api::admin::delete_lookup,
         api::admin::get_lookup_usage_count,
+        // Admin — API key management
+        api::admin::create_api_key,
+        api::admin::list_api_keys,
+        api::admin::deactivate_api_key,
     ),
     tags(
         (name = "health", description = "Health check"),
@@ -199,6 +212,36 @@ use metadata_tool::db::{self, AppState};
             api::admin::LookupRowRequest,
             api::admin::LookupListResponse,
             api::admin::UsageCountResponse,
+            // Ingestion
+            api::ingestion::IngestTechnicalRequest,
+            api::ingestion::IngestTechnicalResponse,
+            api::ingestion::IngestSourceSystem,
+            api::ingestion::IngestSchema,
+            api::ingestion::IngestTable,
+            api::ingestion::IngestColumn,
+            api::ingestion::IngestRelationship,
+            api::ingestion::IngestOptions,
+            api::ingestion::IngestSummary,
+            api::ingestion::IngestCounts,
+            api::ingestion::IngestStaleCounts,
+            api::ingestion::IngestError,
+            api::ingestion::IngestWarning,
+            // Element ingestion
+            api::ingestion::IngestElementsRequest,
+            api::ingestion::IngestElement,
+            api::ingestion::IngestElementOptions,
+            api::ingestion::IngestElementsResponse,
+            api::ingestion::IngestElementSummary,
+            // Column-element linking
+            api::ingestion::LinkColumnsRequest,
+            api::ingestion::ColumnElementLink,
+            api::ingestion::LinkColumnsResponse,
+            api::ingestion::LinkColumnsSummary,
+            // API key management
+            api::admin::CreateApiKeyRequest,
+            api::admin::CreateApiKeyResponse,
+            api::admin::ApiKeyListItem,
+            api::admin::ApiKeyListResponse,
         )
     ),
     modifiers(&SecurityAddon)
@@ -288,6 +331,7 @@ async fn main() -> anyhow::Result<()> {
             axum::http::header::AUTHORIZATION,
             axum::http::header::CONTENT_TYPE,
             axum::http::header::ACCEPT,
+            axum::http::HeaderName::from_static("x-api-key"),
         ]);
 
     // TODO(SEC-006): Add rate limiting to auth endpoints.
@@ -338,9 +382,17 @@ async fn main() -> anyhow::Result<()> {
         .route("/api/v1/glossary/organisational-units", get(api::glossary::list_organisational_units))
         // Dashboard
         .route("/api/v1/stats", get(api::glossary::get_stats))
+        // Data Dictionary — bulk upload routes BEFORE {element_id} to avoid path conflicts
+        .route("/api/v1/data-dictionary/elements/bulk-upload/template", get(api::de_bulk_upload::download_de_template))
+        .route("/api/v1/data-dictionary/elements/bulk-upload",
+            post(api::de_bulk_upload::bulk_upload_elements)
+                .layer(DefaultBodyLimit::max(10 * 1024 * 1024))
+        )
         // Data Dictionary
         .route("/api/v1/data-dictionary/elements", get(api::data_dictionary::list_elements).post(api::data_dictionary::create_element))
         .route("/api/v1/data-dictionary/elements/cde", get(api::data_dictionary::list_cde))
+        .route("/api/v1/data-dictionary/elements/{element_id}/amend", post(api::data_dictionary::amend_element))
+        .route("/api/v1/data-dictionary/elements/{element_id}/discard", delete(api::data_dictionary::discard_amendment))
         .route("/api/v1/data-dictionary/elements/{element_id}", get(api::data_dictionary::get_element).put(api::data_dictionary::update_element))
         .route("/api/v1/data-dictionary/elements/{element_id}/cde", post(api::data_dictionary::designate_cde))
         .route("/api/v1/data-dictionary/classifications", get(api::data_dictionary::list_classifications))
@@ -348,6 +400,18 @@ async fn main() -> anyhow::Result<()> {
         .route("/api/v1/data-dictionary/source-systems/{system_id}/schemas", get(api::data_dictionary::list_schemas).post(api::data_dictionary::create_schema))
         .route("/api/v1/data-dictionary/schemas/{schema_id}/tables", get(api::data_dictionary::list_tables).post(api::data_dictionary::create_table))
         .route("/api/v1/data-dictionary/tables/{table_id}/columns", get(api::data_dictionary::list_columns).post(api::data_dictionary::create_column))
+        // Data Dictionary — technical metadata ingestion
+        .route("/api/v1/data-dictionary/ingest/technical",
+            post(api::ingestion::ingest_technical)
+                .layer(DefaultBodyLimit::max(50 * 1024 * 1024))
+        )
+        .route("/api/v1/data-dictionary/ingest/elements",
+            post(api::ingestion::ingest_elements)
+                .layer(DefaultBodyLimit::max(50 * 1024 * 1024))
+        )
+        .route("/api/v1/data-dictionary/ingest/link-columns",
+            post(api::ingestion::link_columns)
+        )
         // Data Quality
         .route("/api/v1/data-quality/dimensions", get(api::data_quality::list_dimensions))
         .route("/api/v1/data-quality/rule-types", get(api::data_quality::list_rule_types))
@@ -421,6 +485,9 @@ async fn main() -> anyhow::Result<()> {
         .route("/api/v1/admin/settings/{key}", put(api::admin::update_setting))
         .route("/api/v1/admin/settings/{key}/reveal", get(api::admin::reveal_setting))
         .route("/api/v1/admin/settings/test-connection/{key}", post(api::admin::test_connection))
+        // Admin — API key management
+        .route("/api/v1/admin/api-keys", get(api::admin::list_api_keys).post(api::admin::create_api_key))
+        .route("/api/v1/admin/api-keys/{key_id}", delete(api::admin::deactivate_api_key))
         // Admin — lookup table CRUD
         .route("/api/v1/admin/lookups/{table_name}", get(api::admin::list_lookup).post(api::admin::create_lookup))
         .route("/api/v1/admin/lookups/{table_name}/{id}", put(api::admin::update_lookup).delete(api::admin::delete_lookup))
@@ -437,15 +504,13 @@ async fn main() -> anyhow::Result<()> {
     // SEC-023: Only expose Swagger UI in debug builds (disabled in production)
     #[cfg(debug_assertions)]
     let app = {
-        let swagger_ui = SwaggerUi::new("/swagger-ui")
-            .url("/api-docs/openapi.json", ApiDoc::openapi());
+        let swagger_ui =
+            SwaggerUi::new("/swagger-ui").url("/api-docs/openapi.json", ApiDoc::openapi());
         let swagger_router = Router::<()>::from(swagger_ui);
         app.merge(swagger_router)
     };
 
-    let app = app
-        .layer(TraceLayer::new_for_http())
-        .layer(cors);
+    let app = app.layer(TraceLayer::new_for_http()).layer(cors);
 
     tracing::info!("Starting server on {addr}");
     #[cfg(debug_assertions)]

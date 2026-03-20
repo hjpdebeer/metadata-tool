@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useNavigate, useParams, Link } from 'react-router-dom';
 import {
   Alert,
   Breadcrumb,
@@ -11,6 +11,7 @@ import {
   Input,
   Modal,
   Row,
+  Select,
   Space,
   Spin,
   Statistic,
@@ -27,42 +28,28 @@ import {
   CheckOutlined,
   CloseCircleOutlined,
   CloseOutlined,
+  DeleteOutlined,
   EditOutlined,
   KeyOutlined,
   LinkOutlined,
   SafetyCertificateOutlined,
   SendOutlined,
   UndoOutlined,
+  UserOutlined,
   WarningOutlined,
 } from '@ant-design/icons';
 import { dataDictionaryApi } from '../services/dataDictionaryApi';
-import { workflowApi } from '../services/glossaryApi';
+import { glossaryApi, workflowApi } from '../services/glossaryApi';
+import { usersApi } from '../services/usersApi';
 import type { DataElementFullView, TechnicalColumn } from '../services/dataDictionaryApi';
-import type { WorkflowInstanceView } from '../services/glossaryApi';
+import type { OrganisationalUnit, WorkflowInstanceView } from '../services/glossaryApi';
+import type { UserListItem } from '../services/usersApi';
 import { useAuth } from '../hooks/useAuth';
 import AiEnrichmentPanel from '../components/AiEnrichmentPanel';
 
+import { statusColors, statusLabels } from '../constants/statusConfig';
+
 const { Title, Text } = Typography;
-
-const statusColors: Record<string, string> = {
-  DRAFT: 'default',
-  PROPOSED: 'processing',
-  UNDER_REVIEW: 'warning',
-  REVISED: 'orange',
-  ACCEPTED: 'success',
-  REJECTED: 'error',
-  DEPRECATED: 'default',
-};
-
-const statusLabels: Record<string, string> = {
-  DRAFT: 'Draft',
-  PROPOSED: 'Proposed',
-  UNDER_REVIEW: 'Under Review',
-  REVISED: 'Revised',
-  ACCEPTED: 'Accepted',
-  REJECTED: 'Rejected',
-  DEPRECATED: 'Deprecated',
-};
 
 const sensitivityColors: Record<string, string> = {
   PUBLIC: 'green',
@@ -75,6 +62,7 @@ const DataElementDetail: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const { user } = useAuth();
+  const currentUserId = user?.user_id;
 
   const [element, setElement] = useState<DataElementFullView | null>(null);
   const [workflowInstance, setWorkflowInstance] = useState<WorkflowInstanceView | null>(null);
@@ -87,40 +75,145 @@ const DataElementDetail: React.FC = () => {
   const [cdeRationale, setCdeRationale] = useState('');
   const [cdeLoading, setCdeLoading] = useState(false);
 
-  const isSteward = user?.roles?.includes('data_steward') || user?.roles?.includes('admin');
+  // Ownership assignment state — uses {value, label} to prevent UUID display
+  type LabeledValue = { value: string; label: string };
+  const [allUsers, setAllUsers] = useState<UserListItem[]>([]);
+  const [allOrgUnits, setAllOrgUnits] = useState<OrganisationalUnit[]>([]);
+  const [ownershipLoading, setOwnershipLoading] = useState(false);
+  const [ownerUserId, setOwnerUserId] = useState<LabeledValue | undefined>();
+  const [stewardUserId, setStewardUserId] = useState<LabeledValue | undefined>();
+  const [approverUserId, setApproverUserId] = useState<LabeledValue | undefined>();
+  const [orgUnit, setOrgUnit] = useState<string | undefined>();
 
-  const fetchElement = useCallback(async () => {
+  const fetchElement = useCallback(async (showSpinner = false) => {
     if (!id) return;
-    setLoading(true);
+    if (showSpinner) setLoading(true);
     try {
       const response = await dataDictionaryApi.getElement(id);
       setElement(response.data);
-
-      // Fetch workflow instance if one exists
-      if (response.data.workflow_instance_id) {
-        try {
-          const wfResponse = await workflowApi.getInstance(response.data.workflow_instance_id);
-          setWorkflowInstance(wfResponse.data);
-        } catch {
-          // Workflow instance may not exist yet or endpoint may not be implemented
-        }
-      }
     } catch {
       message.error('Failed to load element details.');
       navigate('/data-dictionary');
     } finally {
-      setLoading(false);
+      if (showSpinner) setLoading(false);
     }
   }, [id, navigate]);
 
+  const fetchLookups = useCallback(async () => {
+    const [usersRes, orgRes] = await Promise.allSettled([
+      usersApi.lookupUsers(),
+      glossaryApi.listOrganisationalUnits(),
+    ]);
+    if (usersRes.status === 'fulfilled') setAllUsers(usersRes.value.data);
+    if (orgRes.status === 'fulfilled') setAllOrgUnits(orgRes.value.data);
+  }, []);
+
+  const fetchWorkflowInstance = useCallback(async () => {
+    if (!id) return;
+    try {
+      const response = await workflowApi.getInstanceByEntity(id);
+      setWorkflowInstance(response.data);
+    } catch {
+      // No workflow instance for this entity — not an error for the UI
+      setWorkflowInstance(null);
+    }
+  }, [id]);
+
   useEffect(() => {
-    fetchElement();
-  }, [fetchElement]);
+    fetchElement(true);
+    fetchLookups();
+    fetchWorkflowInstance();
+  }, [fetchElement, fetchLookups, fetchWorkflowInstance]);
+
+  // Sync ownership state from detail response — uses resolved names so UUIDs never display
+  useEffect(() => {
+    if (element) {
+      setOwnerUserId(element.owner_user_id && element.owner_name
+        ? { value: element.owner_user_id, label: element.owner_name } : undefined);
+      setStewardUserId(element.steward_user_id && element.steward_name
+        ? { value: element.steward_user_id, label: element.steward_name } : undefined);
+      setApproverUserId(element.approver_user_id && element.approver_name
+        ? { value: element.approver_user_id, label: element.approver_name } : undefined);
+      setOrgUnit(element.organisational_unit || undefined);
+    }
+  }, [element]);
+
+  // --- Ownership assignment ---
+
+  const handleSaveOwnership = async () => {
+    if (!id) return;
+    setOwnershipLoading(true);
+    try {
+      await dataDictionaryApi.updateElement(id, {
+        owner_user_id: ownerUserId?.value || undefined,
+        steward_user_id: stewardUserId?.value || undefined,
+        approver_user_id: approverUserId?.value || undefined,
+        organisational_unit: orgUnit || undefined,
+      } as Record<string, unknown>);
+      message.success('Ownership updated successfully.');
+      fetchElement();
+    } catch {
+      message.error('Failed to update ownership.');
+    } finally {
+      setOwnershipLoading(false);
+    }
+  };
+
+  const ownershipComplete = !!(ownerUserId && stewardUserId && approverUserId);
+  const showOwnershipSection = element && allUsers.length > 0 && (element.status_code === 'DRAFT' || element.status_code === 'REVISED');
+
+  // --- Amendment ---
+
+  const handleProposeAmendment = async () => {
+    if (!id) return;
+    try {
+      const response = await dataDictionaryApi.amendElement(id);
+      message.success('Amendment created. You can now edit the new draft version.');
+      navigate(`/data-dictionary/${response.data.element_id}`);
+    } catch (err: unknown) {
+      const apiMsg = (err as { response?: { data?: { error?: { message?: string } } } })
+        ?.response?.data?.error?.message;
+      message.error(apiMsg || 'Failed to create amendment.');
+    }
+  };
+
+  const handleDiscardAmendment = async () => {
+    if (!id) return;
+    try {
+      await dataDictionaryApi.discardAmendment(id);
+      message.success('Amendment discarded.');
+      if (element?.previous_version_id) {
+        navigate(`/data-dictionary/${element.previous_version_id}`);
+      } else {
+        navigate('/data-dictionary');
+      }
+    } catch (err: unknown) {
+      const apiMsg = (err as { response?: { data?: { error?: { message?: string } } } })
+        ?.response?.data?.error?.message;
+      message.error(apiMsg || 'Failed to discard amendment.');
+    }
+  };
+
+  // --- Workflow ---
 
   const handleWorkflowAction = (action: string) => {
-    if (!element?.workflow_instance_id) {
+    if (!workflowInstance?.instance_id) {
       message.error('No active workflow for this element.');
       return;
+    }
+    // Pre-flight check: warn user about missing ownership before opening modal
+    if (action === 'SUBMIT') {
+      const missing: string[] = [];
+      if (!element?.owner_user_id) missing.push('Data Owner');
+      if (!element?.steward_user_id) missing.push('Data Steward');
+      if (!element?.approver_user_id) missing.push('Approver');
+      if (missing.length > 0) {
+        message.warning(
+          `Please assign all ownership fields before submitting: ${missing.join(', ')}. Use the Ownership card below to assign owners.`,
+          8,
+        );
+        return;
+      }
     }
     setTransitionAction(action);
     setTransitionComments('');
@@ -128,20 +221,22 @@ const DataElementDetail: React.FC = () => {
   };
 
   const submitTransition = async () => {
-    if (!element?.workflow_instance_id) return;
-
+    if (!workflowInstance?.instance_id) return;
     setActionLoading(true);
     try {
       await workflowApi.transitionWorkflow(
-        element.workflow_instance_id,
+        workflowInstance.instance_id,
         transitionAction,
         transitionComments || undefined,
       );
       message.success(`Workflow action "${transitionAction}" completed successfully.`);
       setTransitionModalOpen(false);
       fetchElement();
-    } catch {
-      message.error(`Failed to perform action "${transitionAction}".`);
+      fetchWorkflowInstance();
+    } catch (error: unknown) {
+      const apiMsg = (error as { response?: { data?: { error?: { message?: string } } } })
+        ?.response?.data?.error?.message;
+      message.error(apiMsg || `Failed to perform action "${transitionAction}".`, 8);
     } finally {
       setActionLoading(false);
     }
@@ -191,6 +286,15 @@ const DataElementDetail: React.FC = () => {
     });
   };
 
+  const formatDateShort = (dateStr: string | null | undefined) => {
+    if (!dateStr) return null;
+    return new Date(dateStr).toLocaleDateString('en-ZA', {
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric',
+    });
+  };
+
   if (loading) {
     return (
       <div style={{ textAlign: 'center', padding: 80 }}>
@@ -204,6 +308,13 @@ const DataElementDetail: React.FC = () => {
   }
 
   const status = element.status_code || 'DRAFT';
+
+  // --- Role gating ---
+  const isAdmin = user?.roles?.includes('admin') || user?.roles?.includes('ADMIN');
+  const isSteward = currentUserId === element?.steward_user_id || isAdmin;
+  const isOwner = currentUserId === element?.owner_user_id || isAdmin;
+
+  // --- Action buttons ---
 
   const renderActionButtons = () => {
     const buttons: React.ReactNode[] = [];
@@ -219,8 +330,22 @@ const DataElementDetail: React.FC = () => {
           Submit for Review
         </Button>,
       );
+      // Discard button: only for amendments (has previous_version_id), only for creator or admin
+      if (element?.previous_version_id && (currentUserId === element?.created_by || isAdmin)) {
+        buttons.push(
+          <Button
+            key="discard"
+            danger
+            icon={<DeleteOutlined />}
+            onClick={handleDiscardAmendment}
+          >
+            Discard Amendment
+          </Button>,
+        );
+      }
     }
 
+    // Under Review: only the assigned Data Steward (or admin) can act
     if (status === 'UNDER_REVIEW' && isSteward) {
       buttons.push(
         <Button
@@ -230,7 +355,7 @@ const DataElementDetail: React.FC = () => {
           style={{ backgroundColor: '#52C41A', borderColor: '#52C41A' }}
           onClick={() => handleWorkflowAction('APPROVE')}
         >
-          Approve
+          Approve (Steward)
         </Button>,
         <Button
           key="reject"
@@ -250,6 +375,36 @@ const DataElementDetail: React.FC = () => {
       );
     }
 
+    // Pending Approval: only the assigned Data Owner (or admin) can act
+    if (status === 'PENDING_APPROVAL' && isOwner) {
+      buttons.push(
+        <Button
+          key="final-approve"
+          type="primary"
+          icon={<CheckOutlined />}
+          style={{ backgroundColor: '#52C41A', borderColor: '#52C41A' }}
+          onClick={() => handleWorkflowAction('APPROVE')}
+        >
+          Final Approval (Owner)
+        </Button>,
+        <Button
+          key="reject"
+          danger
+          icon={<CloseOutlined />}
+          onClick={() => handleWorkflowAction('REJECT')}
+        >
+          Reject
+        </Button>,
+        <Button
+          key="revise"
+          icon={<UndoOutlined />}
+          onClick={() => handleWorkflowAction('REVISE')}
+        >
+          Return to Steward
+        </Button>,
+      );
+    }
+
     if (status === 'REVISED') {
       buttons.push(
         <Button
@@ -263,16 +418,31 @@ const DataElementDetail: React.FC = () => {
       );
     }
 
-    buttons.push(
-      <Button
-        key="edit"
-        icon={<EditOutlined />}
-        onClick={() => navigate(`/data-dictionary/${id}/edit`)}
-        disabled={status === 'ACCEPTED' || status === 'DEPRECATED'}
-      >
-        Edit
-      </Button>,
-    );
+    if (status === 'ACCEPTED') {
+      buttons.push(
+        <Button
+          key="amend"
+          type="primary"
+          icon={<EditOutlined />}
+          onClick={handleProposeAmendment}
+        >
+          Propose Amendment
+        </Button>,
+      );
+    }
+
+    // Edit button: hidden for terminal/accepted states
+    if (!['ACCEPTED', 'DEPRECATED', 'REJECTED', 'SUPERSEDED'].includes(status)) {
+      buttons.push(
+        <Button
+          key="edit"
+          icon={<EditOutlined />}
+          onClick={() => navigate(`/data-dictionary/${id}/edit`)}
+        >
+          Edit
+        </Button>,
+      );
+    }
 
     return buttons;
   };
@@ -365,15 +535,18 @@ const DataElementDetail: React.FC = () => {
         ]}
       />
 
+      {/* --- Header --- */}
       <div
         style={{
           display: 'flex',
           justifyContent: 'space-between',
           alignItems: 'flex-start',
           marginBottom: 16,
+          flexWrap: 'wrap',
+          gap: 12,
         }}
       >
-        <Space align="center">
+        <Space align="center" wrap>
           <Button
             type="text"
             icon={<ArrowLeftOutlined />}
@@ -382,21 +555,33 @@ const DataElementDetail: React.FC = () => {
           <Title level={3} style={{ margin: 0 }}>
             {element.element_name}
           </Title>
+          {element.element_code && (
+            <Tag color="geekblue" style={{ fontFamily: 'monospace', fontSize: 12 }}>
+              {element.element_code}
+            </Tag>
+          )}
           <Tag
             color={statusColors[status] || 'default'}
             style={{ fontSize: 14, padding: '2px 12px' }}
           >
             {statusLabels[status] || status}
           </Tag>
+          {element.version_number > 1 && (
+            <Tag color="geekblue">v{element.version_number}</Tag>
+          )}
           {element.is_cde && (
-            <Tag color="red" style={{ fontSize: 14, padding: '2px 12px', fontWeight: 600 }}>
-              CDE
+            <Tag color="red" style={{ fontWeight: 600 }}>
+              <SafetyCertificateOutlined /> CDE
             </Tag>
           )}
+          {element.is_pii && (
+            <Tag color="volcano">PII</Tag>
+          )}
         </Space>
-        <Space>{renderActionButtons()}</Space>
+        <Space wrap>{renderActionButtons()}</Space>
       </div>
 
+      {/* --- CDE Banner --- */}
       {element.is_cde && (
         <Alert
           type="error"
@@ -417,7 +602,7 @@ const DataElementDetail: React.FC = () => {
               )}
             </div>
           }
-          style={{ marginBottom: 24 }}
+          style={{ marginBottom: 16 }}
           action={
             isSteward ? (
               <Button size="small" danger onClick={handleRemoveCde} loading={cdeLoading}>
@@ -425,9 +610,29 @@ const DataElementDetail: React.FC = () => {
               </Button>
             ) : undefined
           }
+          banner
         />
       )}
 
+      {/* --- Amendment Context Banner --- */}
+      {element.previous_version_id && (
+        <Alert
+          message={`Amendment of v${(element.version_number || 2) - 1}`}
+          description={
+            <span>
+              This is a draft amendment. The original accepted version remains visible until this amendment is approved.{' '}
+              <Link to={`/data-dictionary/${element.previous_version_id}`}>View original version</Link>
+            </span>
+          }
+          type="info"
+          showIcon
+          icon={<EditOutlined />}
+          style={{ marginBottom: 16 }}
+          banner
+        />
+      )}
+
+      {/* --- Stats Cards --- */}
       <Row gutter={16} style={{ marginBottom: 24 }}>
         <Col xs={24} sm={8}>
           <Card>
@@ -456,6 +661,123 @@ const DataElementDetail: React.FC = () => {
         </Col>
       </Row>
 
+      {/* --- AI Enrichment Panel --- */}
+      <AiEnrichmentPanel
+        entityType="data_element"
+        entityId={id!}
+        onSuggestionApplied={fetchElement}
+      />
+
+      {/* --- Ownership Assignment (shown in DRAFT/REVISED status) --- */}
+      {showOwnershipSection && (
+        <Card
+          title={
+            <Space>
+              <UserOutlined />
+              <Text strong>Assign Ownership</Text>
+              {ownershipComplete ? (
+                <Tag color="success">Complete</Tag>
+              ) : (
+                <Tag color="warning">Required before submission</Tag>
+              )}
+            </Space>
+          }
+          style={{
+            marginBottom: 24,
+            border: ownershipComplete ? '1px solid #B7EB8F' : '1px solid #FFD591',
+            background: ownershipComplete ? '#F6FFED' : '#FFF7E6',
+          }}
+        >
+          {!ownershipComplete && (
+            <Alert
+              message="All ownership fields must be assigned before this element can be submitted for review."
+              type="warning"
+              showIcon
+              style={{ marginBottom: 16 }}
+            />
+          )}
+          <Row gutter={[16, 16]}>
+            <Col xs={24} md={12}>
+              <div style={{ marginBottom: 4 }}>
+                <Text strong>Data Owner</Text>
+                {!ownerUserId && <Text type="danger"> *</Text>}
+              </div>
+              <Select
+                style={{ width: '100%' }}
+                labelInValue
+                value={ownerUserId}
+                onChange={(val) => setOwnerUserId(val || undefined)}
+                options={allUsers.map((u) => ({ value: u.user_id, label: `${u.display_name} (${u.email})` }))}
+                placeholder="Select owner..."
+                showSearch
+                optionFilterProp="label"
+                allowClear
+              />
+            </Col>
+            <Col xs={24} md={12}>
+              <div style={{ marginBottom: 4 }}>
+                <Text strong>Data Steward</Text>
+                {!stewardUserId && <Text type="danger"> *</Text>}
+              </div>
+              <Select
+                style={{ width: '100%' }}
+                labelInValue
+                value={stewardUserId}
+                onChange={(val) => setStewardUserId(val || undefined)}
+                options={allUsers.map((u) => ({ value: u.user_id, label: `${u.display_name} (${u.email})` }))}
+                placeholder="Select steward..."
+                showSearch
+                optionFilterProp="label"
+                allowClear
+              />
+            </Col>
+            <Col xs={24} md={12}>
+              <div style={{ marginBottom: 4 }}>
+                <Text strong>Approver</Text>
+                {!approverUserId && <Text type="danger"> *</Text>}
+              </div>
+              <Select
+                style={{ width: '100%' }}
+                labelInValue
+                value={approverUserId}
+                onChange={(val) => setApproverUserId(val || undefined)}
+                options={allUsers.map((u) => ({ value: u.user_id, label: `${u.display_name} (${u.email})` }))}
+                placeholder="Select approver..."
+                showSearch
+                optionFilterProp="label"
+                allowClear
+              />
+            </Col>
+            <Col xs={24} md={12}>
+              <div style={{ marginBottom: 4 }}>
+                <Text strong>Organisational Unit</Text>
+              </div>
+              <Select
+                style={{ width: '100%' }}
+                value={orgUnit}
+                onChange={(val) => setOrgUnit(val)}
+                options={allOrgUnits.map((u) => ({ value: u.unit_name, label: u.unit_name }))}
+                placeholder="Select organisational unit..."
+                showSearch
+                optionFilterProp="label"
+                allowClear
+              />
+            </Col>
+          </Row>
+          <div style={{ marginTop: 16, textAlign: 'right' }}>
+            <Button
+              type="primary"
+              onClick={handleSaveOwnership}
+              loading={ownershipLoading}
+              disabled={!ownerUserId && !stewardUserId && !approverUserId}
+            >
+              Save Ownership
+            </Button>
+          </div>
+        </Card>
+      )}
+
+      {/* --- Element Details --- */}
       <Card title="Element Details" style={{ marginBottom: 24 }}>
         <Descriptions column={{ xs: 1, sm: 1, md: 2 }} bordered size="small">
           <Descriptions.Item label="Element Name">{element.element_name}</Descriptions.Item>
@@ -492,6 +814,9 @@ const DataElementDetail: React.FC = () => {
           <Descriptions.Item label="Nullable">
             {element.is_nullable ? 'Yes' : 'No'}
           </Descriptions.Item>
+          <Descriptions.Item label="PII">
+            {element.is_pii ? <Tag color="volcano">Yes</Tag> : 'No'}
+          </Descriptions.Item>
           <Descriptions.Item label="Glossary Term">
             {element.glossary_term_name ? (
               <a onClick={() => navigate(`/glossary/${element.glossary_term_id}`)}>
@@ -516,16 +841,18 @@ const DataElementDetail: React.FC = () => {
               '-'
             )}
           </Descriptions.Item>
-          <Descriptions.Item label="Owner">
-            {element.owner_name || '-'}
-          </Descriptions.Item>
-          <Descriptions.Item label="Steward">
-            {element.steward_name || '-'}
-          </Descriptions.Item>
           <Descriptions.Item label="Status">
             <Tag color={statusColors[status] || 'default'}>
               {statusLabels[status] || status}
             </Tag>
+          </Descriptions.Item>
+          <Descriptions.Item label="Version">
+            {element.version_number}
+            {element.is_current_version ? (
+              <Tag color="green" style={{ marginLeft: 8 }}>Current</Tag>
+            ) : (
+              <Tag color="default" style={{ marginLeft: 8 }}>Superseded</Tag>
+            )}
           </Descriptions.Item>
           <Descriptions.Item label="CDE">
             {element.is_cde ? (
@@ -550,6 +877,33 @@ const DataElementDetail: React.FC = () => {
               </Space>
             )}
           </Descriptions.Item>
+        </Descriptions>
+      </Card>
+
+      {/* --- Ownership Details --- */}
+      <Card title="Ownership & Lifecycle" style={{ marginBottom: 24 }}>
+        <Descriptions column={{ xs: 1, sm: 2 }} bordered size="small">
+          <Descriptions.Item label="Data Owner">
+            {element.owner_name || '-'}
+          </Descriptions.Item>
+          <Descriptions.Item label="Data Steward">
+            {element.steward_name || '-'}
+          </Descriptions.Item>
+          <Descriptions.Item label="Approver">
+            {element.approver_name || '-'}
+          </Descriptions.Item>
+          <Descriptions.Item label="Organisational Unit">
+            {element.organisational_unit || '-'}
+          </Descriptions.Item>
+          <Descriptions.Item label="Review Frequency">
+            {element.review_frequency_name || '-'}
+          </Descriptions.Item>
+          <Descriptions.Item label="Next Review Date">
+            {formatDateShort(element.next_review_date) || '-'}
+          </Descriptions.Item>
+          <Descriptions.Item label="Approved Date">
+            {element.approved_at ? formatDate(element.approved_at) : '-'}
+          </Descriptions.Item>
           <Descriptions.Item label="Created">
             {formatDate(element.created_at)}
             {element.created_by_name ? ` by ${element.created_by_name}` : ''}
@@ -561,6 +915,7 @@ const DataElementDetail: React.FC = () => {
         </Descriptions>
       </Card>
 
+      {/* --- Technical Metadata --- */}
       {element.technical_columns && element.technical_columns.length > 0 && (
         <Card title="Technical Metadata" style={{ marginBottom: 24 }}>
           <Table
@@ -573,17 +928,16 @@ const DataElementDetail: React.FC = () => {
         </Card>
       )}
 
-      <AiEnrichmentPanel
-        entityType="data_element"
-        entityId={id!}
-        onSuggestionApplied={fetchElement}
-      />
-
+      {/* --- Workflow Section --- */}
       {workflowInstance && (
         <Card title="Workflow" style={{ marginBottom: 24 }}>
           <Descriptions column={{ xs: 1, sm: 2 }} size="small" style={{ marginBottom: 16 }}>
             <Descriptions.Item label="Current State">
-              <Tag color={statusColors[workflowInstance.current_state_name?.toUpperCase()] || 'processing'}>
+              <Tag
+                color={
+                  statusColors[workflowInstance.current_state_name?.toUpperCase()] || 'processing'
+                }
+              >
                 {workflowInstance.current_state_name}
               </Tag>
             </Descriptions.Item>
@@ -643,6 +997,7 @@ const DataElementDetail: React.FC = () => {
         </Card>
       )}
 
+      {/* --- Workflow Transition Modal --- */}
       <Modal
         title={`Workflow Action: ${transitionAction}`}
         open={transitionModalOpen}
@@ -664,6 +1019,7 @@ const DataElementDetail: React.FC = () => {
         />
       </Modal>
 
+      {/* --- CDE Designation Modal --- */}
       <Modal
         title="Designate as Critical Data Element"
         open={cdeModalOpen}

@@ -62,5 +62,8 @@ aes-gcm = "0.10"
 axum_typed_multipart = "0.14"
 tempfile = "3"
 
+# Random number generation (API key generation)
+rand = "0.9"
+
 # Testing
 axum-test = "16"

@@ -89,8 +89,7 @@ impl AppConfig {
                 anthropic_model: env::var("ANTHROPIC_MODEL")
                     .unwrap_or_else(|_| "claude-sonnet-4-6".into()),
                 openai_api_key: env::var("OPENAI_API_KEY").ok(),
-                openai_model: env::var("OPENAI_MODEL")
-                    .unwrap_or_else(|_| "gpt-4o".into()),
+                openai_model: env::var("OPENAI_MODEL").unwrap_or_else(|_| "gpt-4o".into()),
             },
             frontend_url: env::var("FRONTEND_URL")
                 .unwrap_or_else(|_| "http://localhost:5173".into()),

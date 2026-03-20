@@ -1,39 +1,17 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Button, Card, Input, Select, Space, Switch, Table, Tag, Typography, message } from 'antd';
-import { PlusOutlined } from '@ant-design/icons';
+import { PlusOutlined, UploadOutlined } from '@ant-design/icons';
 import type { TablePaginationConfig } from 'antd';
 import { dataDictionaryApi } from '../services/dataDictionaryApi';
 import { glossaryApi } from '../services/glossaryApi';
 import type { DataElementListItem, ListElementsParams } from '../services/dataDictionaryApi';
 import type { GlossaryDomain } from '../services/glossaryApi';
+import DeBulkUploadModal from '../components/DeBulkUploadModal';
+
+import { statusColors, statusLabels, statusOptions } from '../constants/statusConfig';
 
 const { Title, Text } = Typography;
-
-const statusColors: Record<string, string> = {
-  DRAFT: 'default',
-  PROPOSED: 'processing',
-  UNDER_REVIEW: 'warning',
-  REVISED: 'orange',
-  ACCEPTED: 'success',
-  REJECTED: 'error',
-  DEPRECATED: 'default',
-};
-
-const statusLabels: Record<string, string> = {
-  DRAFT: 'Draft',
-  PROPOSED: 'Proposed',
-  UNDER_REVIEW: 'Under Review',
-  REVISED: 'Revised',
-  ACCEPTED: 'Accepted',
-  REJECTED: 'Rejected',
-  DEPRECATED: 'Deprecated',
-};
-
-const statusOptions = Object.entries(statusLabels).map(([value, label]) => ({
-  value,
-  label,
-}));
 
 const DataDictionaryPage: React.FC = () => {
   const navigate = useNavigate();
@@ -43,6 +21,7 @@ const DataDictionaryPage: React.FC = () => {
   const [domains, setDomains] = useState<GlossaryDomain[]>([]);
   const [loading, setLoading] = useState(false);
   const [totalCount, setTotalCount] = useState(0);
+  const [bulkUploadOpen, setBulkUploadOpen] = useState(false);
 
   const [searchQuery, setSearchQuery] = useState(searchParams.get('query') || '');
   const [selectedDomain, setSelectedDomain] = useState<string | undefined>(
@@ -256,6 +235,12 @@ const DataDictionaryPage: React.FC = () => {
             Technical Metadata
           </Button>
           <Button
+            icon={<UploadOutlined />}
+            onClick={() => setBulkUploadOpen(true)}
+          >
+            Bulk Upload
+          </Button>
+          <Button
             type="primary"
             icon={<PlusOutlined />}
             onClick={() => navigate('/data-dictionary/new')}
@@ -315,6 +300,12 @@ const DataDictionaryPage: React.FC = () => {
           }}
         />
       </Card>
+
+      <DeBulkUploadModal
+        open={bulkUploadOpen}
+        onClose={() => setBulkUploadOpen(false)}
+        onSuccess={fetchElements}
+      />
     </div>
   );
 };

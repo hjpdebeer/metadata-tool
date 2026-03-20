@@ -1,7 +1,7 @@
-use axum::extract::{Path, Query, State};
-use axum::http::StatusCode;
 use axum::Extension;
 use axum::Json;
+use axum::extract::{Path, Query, State};
+use axum::http::StatusCode;
 use serde::Deserialize;
 use utoipa::{IntoParams, ToSchema};
 use uuid::Uuid;
@@ -901,11 +901,7 @@ pub async fn impact_analysis(
         (nodes, edges)
     };
 
-    let max_depth_reached = impacted_nodes
-        .iter()
-        .map(|n| n.depth)
-        .max()
-        .unwrap_or(0);
+    let max_depth_reached = impacted_nodes.iter().map(|n| n.depth).max().unwrap_or(0);
 
     Ok(Json(ImpactAnalysis {
         source_node_id: node_id,

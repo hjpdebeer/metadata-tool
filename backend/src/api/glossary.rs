@@ -1,7 +1,7 @@
-use axum::extract::{Path, Query, State};
-use axum::http::StatusCode;
 use axum::Extension;
 use axum::Json;
+use axum::extract::{Path, Query, State};
+use axum::http::StatusCode;
 use uuid::Uuid;
 
 use crate::auth::Claims;
@@ -81,16 +81,16 @@ pub async fn list_terms(
     );
 
     let total_count = sqlx::query_scalar::<_, i64>(&count_query)
-    .bind(params.query.as_deref())
-    .bind(params.domain_id)
-    .bind(params.category_id)
-    .bind(params.status.as_deref())
-    .bind(params.term_type_id)
-    .bind(params.is_cbt)
-    .bind(claims.sub)
-    .bind(is_admin)
-    .fetch_one(&state.pool)
-    .await?;
+        .bind(params.query.as_deref())
+        .bind(params.domain_id)
+        .bind(params.category_id)
+        .bind(params.status.as_deref())
+        .bind(params.term_type_id)
+        .bind(params.is_cbt)
+        .bind(claims.sub)
+        .bind(is_admin)
+        .fetch_one(&state.pool)
+        .await?;
 
     // Data query with joins for display fields
     let data_query = format!(
@@ -135,18 +135,18 @@ pub async fn list_terms(
     );
 
     let items = sqlx::query_as::<_, GlossaryTermListItem>(&data_query)
-    .bind(params.query.as_deref())
-    .bind(params.domain_id)
-    .bind(params.category_id)
-    .bind(params.status.as_deref())
-    .bind(params.term_type_id)
-    .bind(params.is_cbt)
-    .bind(claims.sub)
-    .bind(is_admin)
-    .bind(page_size)
-    .bind(offset)
-    .fetch_all(&state.pool)
-    .await?;
+        .bind(params.query.as_deref())
+        .bind(params.domain_id)
+        .bind(params.category_id)
+        .bind(params.status.as_deref())
+        .bind(params.term_type_id)
+        .bind(params.is_cbt)
+        .bind(claims.sub)
+        .bind(is_admin)
+        .bind(page_size)
+        .bind(offset)
+        .fetch_all(&state.pool)
+        .await?;
 
     Ok(Json(PaginatedResponse {
         data: items,
@@ -268,7 +268,9 @@ pub async fn get_term(
             || row.domain_owner_user_id == Some(claims.sub)
             || row.approver_user_id == Some(claims.sub);
         if !is_admin && !is_involved {
-            return Err(AppError::NotFound(format!("glossary term not found: {term_id}")));
+            return Err(AppError::NotFound(format!(
+                "glossary term not found: {term_id}"
+            )));
         }
     }
 
@@ -387,7 +389,6 @@ pub async fn create_term(
     Extension(claims): Extension<Claims>,
     Json(body): Json<CreateGlossaryTermRequest>,
 ) -> AppResult<(StatusCode, Json<GlossaryTerm>)> {
-
     // Validate required fields
     let term_name = body.term_name.trim().to_string();
     if term_name.is_empty() {
@@ -400,10 +401,14 @@ pub async fn create_term(
 
     // SEC-025: Input length validation
     if term_name.len() > 256 {
-        return Err(AppError::Validation("term_name exceeds 256 characters".into()));
+        return Err(AppError::Validation(
+            "term_name exceeds 256 characters".into(),
+        ));
     }
     if definition.len() > 4000 {
-        return Err(AppError::Validation("definition exceeds 4000 characters".into()));
+        return Err(AppError::Validation(
+            "definition exceeds 4000 characters".into(),
+        ));
     }
 
     // Look up DRAFT status_id from entity_statuses
@@ -477,7 +482,6 @@ pub async fn update_term(
     Extension(claims): Extension<Claims>,
     Json(body): Json<UpdateGlossaryTermRequest>,
 ) -> AppResult<Json<GlossaryTerm>> {
-
     // Verify the term exists and is not deleted
     let exists = sqlx::query_scalar::<_, bool>(
         "SELECT EXISTS(SELECT 1 FROM glossary_terms WHERE term_id = $1 AND deleted_at IS NULL)",
@@ -496,32 +500,44 @@ pub async fn update_term(
     if let Some(ref name) = body.term_name
         && name.trim().len() > 256
     {
-        return Err(AppError::Validation("term_name exceeds 256 characters".into()));
+        return Err(AppError::Validation(
+            "term_name exceeds 256 characters".into(),
+        ));
     }
     if let Some(ref def) = body.definition
         && def.trim().len() > 4000
     {
-        return Err(AppError::Validation("definition exceeds 4000 characters".into()));
+        return Err(AppError::Validation(
+            "definition exceeds 4000 characters".into(),
+        ));
     }
     if let Some(ref abbr) = body.abbreviation
         && abbr.trim().len() > 50
     {
-        return Err(AppError::Validation("abbreviation exceeds 50 characters".into()));
+        return Err(AppError::Validation(
+            "abbreviation exceeds 50 characters".into(),
+        ));
     }
     if let Some(ref val) = body.source_reference
         && val.trim().len() > 2000
     {
-        return Err(AppError::Validation("source_reference exceeds 2000 characters".into()));
+        return Err(AppError::Validation(
+            "source_reference exceeds 2000 characters".into(),
+        ));
     }
     if let Some(ref val) = body.regulatory_reference
         && val.trim().len() > 2000
     {
-        return Err(AppError::Validation("regulatory_reference exceeds 2000 characters".into()));
+        return Err(AppError::Validation(
+            "regulatory_reference exceeds 2000 characters".into(),
+        ));
     }
     if let Some(ref val) = body.external_reference
         && val.trim().len() > 2000
     {
-        return Err(AppError::Validation("external_reference exceeds 2000 characters".into()));
+        return Err(AppError::Validation(
+            "external_reference exceeds 2000 characters".into(),
+        ));
     }
     // Update using COALESCE to only change provided fields
     let update_query = format!(
@@ -632,12 +648,10 @@ pub async fn amend_term(
     Path(term_id): Path<Uuid>,
 ) -> AppResult<(StatusCode, Json<GlossaryTerm>)> {
     // Verify the term exists and is ACCEPTED
-    let original = sqlx::query_as::<_, GlossaryTerm>(
-        &format!(
-            "SELECT {cols} FROM glossary_terms WHERE term_id = $1 AND deleted_at IS NULL",
-            cols = GLOSSARY_TERM_COLUMNS
-        ),
-    )
+    let original = sqlx::query_as::<_, GlossaryTerm>(&format!(
+        "SELECT {cols} FROM glossary_terms WHERE term_id = $1 AND deleted_at IS NULL",
+        cols = GLOSSARY_TERM_COLUMNS
+    ))
     .bind(term_id)
     .fetch_optional(&state.pool)
     .await?
@@ -843,12 +857,10 @@ pub async fn discard_amendment(
     Path(term_id): Path<Uuid>,
 ) -> AppResult<StatusCode> {
     // Fetch the term
-    let row = sqlx::query_as::<_, GlossaryTerm>(
-        &format!(
-            "SELECT {cols} FROM glossary_terms WHERE term_id = $1 AND deleted_at IS NULL",
-            cols = GLOSSARY_TERM_COLUMNS
-        ),
-    )
+    let row = sqlx::query_as::<_, GlossaryTerm>(&format!(
+        "SELECT {cols} FROM glossary_terms WHERE term_id = $1 AND deleted_at IS NULL",
+        cols = GLOSSARY_TERM_COLUMNS
+    ))
     .bind(term_id)
     .fetch_optional(&state.pool)
     .await?
@@ -888,13 +900,21 @@ pub async fn discard_amendment(
 
     // Delete junction data first (FK constraints)
     sqlx::query("DELETE FROM glossary_term_aliases WHERE term_id = $1")
-        .bind(term_id).execute(&state.pool).await?;
+        .bind(term_id)
+        .execute(&state.pool)
+        .await?;
     sqlx::query("DELETE FROM glossary_term_regulatory_tags WHERE term_id = $1")
-        .bind(term_id).execute(&state.pool).await?;
+        .bind(term_id)
+        .execute(&state.pool)
+        .await?;
     sqlx::query("DELETE FROM glossary_term_subject_areas WHERE term_id = $1")
-        .bind(term_id).execute(&state.pool).await?;
+        .bind(term_id)
+        .execute(&state.pool)
+        .await?;
     sqlx::query("DELETE FROM glossary_term_tags WHERE term_id = $1")
-        .bind(term_id).execute(&state.pool).await?;
+        .bind(term_id)
+        .execute(&state.pool)
+        .await?;
 
     // Delete workflow tasks and history, then the instance
     sqlx::query(
@@ -918,11 +938,15 @@ pub async fn discard_amendment(
     .await?;
 
     sqlx::query("DELETE FROM workflow_instances WHERE entity_id = $1")
-        .bind(term_id).execute(&state.pool).await?;
+        .bind(term_id)
+        .execute(&state.pool)
+        .await?;
 
     // Delete the amendment term itself
     sqlx::query("DELETE FROM glossary_terms WHERE term_id = $1")
-        .bind(term_id).execute(&state.pool).await?;
+        .bind(term_id)
+        .execute(&state.pool)
+        .await?;
 
     Ok(StatusCode::NO_CONTENT)
 }
@@ -940,9 +964,7 @@ pub async fn discard_amendment(
     security(("bearer_auth" = [])),
     tag = "glossary"
 )]
-pub async fn list_domains(
-    State(state): State<AppState>,
-) -> AppResult<Json<Vec<GlossaryDomain>>> {
+pub async fn list_domains(State(state): State<AppState>) -> AppResult<Json<Vec<GlossaryDomain>>> {
     let domains = sqlx::query_as::<_, GlossaryDomain>(
         r#"
         SELECT domain_id, domain_name, description, parent_domain_id
@@ -1315,13 +1337,12 @@ pub async fn detach_regulatory_tag(
     State(state): State<AppState>,
     Path((term_id, tag_id)): Path<(Uuid, Uuid)>,
 ) -> AppResult<StatusCode> {
-    let result = sqlx::query(
-        "DELETE FROM glossary_term_regulatory_tags WHERE term_id = $1 AND tag_id = $2",
-    )
-    .bind(term_id)
-    .bind(tag_id)
-    .execute(&state.pool)
-    .await?;
+    let result =
+        sqlx::query("DELETE FROM glossary_term_regulatory_tags WHERE term_id = $1 AND tag_id = $2")
+            .bind(term_id)
+            .bind(tag_id)
+            .execute(&state.pool)
+            .await?;
 
     if result.rows_affected() == 0 {
         return Err(AppError::NotFound(
@@ -1490,13 +1511,11 @@ pub async fn detach_tag(
     State(state): State<AppState>,
     Path((term_id, tag_id)): Path<(Uuid, Uuid)>,
 ) -> AppResult<StatusCode> {
-    let result = sqlx::query(
-        "DELETE FROM glossary_term_tags WHERE term_id = $1 AND tag_id = $2",
-    )
-    .bind(term_id)
-    .bind(tag_id)
-    .execute(&state.pool)
-    .await?;
+    let result = sqlx::query("DELETE FROM glossary_term_tags WHERE term_id = $1 AND tag_id = $2")
+        .bind(term_id)
+        .bind(tag_id)
+        .execute(&state.pool)
+        .await?;
 
     if result.rows_affected() == 0 {
         return Err(AppError::NotFound("tag attachment not found".into()));
@@ -1575,13 +1594,12 @@ pub async fn remove_alias(
     State(state): State<AppState>,
     Path((term_id, alias_id)): Path<(Uuid, Uuid)>,
 ) -> AppResult<StatusCode> {
-    let result = sqlx::query(
-        "DELETE FROM glossary_term_aliases WHERE term_id = $1 AND alias_id = $2",
-    )
-    .bind(term_id)
-    .bind(alias_id)
-    .execute(&state.pool)
-    .await?;
+    let result =
+        sqlx::query("DELETE FROM glossary_term_aliases WHERE term_id = $1 AND alias_id = $2")
+            .bind(term_id)
+            .bind(alias_id)
+            .execute(&state.pool)
+            .await?;
 
     if result.rows_affected() == 0 {
         return Err(AppError::NotFound("alias not found".into()));
@@ -1618,12 +1636,7 @@ pub async fn ai_enrich_term(
         entity_type: "glossary_term".to_string(),
         entity_id: term_id,
     };
-    let result = super::ai::enrich(
-        State(state),
-        Extension(claims),
-        Json(request),
-    )
-    .await?;
+    let result = super::ai::enrich(State(state), Extension(claims), Json(request)).await?;
     Ok(result)
 }
 
@@ -1644,9 +1657,7 @@ pub async fn ai_enrich_term(
     security(("bearer_auth" = [])),
     tag = "glossary"
 )]
-pub async fn get_stats(
-    State(state): State<AppState>,
-) -> AppResult<Json<DashboardStats>> {
+pub async fn get_stats(State(state): State<AppState>) -> AppResult<Json<DashboardStats>> {
     // Run all counts in a single query for efficiency
     let row = sqlx::query_as::<_, StatsRow>(
         r#"

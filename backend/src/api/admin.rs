@@ -1,12 +1,15 @@
-//! Admin panel API endpoints for system settings and lookup table management.
+//! Admin panel API endpoints for system settings, lookup table management,
+//! and API key management.
 //!
 //! All endpoints require the ADMIN role (SEC-001). Lookup table handlers use
 //! exhaustive `match` on table names — no dynamic SQL is constructed.
 
-use axum::extract::{Path, Query, State};
-use axum::http::StatusCode;
 use axum::Extension;
 use axum::Json;
+use axum::extract::{Path, Query, State};
+use axum::http::StatusCode;
+use chrono::{DateTime, Utc};
+use rand::Rng;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
@@ -14,8 +17,8 @@ use crate::auth::Claims;
 use crate::db::AppState;
 use crate::error::{AppError, AppResult};
 use crate::settings::{
-    self, mask_value, SystemSettingResponse, SystemSettingRow, TestConnectionResponse,
-    UpdateSettingRequest, UpdateSettingResponse,
+    self, SystemSettingResponse, SystemSettingRow, TestConnectionResponse, UpdateSettingRequest,
+    UpdateSettingResponse, mask_value,
 };
 
 // ---------------------------------------------------------------------------
@@ -164,10 +167,14 @@ pub async fn update_setting(
 
     // SEC-025: Input length validation
     if key.len() > 128 {
-        return Err(AppError::Validation("setting key exceeds 128 characters".into()));
+        return Err(AppError::Validation(
+            "setting key exceeds 128 characters".into(),
+        ));
     }
     if body.value.len() > 4000 {
-        return Err(AppError::Validation("setting value exceeds 4000 characters".into()));
+        return Err(AppError::Validation(
+            "setting value exceeds 4000 characters".into(),
+        ));
     }
 
     let secret = encryption_secret(&state);
@@ -370,9 +377,7 @@ async fn test_graph_connection(
         .build()
         .map_err(|e| AppError::Internal(anyhow::anyhow!("http client error: {e}")))?;
 
-    let token_url = format!(
-        "https://login.microsoftonline.com/{tenant_id}/oauth2/v2.0/token"
-    );
+    let token_url = format!("https://login.microsoftonline.com/{tenant_id}/oauth2/v2.0/token");
 
     let response = client
         .post(&token_url)
@@ -1206,9 +1211,8 @@ pub async fn update_lookup(
         _ => return Err(AppError::NotFound(format!("unknown lookup table: {table_name}"))),
     };
 
-    let row = row.ok_or_else(|| {
-        AppError::NotFound(format!("row not found in {table_name}: {id}"))
-    })?;
+    let row =
+        row.ok_or_else(|| AppError::NotFound(format!("row not found in {table_name}: {id}")))?;
 
     Ok(Json(LookupRow {
         id: row.id,
@@ -1260,55 +1264,85 @@ pub async fn delete_lookup(
 
     // SEC-001: exhaustive match for the actual delete
     let rows_affected = match table_name.as_str() {
-        "domains" => {
-            sqlx::query("DELETE FROM glossary_domains WHERE domain_id = $1")
-                .bind(id).execute(&state.pool).await?.rows_affected()
-        }
-        "categories" => {
-            sqlx::query("DELETE FROM glossary_categories WHERE category_id = $1")
-                .bind(id).execute(&state.pool).await?.rows_affected()
-        }
-        "term-types" => {
-            sqlx::query("DELETE FROM glossary_term_types WHERE term_type_id = $1")
-                .bind(id).execute(&state.pool).await?.rows_affected()
-        }
+        "domains" => sqlx::query("DELETE FROM glossary_domains WHERE domain_id = $1")
+            .bind(id)
+            .execute(&state.pool)
+            .await?
+            .rows_affected(),
+        "categories" => sqlx::query("DELETE FROM glossary_categories WHERE category_id = $1")
+            .bind(id)
+            .execute(&state.pool)
+            .await?
+            .rows_affected(),
+        "term-types" => sqlx::query("DELETE FROM glossary_term_types WHERE term_type_id = $1")
+            .bind(id)
+            .execute(&state.pool)
+            .await?
+            .rows_affected(),
         "classifications" => {
             sqlx::query("DELETE FROM data_classifications WHERE classification_id = $1")
-                .bind(id).execute(&state.pool).await?.rows_affected()
+                .bind(id)
+                .execute(&state.pool)
+                .await?
+                .rows_affected()
         }
         "units-of-measure" => {
             sqlx::query("DELETE FROM glossary_units_of_measure WHERE unit_id = $1")
-                .bind(id).execute(&state.pool).await?.rows_affected()
+                .bind(id)
+                .execute(&state.pool)
+                .await?
+                .rows_affected()
         }
         "review-frequencies" => {
             sqlx::query("DELETE FROM glossary_review_frequencies WHERE frequency_id = $1")
-                .bind(id).execute(&state.pool).await?.rows_affected()
+                .bind(id)
+                .execute(&state.pool)
+                .await?
+                .rows_affected()
         }
         "confidence-levels" => {
             sqlx::query("DELETE FROM glossary_confidence_levels WHERE confidence_id = $1")
-                .bind(id).execute(&state.pool).await?.rows_affected()
+                .bind(id)
+                .execute(&state.pool)
+                .await?
+                .rows_affected()
         }
         "visibility-levels" => {
             sqlx::query("DELETE FROM glossary_visibility_levels WHERE visibility_id = $1")
-                .bind(id).execute(&state.pool).await?.rows_affected()
+                .bind(id)
+                .execute(&state.pool)
+                .await?
+                .rows_affected()
         }
-        "languages" => {
-            sqlx::query("DELETE FROM glossary_languages WHERE language_id = $1")
-                .bind(id).execute(&state.pool).await?.rows_affected()
-        }
-        "regulatory-tags" => {
-            sqlx::query("DELETE FROM glossary_regulatory_tags WHERE tag_id = $1")
-                .bind(id).execute(&state.pool).await?.rows_affected()
-        }
+        "languages" => sqlx::query("DELETE FROM glossary_languages WHERE language_id = $1")
+            .bind(id)
+            .execute(&state.pool)
+            .await?
+            .rows_affected(),
+        "regulatory-tags" => sqlx::query("DELETE FROM glossary_regulatory_tags WHERE tag_id = $1")
+            .bind(id)
+            .execute(&state.pool)
+            .await?
+            .rows_affected(),
         "subject-areas" => {
             sqlx::query("DELETE FROM glossary_subject_areas WHERE subject_area_id = $1")
-                .bind(id).execute(&state.pool).await?.rows_affected()
+                .bind(id)
+                .execute(&state.pool)
+                .await?
+                .rows_affected()
         }
         "organisational-units" => {
             sqlx::query("DELETE FROM organisational_units WHERE unit_id = $1")
-                .bind(id).execute(&state.pool).await?.rows_affected()
+                .bind(id)
+                .execute(&state.pool)
+                .await?
+                .rows_affected()
         }
-        _ => return Err(AppError::NotFound(format!("unknown lookup table: {table_name}"))),
+        _ => {
+            return Err(AppError::NotFound(format!(
+                "unknown lookup table: {table_name}"
+            )));
+        }
     };
 
     if rows_affected == 0 {
@@ -1437,6 +1471,270 @@ async fn get_usage_count(pool: &sqlx::PgPool, table_name: &str, id: Uuid) -> App
 // ---------------------------------------------------------------------------
 
 fn encryption_secret(state: &AppState) -> String {
-    std::env::var("SETTINGS_ENCRYPTION_KEY")
-        .unwrap_or_else(|_| state.config.jwt_secret.clone())
+    std::env::var("SETTINGS_ENCRYPTION_KEY").unwrap_or_else(|_| state.config.jwt_secret.clone())
+}
+
+// ===========================================================================
+// API Key Management Endpoints
+// ===========================================================================
+
+// ---------------------------------------------------------------------------
+// Request / Response types
+// ---------------------------------------------------------------------------
+
+/// Request body for creating a new API key.
+#[derive(Debug, Clone, Deserialize, utoipa::ToSchema)]
+pub struct CreateApiKeyRequest {
+    pub key_name: String,
+    pub scopes: Vec<String>,
+    pub expires_at: Option<DateTime<Utc>>,
+}
+
+/// Response returned when an API key is created.
+/// Contains the full key which is shown ONCE and never stored.
+#[derive(Debug, Clone, Serialize, utoipa::ToSchema)]
+pub struct CreateApiKeyResponse {
+    pub key_id: Uuid,
+    pub key_name: String,
+    /// The full API key — shown ONCE. Not stored in the database.
+    pub api_key: String,
+    pub key_prefix: String,
+    pub scopes: Vec<String>,
+    pub expires_at: Option<DateTime<Utc>>,
+}
+
+/// A single API key row for listing (no secret material).
+#[derive(Debug, Clone, Serialize, utoipa::ToSchema)]
+pub struct ApiKeyListItem {
+    pub key_id: Uuid,
+    pub key_name: String,
+    pub key_prefix: String,
+    pub scopes: Vec<String>,
+    pub is_active: bool,
+    pub last_used_at: Option<DateTime<Utc>>,
+    pub created_at: DateTime<Utc>,
+    pub expires_at: Option<DateTime<Utc>>,
+    pub created_by_name: Option<String>,
+}
+
+/// Response containing the list of API keys.
+#[derive(Debug, Clone, Serialize, utoipa::ToSchema)]
+pub struct ApiKeyListResponse {
+    pub api_keys: Vec<ApiKeyListItem>,
+}
+
+/// Internal row type for API key list query.
+#[derive(Debug, sqlx::FromRow)]
+struct ApiKeyRow {
+    key_id: Uuid,
+    key_name: String,
+    key_prefix: String,
+    scopes: Vec<String>,
+    is_active: bool,
+    last_used_at: Option<DateTime<Utc>>,
+    created_at: DateTime<Utc>,
+    expires_at: Option<DateTime<Utc>>,
+    created_by_name: Option<String>,
+}
+
+// ---------------------------------------------------------------------------
+// create_api_key — POST /api/v1/admin/api-keys
+// ---------------------------------------------------------------------------
+
+/// Generate a new API key for service account authentication.
+///
+/// Generates a random 48-character key with "mdt_" prefix. The full key is
+/// returned ONCE in the response. Only the bcrypt hash and prefix are stored.
+/// Requires ADMIN role.
+#[utoipa::path(
+    post,
+    path = "/api/v1/admin/api-keys",
+    request_body = CreateApiKeyRequest,
+    responses(
+        (status = 200, description = "API key created", body = CreateApiKeyResponse),
+        (status = 422, description = "Validation error")
+    ),
+    security(("bearer_auth" = [])),
+    tag = "admin"
+)]
+pub async fn create_api_key(
+    State(state): State<AppState>,
+    Extension(claims): Extension<Claims>,
+    Json(body): Json<CreateApiKeyRequest>,
+) -> AppResult<Json<CreateApiKeyResponse>> {
+    require_admin(&claims)?;
+
+    // Validate inputs
+    let key_name = body.key_name.trim().to_string();
+    if key_name.is_empty() {
+        return Err(AppError::Validation("key_name is required".into()));
+    }
+    if key_name.len() > 128 {
+        return Err(AppError::Validation(
+            "key_name exceeds 128 characters".into(),
+        ));
+    }
+    if body.scopes.is_empty() {
+        return Err(AppError::Validation(
+            "at least one scope is required".into(),
+        ));
+    }
+
+    // Validate scope values
+    let valid_scopes = [
+        "ingest:technical",
+        "ingest:elements",
+        "ingest:link-columns",
+        "read:all",
+        "read:technical",
+    ];
+    for scope in &body.scopes {
+        if !valid_scopes.contains(&scope.as_str()) {
+            return Err(AppError::Validation(format!(
+                "invalid scope '{}'. Valid scopes: {}",
+                scope,
+                valid_scopes.join(", ")
+            )));
+        }
+    }
+
+    // Generate random 48-char key with "mdt_" prefix.
+    // Scope the RNG so it's dropped before any .await (ThreadRng is !Send).
+    let (full_key, key_prefix) = {
+        let charset: &[u8] = b"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+        let mut rng = rand::rng();
+        let random_part: String = (0..48)
+            .map(|_| {
+                let idx = rng.random_range(0..charset.len());
+                charset[idx] as char
+            })
+            .collect();
+        let full_key = format!("mdt_{random_part}");
+        let key_prefix = full_key[..8].to_string();
+        (full_key, key_prefix)
+    };
+
+    // Hash with pgcrypto bcrypt
+    let key_hash: String = sqlx::query_scalar("SELECT crypt($1, gen_salt('bf', 10))")
+        .bind(&full_key)
+        .fetch_one(&state.pool)
+        .await
+        .map_err(|e| AppError::Internal(anyhow::anyhow!("failed to hash API key: {e}")))?;
+
+    // Insert into api_keys
+    let key_id = sqlx::query_scalar::<_, Uuid>(
+        r#"
+        INSERT INTO api_keys (key_name, key_hash, key_prefix, scopes, created_by, expires_at)
+        VALUES ($1, $2, $3, $4, $5, $6)
+        RETURNING key_id
+        "#,
+    )
+    .bind(&key_name)
+    .bind(&key_hash)
+    .bind(&key_prefix)
+    .bind(&body.scopes)
+    .bind(claims.sub)
+    .bind(body.expires_at)
+    .fetch_one(&state.pool)
+    .await?;
+
+    Ok(Json(CreateApiKeyResponse {
+        key_id,
+        key_name,
+        api_key: full_key,
+        key_prefix,
+        scopes: body.scopes,
+        expires_at: body.expires_at,
+    }))
+}
+
+// ---------------------------------------------------------------------------
+// list_api_keys — GET /api/v1/admin/api-keys
+// ---------------------------------------------------------------------------
+
+/// List all API keys with metadata (no secret material).
+/// Requires ADMIN role.
+#[utoipa::path(
+    get,
+    path = "/api/v1/admin/api-keys",
+    responses(
+        (status = 200, description = "List of API keys", body = ApiKeyListResponse)
+    ),
+    security(("bearer_auth" = [])),
+    tag = "admin"
+)]
+pub async fn list_api_keys(
+    State(state): State<AppState>,
+    Extension(claims): Extension<Claims>,
+) -> AppResult<Json<ApiKeyListResponse>> {
+    require_admin(&claims)?;
+
+    let rows = sqlx::query_as::<_, ApiKeyRow>(
+        r#"
+        SELECT ak.key_id, ak.key_name, ak.key_prefix, ak.scopes, ak.is_active,
+               ak.last_used_at, ak.created_at, ak.expires_at,
+               u.display_name AS created_by_name
+        FROM api_keys ak
+        LEFT JOIN users u ON u.user_id = ak.created_by
+        ORDER BY ak.created_at DESC
+        "#,
+    )
+    .fetch_all(&state.pool)
+    .await?;
+
+    let api_keys = rows
+        .into_iter()
+        .map(|r| ApiKeyListItem {
+            key_id: r.key_id,
+            key_name: r.key_name,
+            key_prefix: r.key_prefix,
+            scopes: r.scopes,
+            is_active: r.is_active,
+            last_used_at: r.last_used_at,
+            created_at: r.created_at,
+            expires_at: r.expires_at,
+            created_by_name: r.created_by_name,
+        })
+        .collect();
+
+    Ok(Json(ApiKeyListResponse { api_keys }))
+}
+
+// ---------------------------------------------------------------------------
+// deactivate_api_key — DELETE /api/v1/admin/api-keys/{key_id}
+// ---------------------------------------------------------------------------
+
+/// Deactivate an API key (soft delete).
+/// Requires ADMIN role.
+#[utoipa::path(
+    delete,
+    path = "/api/v1/admin/api-keys/{key_id}",
+    params(("key_id" = Uuid, Path, description = "API key ID")),
+    responses(
+        (status = 204, description = "API key deactivated"),
+        (status = 404, description = "API key not found")
+    ),
+    security(("bearer_auth" = [])),
+    tag = "admin"
+)]
+pub async fn deactivate_api_key(
+    State(state): State<AppState>,
+    Extension(claims): Extension<Claims>,
+    Path(key_id): Path<Uuid>,
+) -> AppResult<StatusCode> {
+    require_admin(&claims)?;
+
+    let rows_affected = sqlx::query(
+        "UPDATE api_keys SET is_active = FALSE, updated_at = CURRENT_TIMESTAMP WHERE key_id = $1",
+    )
+    .bind(key_id)
+    .execute(&state.pool)
+    .await?
+    .rows_affected();
+
+    if rows_affected == 0 {
+        return Err(AppError::NotFound(format!("API key not found: {key_id}")));
+    }
+
+    Ok(StatusCode::NO_CONTENT)
 }

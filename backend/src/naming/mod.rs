@@ -35,7 +35,11 @@ pub struct NamingViolation {
 }
 
 /// Validate a name against the appropriate naming standards
-pub fn validate_name(name: &str, entity_type: &str, standards: &[NamingStandard]) -> NamingValidationResult {
+pub fn validate_name(
+    name: &str,
+    entity_type: &str,
+    standards: &[NamingStandard],
+) -> NamingValidationResult {
     let mut violations = Vec::new();
 
     for standard in standards {

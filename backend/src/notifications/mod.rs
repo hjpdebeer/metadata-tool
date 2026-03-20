@@ -56,23 +56,19 @@ pub async fn queue_notification(
     .fetch_optional(pool)
     .await?
     .ok_or_else(|| {
-        AppError::NotFound(format!(
-            "notification template not found: {template_code}"
-        ))
+        AppError::NotFound(format!("notification template not found: {template_code}"))
     })?;
 
     // Look up recipient email
-    let recipient = sqlx::query_as::<_, RecipientRow>(
-        "SELECT email FROM users WHERE user_id = $1",
-    )
-    .bind(recipient_user_id)
-    .fetch_optional(pool)
-    .await?
-    .ok_or_else(|| {
-        AppError::NotFound(format!(
-            "notification recipient not found: {recipient_user_id}"
-        ))
-    })?;
+    let recipient = sqlx::query_as::<_, RecipientRow>("SELECT email FROM users WHERE user_id = $1")
+        .bind(recipient_user_id)
+        .fetch_optional(pool)
+        .await?
+        .ok_or_else(|| {
+            AppError::NotFound(format!(
+                "notification recipient not found: {recipient_user_id}"
+            ))
+        })?;
 
     // Render template by replacing {{var}} placeholders
     let subject = render_template(&template.subject, variables);
@@ -121,13 +117,12 @@ pub async fn queue_workflow_task_notification(
     due_date: Option<&str>,
 ) -> AppResult<()> {
     // Look up assignee name
-    let assignee_name = sqlx::query_scalar::<_, String>(
-        "SELECT display_name FROM users WHERE user_id = $1",
-    )
-    .bind(assigned_to_user_id)
-    .fetch_optional(pool)
-    .await?
-    .unwrap_or_else(|| "(unknown)".to_string());
+    let assignee_name =
+        sqlx::query_scalar::<_, String>("SELECT display_name FROM users WHERE user_id = $1")
+            .bind(assigned_to_user_id)
+            .fetch_optional(pool)
+            .await?
+            .unwrap_or_else(|| "(unknown)".to_string());
 
     let mut variables = HashMap::new();
     variables.insert("assignee_name".to_string(), assignee_name.clone());
@@ -153,9 +148,8 @@ pub async fn queue_workflow_task_notification(
 
     // Also create an in-app notification
     let title = format!("New task: Review {entity_type} \"{entity_name}\"");
-    let message = format!(
-        "A new review task has been assigned to you for {entity_type} \"{entity_name}\"."
-    );
+    let message =
+        format!("A new review task has been assigned to you for {entity_type} \"{entity_name}\".");
 
     create_in_app_notification(
         pool,
@@ -187,13 +181,12 @@ pub async fn queue_workflow_state_changed_notification(
     comments: Option<&str>,
 ) -> AppResult<()> {
     // Look up initiator name
-    let owner_name = sqlx::query_scalar::<_, String>(
-        "SELECT display_name FROM users WHERE user_id = $1",
-    )
-    .bind(initiator_user_id)
-    .fetch_optional(pool)
-    .await?
-    .unwrap_or_else(|| "(unknown)".to_string());
+    let owner_name =
+        sqlx::query_scalar::<_, String>("SELECT display_name FROM users WHERE user_id = $1")
+            .bind(initiator_user_id)
+            .fetch_optional(pool)
+            .await?
+            .unwrap_or_else(|| "(unknown)".to_string());
 
     let mut variables = HashMap::new();
     variables.insert("owner_name".to_string(), owner_name.clone());
@@ -201,10 +194,7 @@ pub async fn queue_workflow_state_changed_notification(
     variables.insert("entity_name".to_string(), entity_name.to_string());
     variables.insert("old_state".to_string(), old_state.to_string());
     variables.insert("new_state".to_string(), new_state.to_string());
-    variables.insert(
-        "comments".to_string(),
-        comments.unwrap_or("").to_string(),
-    );
+    variables.insert("comments".to_string(), comments.unwrap_or("").to_string());
     variables.insert("entity_url".to_string(), "/workflow".to_string());
 
     // Queue email notification

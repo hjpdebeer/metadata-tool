@@ -7,12 +7,12 @@
 //! No AI enrichment is triggered on bulk-uploaded terms (explicit requirement).
 //! Each row is processed independently — partial success is supported.
 
+use axum::Extension;
 use axum::body::Body;
 use axum::extract::{Multipart, State};
-use axum::http::{header, StatusCode};
+use axum::http::{StatusCode, header};
 use axum::response::Response;
-use axum::Extension;
-use calamine::{open_workbook_from_rs, Data, Reader, Xlsx};
+use calamine::{Data, Reader, Xlsx, open_workbook_from_rs};
 use rust_xlsxwriter::{DataValidation, Format, FormatAlign, FormatBorder, Formula, Workbook};
 use sqlx::PgPool;
 use std::io::Cursor;
@@ -31,74 +31,254 @@ const MAX_ROWS: usize = 1000;
 
 /// Column headers in the Terms sheet (A-AF = 32 columns).
 const TEMPLATE_HEADERS: &[&str] = &[
-    "Term Name",             // A  (0)
-    "Definition",            // B  (1)
-    "Definition Notes",      // C  (2)
-    "Counter-Examples",      // D  (3)
-    "Formula",               // E  (4)
-    "Abbreviation",          // F  (5)
-    "Domain",                // G  (6)
-    "Category",              // H  (7)
-    "Data Classification",   // I  (8)
-    "Term Type",             // J  (9)
-    "Unit of Measure",       // K  (10)
-    "Review Frequency",      // L  (11)
-    "Visibility",            // M  (12)
-    "Language",              // N  (13)
-    "Business Term Owner",   // O  (14)
-    "Data Steward",          // P  (15)
-    "Data Domain Owner",     // Q  (16)
-    "Approver",              // R  (17)
-    "Organisational Unit",   // S  (18)
-    "Parent Term",           // T  (19)
-    "Source Reference",      // U  (20)
-    "Regulatory Reference",  // V  (21)
-    "External Reference",    // W  (22)
-    "Business Rules",        // X  (23)
-    "Examples",              // Y  (24)
-    "Used in Reports",       // Z  (25)
-    "Used in Policies",      // AA (26)
-    "Regulatory Reporting",  // AB (27)
-    "CBT Flag",              // AC (28)
-    "Regulatory Tags",       // AD (29)
-    "Subject Areas",         // AE (30)
-    "Tags",                  // AF (31)
+    "Term Name",            // A  (0)
+    "Definition",           // B  (1)
+    "Definition Notes",     // C  (2)
+    "Counter-Examples",     // D  (3)
+    "Formula",              // E  (4)
+    "Abbreviation",         // F  (5)
+    "Domain",               // G  (6)
+    "Category",             // H  (7)
+    "Data Classification",  // I  (8)
+    "Term Type",            // J  (9)
+    "Unit of Measure",      // K  (10)
+    "Review Frequency",     // L  (11)
+    "Visibility",           // M  (12)
+    "Language",             // N  (13)
+    "Business Term Owner",  // O  (14)
+    "Data Steward",         // P  (15)
+    "Data Domain Owner",    // Q  (16)
+    "Approver",             // R  (17)
+    "Organisational Unit",  // S  (18)
+    "Parent Term",          // T  (19)
+    "Source Reference",     // U  (20)
+    "Regulatory Reference", // V  (21)
+    "External Reference",   // W  (22)
+    "Business Rules",       // X  (23)
+    "Examples",             // Y  (24)
+    "Used in Reports",      // Z  (25)
+    "Used in Policies",     // AA (26)
+    "Regulatory Reporting", // AB (27)
+    "CBT Flag",             // AC (28)
+    "Regulatory Tags",      // AD (29)
+    "Subject Areas",        // AE (30)
+    "Tags",                 // AF (31)
 ];
 
 /// Instructions for each column (field, description, mandatory, max_length, notes).
 const INSTRUCTIONS: &[(&str, &str, &str, &str, &str)] = &[
-    ("Term Name",            "The official name of the business term",                     "Yes", "256",  "Must be unique"),
-    ("Definition",           "Clear, unambiguous definition of the term",                  "Yes", "4000", "Plain text only"),
-    ("Definition Notes",     "Clarifying notes about the definition",                      "No",  "4000", ""),
-    ("Counter-Examples",     "What this term is NOT — helps clarify boundaries",           "No",  "4000", ""),
-    ("Formula",              "Calculation formula for KPIs/metrics",                        "No",  "2000", ""),
-    ("Abbreviation",         "Short form or acronym",                                      "No",  "50",   ""),
-    ("Domain",               "Business domain the term belongs to",                        "No",  "",     "Select from dropdown"),
-    ("Category",             "Classification category for the term",                       "No",  "",     "Select from dropdown"),
-    ("Data Classification",  "Security classification level",                              "No",  "",     "Select from dropdown"),
-    ("Term Type",            "Type of business term (KPI, concept, etc.)",                 "No",  "",     "Select from dropdown"),
-    ("Unit of Measure",      "Measurement unit if applicable",                             "No",  "",     "Select from dropdown"),
-    ("Review Frequency",     "How often this term should be reviewed",                     "No",  "",     "Select from dropdown"),
-    ("Visibility",           "Who can see this term",                                      "No",  "",     "Select from dropdown"),
-    ("Language",             "Language of the definition",                                  "No",  "",     "Select from dropdown; default: English"),
-    ("Business Term Owner",  "Email address of the business term owner",                   "Yes", "",     "Must exist in the system"),
-    ("Data Steward",         "Email address of the data steward",                          "Yes", "",     "Must exist in the system"),
-    ("Data Domain Owner",    "Email address of the data domain owner",                     "Yes", "",     "Must exist in the system"),
-    ("Approver",             "Email address of the approver",                              "Yes", "",     "Must exist in the system"),
-    ("Organisational Unit",  "Responsible organisational unit",                            "Yes", "",     "Select from dropdown"),
-    ("Parent Term",          "Name of the parent term (if hierarchical)",                  "No",  "",     "Must match existing term name"),
-    ("Source Reference",     "External source or origin of the definition",                "No",  "2000", ""),
-    ("Regulatory Reference", "Regulation or standard citation",                            "No",  "2000", ""),
-    ("External Reference",   "URL or external document reference",                         "No",  "2000", ""),
-    ("Business Rules",       "Business context and rules related to this term",            "No",  "4000", ""),
-    ("Examples",             "Usage examples for the term",                                "No",  "4000", ""),
-    ("Used in Reports",      "Names of reports that use this term",                        "No",  "2000", ""),
-    ("Used in Policies",     "Policy documents referencing this term",                     "No",  "2000", ""),
-    ("Regulatory Reporting", "Regulatory reporting usage of this term",                    "No",  "2000", ""),
-    ("CBT Flag",             "Whether this is a Critical Business Term",                   "No",  "",     "TRUE or FALSE"),
-    ("Regulatory Tags",      "Applicable regulatory frameworks",                           "No",  "",     "Comma-separated from dropdown"),
-    ("Subject Areas",        "Business subject areas",                                     "No",  "",     "Comma-separated from dropdown"),
-    ("Tags",                 "Freeform keywords/tags",                                     "No",  "",     "Comma-separated"),
+    (
+        "Term Name",
+        "The official name of the business term",
+        "Yes",
+        "256",
+        "Must be unique",
+    ),
+    (
+        "Definition",
+        "Clear, unambiguous definition of the term",
+        "Yes",
+        "4000",
+        "Plain text only",
+    ),
+    (
+        "Definition Notes",
+        "Clarifying notes about the definition",
+        "No",
+        "4000",
+        "",
+    ),
+    (
+        "Counter-Examples",
+        "What this term is NOT — helps clarify boundaries",
+        "No",
+        "4000",
+        "",
+    ),
+    (
+        "Formula",
+        "Calculation formula for KPIs/metrics",
+        "No",
+        "2000",
+        "",
+    ),
+    ("Abbreviation", "Short form or acronym", "No", "50", ""),
+    (
+        "Domain",
+        "Business domain the term belongs to",
+        "No",
+        "",
+        "Select from dropdown",
+    ),
+    (
+        "Category",
+        "Classification category for the term",
+        "No",
+        "",
+        "Select from dropdown",
+    ),
+    (
+        "Data Classification",
+        "Security classification level",
+        "No",
+        "",
+        "Select from dropdown",
+    ),
+    (
+        "Term Type",
+        "Type of business term (KPI, concept, etc.)",
+        "No",
+        "",
+        "Select from dropdown",
+    ),
+    (
+        "Unit of Measure",
+        "Measurement unit if applicable",
+        "No",
+        "",
+        "Select from dropdown",
+    ),
+    (
+        "Review Frequency",
+        "How often this term should be reviewed",
+        "No",
+        "",
+        "Select from dropdown",
+    ),
+    (
+        "Visibility",
+        "Who can see this term",
+        "No",
+        "",
+        "Select from dropdown",
+    ),
+    (
+        "Language",
+        "Language of the definition",
+        "No",
+        "",
+        "Select from dropdown; default: English",
+    ),
+    (
+        "Business Term Owner",
+        "Email address of the business term owner",
+        "Yes",
+        "",
+        "Must exist in the system",
+    ),
+    (
+        "Data Steward",
+        "Email address of the data steward",
+        "Yes",
+        "",
+        "Must exist in the system",
+    ),
+    (
+        "Data Domain Owner",
+        "Email address of the data domain owner",
+        "Yes",
+        "",
+        "Must exist in the system",
+    ),
+    (
+        "Approver",
+        "Email address of the approver",
+        "Yes",
+        "",
+        "Must exist in the system",
+    ),
+    (
+        "Organisational Unit",
+        "Responsible organisational unit",
+        "Yes",
+        "",
+        "Select from dropdown",
+    ),
+    (
+        "Parent Term",
+        "Name of the parent term (if hierarchical)",
+        "No",
+        "",
+        "Must match existing term name",
+    ),
+    (
+        "Source Reference",
+        "External source or origin of the definition",
+        "No",
+        "2000",
+        "",
+    ),
+    (
+        "Regulatory Reference",
+        "Regulation or standard citation",
+        "No",
+        "2000",
+        "",
+    ),
+    (
+        "External Reference",
+        "URL or external document reference",
+        "No",
+        "2000",
+        "",
+    ),
+    (
+        "Business Rules",
+        "Business context and rules related to this term",
+        "No",
+        "4000",
+        "",
+    ),
+    ("Examples", "Usage examples for the term", "No", "4000", ""),
+    (
+        "Used in Reports",
+        "Names of reports that use this term",
+        "No",
+        "2000",
+        "",
+    ),
+    (
+        "Used in Policies",
+        "Policy documents referencing this term",
+        "No",
+        "2000",
+        "",
+    ),
+    (
+        "Regulatory Reporting",
+        "Regulatory reporting usage of this term",
+        "No",
+        "2000",
+        "",
+    ),
+    (
+        "CBT Flag",
+        "Whether this is a Critical Business Term",
+        "No",
+        "",
+        "TRUE or FALSE",
+    ),
+    (
+        "Regulatory Tags",
+        "Applicable regulatory frameworks",
+        "No",
+        "",
+        "Comma-separated from dropdown",
+    ),
+    (
+        "Subject Areas",
+        "Business subject areas",
+        "No",
+        "",
+        "Comma-separated from dropdown",
+    ),
+    (
+        "Tags",
+        "Freeform keywords/tags",
+        "No",
+        "",
+        "Comma-separated",
+    ),
 ];
 
 // ---------------------------------------------------------------------------
@@ -119,9 +299,7 @@ const INSTRUCTIONS: &[(&str, &str, &str, &str, &str)] = &[
     security(("bearer_auth" = [])),
     tag = "glossary"
 )]
-pub async fn download_template(
-    State(state): State<AppState>,
-) -> AppResult<Response> {
+pub async fn download_template(State(state): State<AppState>) -> AppResult<Response> {
     let bytes = generate_template(&state.pool).await?;
 
     Response::builder()
@@ -155,18 +333,54 @@ async fn generate_template(pool: &PgPool) -> AppResult<Vec<u8>> {
         reg_tags,
         subject_areas,
     ) = tokio::try_join!(
-        fetch_names(pool, "SELECT domain_name FROM glossary_domains ORDER BY domain_name"),
-        fetch_names(pool, "SELECT category_name FROM glossary_categories ORDER BY category_name"),
-        fetch_names(pool, "SELECT classification_name FROM data_classifications ORDER BY classification_name"),
-        fetch_names(pool, "SELECT type_name FROM glossary_term_types ORDER BY display_order"),
-        fetch_names(pool, "SELECT unit_name FROM glossary_units_of_measure ORDER BY display_order"),
-        fetch_names(pool, "SELECT frequency_name FROM glossary_review_frequencies ORDER BY display_order"),
-        fetch_names(pool, "SELECT visibility_name FROM glossary_visibility_levels ORDER BY display_order"),
-        fetch_names(pool, "SELECT language_name FROM glossary_languages ORDER BY language_name"),
-        fetch_names(pool, "SELECT unit_name FROM organisational_units ORDER BY display_order"),
-        fetch_names(pool, "SELECT email FROM users WHERE is_active = TRUE AND deleted_at IS NULL ORDER BY display_name"),
-        fetch_names(pool, "SELECT tag_name FROM glossary_regulatory_tags ORDER BY display_order"),
-        fetch_names(pool, "SELECT area_name FROM glossary_subject_areas ORDER BY display_order"),
+        fetch_names(
+            pool,
+            "SELECT domain_name FROM glossary_domains ORDER BY domain_name"
+        ),
+        fetch_names(
+            pool,
+            "SELECT category_name FROM glossary_categories ORDER BY category_name"
+        ),
+        fetch_names(
+            pool,
+            "SELECT classification_name FROM data_classifications ORDER BY classification_name"
+        ),
+        fetch_names(
+            pool,
+            "SELECT type_name FROM glossary_term_types ORDER BY display_order"
+        ),
+        fetch_names(
+            pool,
+            "SELECT unit_name FROM glossary_units_of_measure ORDER BY display_order"
+        ),
+        fetch_names(
+            pool,
+            "SELECT frequency_name FROM glossary_review_frequencies ORDER BY display_order"
+        ),
+        fetch_names(
+            pool,
+            "SELECT visibility_name FROM glossary_visibility_levels ORDER BY display_order"
+        ),
+        fetch_names(
+            pool,
+            "SELECT language_name FROM glossary_languages ORDER BY language_name"
+        ),
+        fetch_names(
+            pool,
+            "SELECT unit_name FROM organisational_units ORDER BY display_order"
+        ),
+        fetch_names(
+            pool,
+            "SELECT email FROM users WHERE is_active = TRUE AND deleted_at IS NULL ORDER BY display_name"
+        ),
+        fetch_names(
+            pool,
+            "SELECT tag_name FROM glossary_regulatory_tags ORDER BY display_order"
+        ),
+        fetch_names(
+            pool,
+            "SELECT area_name FROM glossary_subject_areas ORDER BY display_order"
+        ),
     )?;
 
     let mut workbook = Workbook::new();
@@ -203,35 +417,35 @@ async fn generate_template(pool: &PgPool) -> AppResult<Vec<u8>> {
 
     // Each lookup list with its name
     let lookup_lists: Vec<(&str, &[String])> = vec![
-        ("Domains", &domains),             // 0
-        ("Categories", &categories),       // 1
-        ("Classifications", &classifications), // 2
-        ("TermTypes", &term_types),        // 3
-        ("UnitsOfMeasure", &units),        // 4
-        ("ReviewFrequencies", &frequencies), // 5
+        ("Domains", &domains),                    // 0
+        ("Categories", &categories),              // 1
+        ("Classifications", &classifications),    // 2
+        ("TermTypes", &term_types),               // 3
+        ("UnitsOfMeasure", &units),               // 4
+        ("ReviewFrequencies", &frequencies),      // 5
         ("VisibilityLevels", &visibility_levels), // 6
-        ("Languages", &languages),         // 7
-        ("UserEmails", &user_emails),      // 8
-        ("OrganisationalUnits", &org_units), // 9
-        ("RegulatoryTags", &reg_tags),     // 10
-        ("SubjectAreas", &subject_areas),  // 11
+        ("Languages", &languages),                // 7
+        ("UserEmails", &user_emails),             // 8
+        ("OrganisationalUnits", &org_units),      // 9
+        ("RegulatoryTags", &reg_tags),            // 10
+        ("SubjectAreas", &subject_areas),         // 11
     ];
 
     // Dropdown column mappings: (Terms column index, lookup list index)
     let dropdown_mappings: &[(u16, usize)] = &[
-        (6, 0),   // Domain         -> Domains
-        (7, 1),   // Category       -> Categories
-        (8, 2),   // Classification -> Classifications
-        (9, 3),   // Term Type      -> TermTypes
-        (10, 4),  // Unit of Measure -> UnitsOfMeasure
-        (11, 5),  // Review Freq    -> ReviewFrequencies
-        (12, 6),  // Visibility     -> VisibilityLevels
-        (13, 7),  // Language       -> Languages
-        (14, 8),  // Owner email    -> UserEmails
-        (15, 8),  // Steward email  -> UserEmails
-        (16, 8),  // Domain Owner   -> UserEmails
-        (17, 8),  // Approver       -> UserEmails
-        (18, 9),  // Org Unit       -> OrganisationalUnits
+        (6, 0),  // Domain         -> Domains
+        (7, 1),  // Category       -> Categories
+        (8, 2),  // Classification -> Classifications
+        (9, 3),  // Term Type      -> TermTypes
+        (10, 4), // Unit of Measure -> UnitsOfMeasure
+        (11, 5), // Review Freq    -> ReviewFrequencies
+        (12, 6), // Visibility     -> VisibilityLevels
+        (13, 7), // Language       -> Languages
+        (14, 8), // Owner email    -> UserEmails
+        (15, 8), // Steward email  -> UserEmails
+        (16, 8), // Domain Owner   -> UserEmails
+        (17, 8), // Approver       -> UserEmails
+        (18, 9), // Org Unit       -> OrganisationalUnits
     ];
 
     // Pre-build the data validations (no borrow on workbook needed yet)
@@ -247,16 +461,21 @@ async fn generate_template(pool: &PgPool) -> AppResult<Vec<u8>> {
             );
             let validation = DataValidation::new()
                 .allow_list_formula(Formula::new(formula_str))
-                .set_error_title("Invalid value").map_err(xlsx_err)?
-                .set_error_message("Please select a value from the dropdown list.").map_err(xlsx_err)?;
+                .set_error_title("Invalid value")
+                .map_err(xlsx_err)?
+                .set_error_message("Please select a value from the dropdown list.")
+                .map_err(xlsx_err)?;
             validations.push((terms_col, validation));
         }
     }
 
     let cde_validation = DataValidation::new()
-        .allow_list_strings(&["TRUE", "FALSE"]).map_err(xlsx_err)?
-        .set_error_title("Invalid value").map_err(xlsx_err)?
-        .set_error_message("Please enter TRUE or FALSE.").map_err(xlsx_err)?;
+        .allow_list_strings(&["TRUE", "FALSE"])
+        .map_err(xlsx_err)?
+        .set_error_title("Invalid value")
+        .map_err(xlsx_err)?
+        .set_error_message("Please enter TRUE or FALSE.")
+        .map_err(xlsx_err)?;
 
     // ===== Sheet 1: Terms =====
     {
@@ -271,7 +490,9 @@ async fn generate_template(pool: &PgPool) -> AppResult<Vec<u8>> {
             } else {
                 &header_format
             };
-            terms_sheet.write_string_with_format(0, col, hdr, fmt).map_err(xlsx_err)?;
+            terms_sheet
+                .write_string_with_format(0, col, hdr, fmt)
+                .map_err(xlsx_err)?;
             terms_sheet.set_column_width(col, 20).map_err(xlsx_err)?;
         }
         terms_sheet.set_column_width(0, 30).map_err(xlsx_err)?;
@@ -314,7 +535,13 @@ async fn generate_template(pool: &PgPool) -> AppResult<Vec<u8>> {
         let instr_sheet = workbook.add_worksheet();
         instr_sheet.set_name("Instructions").map_err(xlsx_err)?;
 
-        let instr_headers = ["Field Name", "Description", "Mandatory", "Max Length", "Notes"];
+        let instr_headers = [
+            "Field Name",
+            "Description",
+            "Mandatory",
+            "Max Length",
+            "Notes",
+        ];
         for (col, &hdr) in instr_headers.iter().enumerate() {
             instr_sheet
                 .write_string_with_format(0, col as u16, hdr, &instruction_header_format)
@@ -326,12 +553,17 @@ async fn generate_template(pool: &PgPool) -> AppResult<Vec<u8>> {
         instr_sheet.set_column_width(3, 12).map_err(xlsx_err)?;
         instr_sheet.set_column_width(4, 40).map_err(xlsx_err)?;
 
-        for (row_idx, &(field, desc, mandatory, max_len, notes)) in INSTRUCTIONS.iter().enumerate() {
+        for (row_idx, &(field, desc, mandatory, max_len, notes)) in INSTRUCTIONS.iter().enumerate()
+        {
             let row = (row_idx + 1) as u32;
             instr_sheet.write_string(row, 0, field).map_err(xlsx_err)?;
             instr_sheet.write_string(row, 1, desc).map_err(xlsx_err)?;
-            instr_sheet.write_string(row, 2, mandatory).map_err(xlsx_err)?;
-            instr_sheet.write_string(row, 3, max_len).map_err(xlsx_err)?;
+            instr_sheet
+                .write_string(row, 2, mandatory)
+                .map_err(xlsx_err)?;
+            instr_sheet
+                .write_string(row, 3, max_len)
+                .map_err(xlsx_err)?;
             instr_sheet.write_string(row, 4, notes).map_err(xlsx_err)?;
         }
     }
@@ -418,9 +650,8 @@ pub async fn bulk_upload(
         }
     }
 
-    let file_bytes = file_bytes.ok_or_else(|| {
-        AppError::BadRequest("no file field found in multipart upload".into())
-    })?;
+    let file_bytes = file_bytes
+        .ok_or_else(|| AppError::BadRequest("no file field found in multipart upload".into()))?;
 
     // SEC-024: Validate content type and file extension before processing
     let valid_content_types = [
@@ -461,10 +692,7 @@ pub async fn bulk_upload(
         .worksheet_range("Terms")
         .map_err(|e| AppError::Validation(format!("cannot read 'Terms' sheet: {e}")))?;
 
-    let rows: Vec<Vec<Data>> = range
-        .rows()
-        .map(|r| r.to_vec())
-        .collect();
+    let rows: Vec<Vec<Data>> = range.rows().map(|r| r.to_vec()).collect();
 
     if rows.is_empty() {
         return Err(AppError::Validation("terms sheet is empty".into()));
@@ -540,13 +768,7 @@ pub async fn bulk_upload(
 
     // Process each row independently
     for (row_num, cols) in &data_rows {
-        let row_errors = process_row(
-            &ctx,
-            *row_num,
-            cols,
-            &mut created_term_ids,
-        )
-        .await;
+        let row_errors = process_row(&ctx, *row_num, cols, &mut created_term_ids).await;
 
         match row_errors {
             Ok(()) => {
@@ -563,10 +785,17 @@ pub async fn bulk_upload(
     for (_row_num, cols) in &data_rows {
         let parent_name = cols.get(20).and_then(|s| {
             let trimmed = s.trim();
-            if trimmed.is_empty() { None } else { Some(trimmed.to_string()) }
+            if trimmed.is_empty() {
+                None
+            } else {
+                Some(trimmed.to_string())
+            }
         });
         if let Some(ref name) = parent_name {
-            let term_name = cols.first().map(|s| s.trim().to_string()).unwrap_or_default();
+            let term_name = cols
+                .first()
+                .map(|s| s.trim().to_string())
+                .unwrap_or_default();
             if let Ok(Some(parent_id)) = sqlx::query_scalar::<_, Uuid>(
                 "SELECT term_id FROM glossary_terms WHERE term_name ILIKE $1 AND is_current_version = TRUE AND deleted_at IS NULL LIMIT 1",
             )
@@ -723,60 +952,120 @@ async fn process_row(
 
     // --- Resolve lookups ---
     let domain_id = resolve_optional_lookup(
-        ctx.pool, row_num, "Domain", &domain_val,
+        ctx.pool,
+        row_num,
+        "Domain",
+        &domain_val,
         "SELECT domain_id FROM glossary_domains WHERE domain_name ILIKE $1",
         &mut row_errors,
-    ).await;
+    )
+    .await;
 
     let category_id = resolve_optional_lookup(
-        ctx.pool, row_num, "Category", &category_val,
+        ctx.pool,
+        row_num,
+        "Category",
+        &category_val,
         "SELECT category_id FROM glossary_categories WHERE category_name ILIKE $1",
         &mut row_errors,
-    ).await;
+    )
+    .await;
 
     let classification_id = resolve_optional_lookup(
-        ctx.pool, row_num, "Data Classification", &classification_val,
+        ctx.pool,
+        row_num,
+        "Data Classification",
+        &classification_val,
         "SELECT classification_id FROM data_classifications WHERE classification_name ILIKE $1",
         &mut row_errors,
-    ).await;
+    )
+    .await;
 
     let term_type_id = resolve_optional_lookup(
-        ctx.pool, row_num, "Term Type", &term_type_val,
+        ctx.pool,
+        row_num,
+        "Term Type",
+        &term_type_val,
         "SELECT term_type_id FROM glossary_term_types WHERE type_name ILIKE $1",
         &mut row_errors,
-    ).await;
+    )
+    .await;
 
     let unit_id = resolve_optional_lookup(
-        ctx.pool, row_num, "Unit of Measure", &unit_val,
+        ctx.pool,
+        row_num,
+        "Unit of Measure",
+        &unit_val,
         "SELECT unit_id FROM glossary_units_of_measure WHERE unit_name ILIKE $1",
         &mut row_errors,
-    ).await;
+    )
+    .await;
 
     let frequency_id = resolve_optional_lookup(
-        ctx.pool, row_num, "Review Frequency", &frequency_val,
+        ctx.pool,
+        row_num,
+        "Review Frequency",
+        &frequency_val,
         "SELECT frequency_id FROM glossary_review_frequencies WHERE frequency_name ILIKE $1",
         &mut row_errors,
-    ).await;
+    )
+    .await;
 
     // Confidence level is managed by the Data Quality module — not set via bulk upload
 
     let visibility_id = resolve_optional_lookup(
-        ctx.pool, row_num, "Visibility", &visibility_val,
+        ctx.pool,
+        row_num,
+        "Visibility",
+        &visibility_val,
         "SELECT visibility_id FROM glossary_visibility_levels WHERE visibility_name ILIKE $1",
         &mut row_errors,
-    ).await;
+    )
+    .await;
 
     let language_id = resolve_optional_lookup(
-        ctx.pool, row_num, "Language", &language_val,
+        ctx.pool,
+        row_num,
+        "Language",
+        &language_val,
         "SELECT language_id FROM glossary_languages WHERE language_name ILIKE $1",
         &mut row_errors,
-    ).await;
+    )
+    .await;
 
     // Resolve users by email
-    let owner_user_id = resolve_user_by_email(ctx.pool, row_num, "Business Term Owner", &owner_email, &mut row_errors).await;
-    let steward_user_id = resolve_user_by_email(ctx.pool, row_num, "Data Steward", &steward_email, &mut row_errors).await;
-    let domain_owner_user_id = resolve_user_by_email(ctx.pool, row_num, "Data Domain Owner", &domain_owner_email, &mut row_errors).await;
-    let approver_user_id = resolve_user_by_email(ctx.pool, row_num, "Approver", &approver_email, &mut row_errors).await;
+    let owner_user_id = resolve_user_by_email(
+        ctx.pool,
+        row_num,
+        "Business Term Owner",
+        &owner_email,
+        &mut row_errors,
+    )
+    .await;
+    let steward_user_id = resolve_user_by_email(
+        ctx.pool,
+        row_num,
+        "Data Steward",
+        &steward_email,
+        &mut row_errors,
+    )
+    .await;
+    let domain_owner_user_id = resolve_user_by_email(
+        ctx.pool,
+        row_num,
+        "Data Domain Owner",
+        &domain_owner_email,
+        &mut row_errors,
+    )
+    .await;
+    let approver_user_id = resolve_user_by_email(
+        ctx.pool,
+        row_num,
+        "Approver",
+        &approver_email,
+        &mut row_errors,
+    )
+    .await;
 
     // Resolve organisational unit text (stored as text, not FK)
     let organisational_unit = org_unit_val.clone();
@@ -894,7 +1183,7 @@ async fn process_row(
     // CS-003: Audit log entry for bulk-uploaded term
     sqlx::query(
         "INSERT INTO audit_log (table_name, record_id, action, new_values, changed_by) \
-         VALUES ('glossary_terms', $1, 'INSERT', $2, $3)"
+         VALUES ('glossary_terms', $1, 'INSERT', $2, $3)",
     )
     .bind(term_id)
     .bind(serde_json::json!({"source": "bulk_upload", "row": row_num}))
@@ -907,7 +1196,11 @@ async fn process_row(
 
     // Regulatory tags (comma-separated)
     if let Some(ref tags_csv) = reg_tags_str {
-        for tag_name in tags_csv.split(',').map(|s| s.trim()).filter(|s| !s.is_empty()) {
+        for tag_name in tags_csv
+            .split(',')
+            .map(|s| s.trim())
+            .filter(|s| !s.is_empty())
+        {
             let tag_id = sqlx::query_scalar::<_, Uuid>(
                 "SELECT tag_id FROM glossary_regulatory_tags WHERE tag_name ILIKE $1",
             )
@@ -927,14 +1220,22 @@ async fn process_row(
                 .execute(ctx.pool)
                 .await;
             } else {
-                tracing::warn!(row = row_num, tag = tag_name, "regulatory tag not found during bulk upload — skipped");
+                tracing::warn!(
+                    row = row_num,
+                    tag = tag_name,
+                    "regulatory tag not found during bulk upload — skipped"
+                );
             }
         }
     }
 
     // Subject areas (comma-separated)
     if let Some(ref areas_csv) = subject_areas_str {
-        for area_name in areas_csv.split(',').map(|s| s.trim()).filter(|s| !s.is_empty()) {
+        for area_name in areas_csv
+            .split(',')
+            .map(|s| s.trim())
+            .filter(|s| !s.is_empty())
+        {
             let area_id = sqlx::query_scalar::<_, Uuid>(
                 "SELECT subject_area_id FROM glossary_subject_areas WHERE area_name ILIKE $1",
             )
@@ -954,14 +1255,22 @@ async fn process_row(
                 .execute(ctx.pool)
                 .await;
             } else {
-                tracing::warn!(row = row_num, area = area_name, "subject area not found during bulk upload — skipped");
+                tracing::warn!(
+                    row = row_num,
+                    area = area_name,
+                    "subject area not found during bulk upload — skipped"
+                );
             }
         }
     }
 
     // Tags (comma-separated, freeform — create if not exists)
     if let Some(ref tags_csv) = tags_str {
-        for tag_name in tags_csv.split(',').map(|s| s.trim().to_lowercase()).filter(|s| !s.is_empty()) {
+        for tag_name in tags_csv
+            .split(',')
+            .map(|s| s.trim().to_lowercase())
+            .filter(|s| !s.is_empty())
+        {
             let tag_id = sqlx::query_scalar::<_, Uuid>(
                 r#"
                 INSERT INTO glossary_tags (tag_name, created_by)
@@ -1009,7 +1318,13 @@ fn cell_as_string(cell: Option<&Data>) -> String {
             }
         }
         Some(Data::Int(i)) => format!("{i}"),
-        Some(Data::Bool(b)) => if *b { "TRUE".into() } else { "FALSE".into() },
+        Some(Data::Bool(b)) => {
+            if *b {
+                "TRUE".into()
+            } else {
+                "FALSE".into()
+            }
+        }
         Some(Data::DateTime(f)) => format!("{f}"),
         Some(Data::DateTimeIso(s)) => s.clone(),
         Some(Data::DurationIso(s)) => s.clone(),

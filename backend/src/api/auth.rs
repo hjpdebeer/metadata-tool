@@ -1,6 +1,6 @@
+use axum::Json;
 use axum::extract::{Query, Request, State};
 use axum::response::Redirect;
-use axum::Json;
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
@@ -64,7 +64,9 @@ pub async fn dev_login(
         return Err(AppError::Validation("email exceeds maximum length".into()));
     }
     if body.password.len() > 128 {
-        return Err(AppError::Validation("password exceeds maximum length".into()));
+        return Err(AppError::Validation(
+            "password exceeds maximum length".into(),
+        ));
     }
 
     // SEC-021: Block dev-login when Entra SSO is properly configured

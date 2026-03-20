@@ -1,5 +1,6 @@
 import type { AxiosResponse } from 'axios';
 import api from './api';
+import type { BulkUploadResult } from './glossaryApi';
 
 // --- Data Dictionary types ---
 
@@ -25,6 +26,15 @@ export interface DataElement {
   status_id: string;
   owner_user_id: string | null;
   steward_user_id: string | null;
+  approver_user_id: string | null;
+  organisational_unit: string | null;
+  review_frequency_id: string | null;
+  next_review_date: string | null;
+  approved_at: string | null;
+  is_pii: boolean;
+  version_number: number;
+  is_current_version: boolean;
+  previous_version_id: string | null;
   created_by: string;
   updated_by: string | null;
   created_at: string;
@@ -54,7 +64,10 @@ export interface DataElementFullView extends DataElement {
   classification_name: string | null;
   owner_name: string | null;
   steward_name: string | null;
+  approver_name: string | null;
+  review_frequency_name: string | null;
   status_code: string;
+  status_name: string | null;
   created_by_name: string | null;
   updated_by_name: string | null;
   workflow_instance_id: string | null;
@@ -77,6 +90,9 @@ export interface SourceSystem {
   system_code: string;
   system_type: string;
   description: string | null;
+  application_id: string | null;
+  vendor: string | null;
+  environment: string | null;
 }
 
 export interface TechnicalSchema {
@@ -145,6 +161,12 @@ export interface UpdateDataElementRequest {
   domain_id?: string;
   classification_id?: string;
   sensitivity_level?: string;
+  owner_user_id?: string;
+  steward_user_id?: string;
+  approver_user_id?: string;
+  organisational_unit?: string;
+  review_frequency_id?: string;
+  is_pii?: boolean;
 }
 
 export interface DesignateCdeRequest {
@@ -208,5 +230,41 @@ export const dataDictionaryApi = {
 
   listColumns(tableId: string): Promise<AxiosResponse<TechnicalColumn[]>> {
     return api.get(`/data-dictionary/tables/${tableId}/columns`);
+  },
+
+  /** Create a version-based amendment of an accepted data element. */
+  amendElement(id: string): Promise<AxiosResponse<DataElement>> {
+    return api.post(`/data-dictionary/elements/${id}/amend`);
+  },
+
+  /** Discard a draft amendment. Only the creator or admin can discard. */
+  discardAmendment(id: string): Promise<AxiosResponse<void>> {
+    return api.delete(`/data-dictionary/elements/${id}/discard`);
+  },
+
+  /** Download the bulk upload Excel template. */
+  downloadBulkUploadTemplate(): Promise<void> {
+    return api.get('/data-dictionary/elements/bulk-upload/template', {
+      responseType: 'blob',
+    }).then((response) => {
+      const url = window.URL.createObjectURL(new Blob([response.data]));
+      const link = document.createElement('a');
+      link.href = url;
+      link.setAttribute('download', 'data_element_bulk_upload_template.xlsx');
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(url);
+    });
+  },
+
+  /** Upload a filled-in bulk upload template. */
+  uploadBulkElements(file: File): Promise<AxiosResponse<BulkUploadResult>> {
+    const formData = new FormData();
+    formData.append('file', file);
+    return api.post('/data-dictionary/elements/bulk-upload', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+      timeout: 120000,
+    });
   },
 };

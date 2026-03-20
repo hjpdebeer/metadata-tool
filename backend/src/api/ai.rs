@@ -1,6 +1,6 @@
-use axum::extract::{Path, State};
 use axum::Extension;
 use axum::Json;
+use axum::extract::{Path, State};
 use uuid::Uuid;
 
 use crate::auth::Claims;
@@ -98,9 +98,7 @@ async fn fetch_entity_data(
             .bind(entity_id)
             .fetch_optional(pool)
             .await?
-            .ok_or_else(|| {
-                AppError::NotFound(format!("glossary term not found: {entity_id}"))
-            })?;
+            .ok_or_else(|| AppError::NotFound(format!("glossary term not found: {entity_id}")))?;
 
             // Only send AI-enrichable text fields — exclude IDs, FKs, timestamps, system fields
             let json = serde_json::json!({
@@ -202,9 +200,7 @@ async fn fetch_entity_data(
             .bind(entity_id)
             .fetch_optional(pool)
             .await?
-            .ok_or_else(|| {
-                AppError::NotFound(format!("data element not found: {entity_id}"))
-            })?;
+            .ok_or_else(|| AppError::NotFound(format!("data element not found: {entity_id}")))?;
 
             // Only send AI-enrichable text fields — exclude IDs, FKs, timestamps, system fields
             let json = serde_json::json!({
@@ -248,9 +244,7 @@ async fn fetch_entity_data(
             .bind(entity_id)
             .fetch_optional(pool)
             .await?
-            .ok_or_else(|| {
-                AppError::NotFound(format!("application not found: {entity_id}"))
-            })?;
+            .ok_or_else(|| AppError::NotFound(format!("application not found: {entity_id}")))?;
 
             let json = serde_json::json!({
                 "application_name": row.application_name,
@@ -267,14 +261,30 @@ async fn fetch_entity_data(
             });
 
             let mut existing = Vec::new();
-            if !row.application_name.is_empty() { existing.push("application_name".to_string()); }
-            if !row.description.is_empty() { existing.push("description".to_string()); }
-            if row.abbreviation.is_some() { existing.push("abbreviation".to_string()); }
-            if row.business_capability.is_some() { existing.push("business_capability".to_string()); }
-            if row.user_base.is_some() { existing.push("user_base".to_string()); }
-            if row.regulatory_scope.is_some() { existing.push("regulatory_scope".to_string()); }
-            if row.license_type.is_some() { existing.push("license_type".to_string()); }
-            if row.data_classification_id.is_some() { existing.push("data_classification".to_string()); }
+            if !row.application_name.is_empty() {
+                existing.push("application_name".to_string());
+            }
+            if !row.description.is_empty() {
+                existing.push("description".to_string());
+            }
+            if row.abbreviation.is_some() {
+                existing.push("abbreviation".to_string());
+            }
+            if row.business_capability.is_some() {
+                existing.push("business_capability".to_string());
+            }
+            if row.user_base.is_some() {
+                existing.push("user_base".to_string());
+            }
+            if row.regulatory_scope.is_some() {
+                existing.push("regulatory_scope".to_string());
+            }
+            if row.license_type.is_some() {
+                existing.push("license_type".to_string());
+            }
+            if row.data_classification_id.is_some() {
+                existing.push("data_classification".to_string());
+            }
 
             Ok((json, existing))
         }
@@ -576,7 +586,9 @@ pub async fn enrich(
 ) -> AppResult<Json<AiEnrichResponse>> {
     // SEC-025: Input length validation
     if body.entity_type.len() > 64 {
-        return Err(AppError::Validation("entity_type exceeds maximum length".into()));
+        return Err(AppError::Validation(
+            "entity_type exceeds maximum length".into(),
+        ));
     }
 
     // Fetch entity data
@@ -612,36 +624,50 @@ pub async fn enrich(
 
     // Filter suggestions — backend is the authoritative gate, not the AI prompt.
     // Drop: disallowed fields, empty values, AND fields that already have values.
-    let filtered_suggestions: Vec<_> = result.suggestions.iter().filter(|s| {
-        // Drop disallowed field names
-        if s.field_name.ends_with("_id")
-            || s.field_name.ends_with("_at")
-            || s.field_name.ends_with("_by")
-            || matches!(
-                s.field_name.as_str(),
-                "status_id" | "version_number" | "is_current_version" | "is_cbt" | "is_cde" | "is_cba"
-                    | "is_nullable" | "is_active" | "is_critical"
-                    | "parent_term" | "child_terms" | "related_terms"
-                    | "golden_source" | "golden_source_app_id"
-            )
-        {
-            return false;
-        }
-        // Drop empty suggestions
-        if s.suggested_value.is_empty() {
-            return false;
-        }
-        // Drop suggestions for fields that already have values
-        // (AI may ignore the prompt instruction to skip populated fields)
-        if existing_fields.contains(&s.field_name) {
-            tracing::debug!(
-                field = %s.field_name,
-                "dropping AI suggestion for already-populated field"
-            );
-            return false;
-        }
-        true
-    }).collect();
+    let filtered_suggestions: Vec<_> = result
+        .suggestions
+        .iter()
+        .filter(|s| {
+            // Drop disallowed field names
+            if s.field_name.ends_with("_id")
+                || s.field_name.ends_with("_at")
+                || s.field_name.ends_with("_by")
+                || matches!(
+                    s.field_name.as_str(),
+                    "status_id"
+                        | "version_number"
+                        | "is_current_version"
+                        | "is_cbt"
+                        | "is_cde"
+                        | "is_cba"
+                        | "is_nullable"
+                        | "is_active"
+                        | "is_critical"
+                        | "parent_term"
+                        | "child_terms"
+                        | "related_terms"
+                        | "golden_source"
+                        | "golden_source_app_id"
+                )
+            {
+                return false;
+            }
+            // Drop empty suggestions
+            if s.suggested_value.is_empty() {
+                return false;
+            }
+            // Drop suggestions for fields that already have values
+            // (AI may ignore the prompt instruction to skip populated fields)
+            if existing_fields.contains(&s.field_name) {
+                tracing::debug!(
+                    field = %s.field_name,
+                    "dropping AI suggestion for already-populated field"
+                );
+                return false;
+            }
+            true
+        })
+        .collect();
 
     // Store suggestions in the database
     let mut suggestion_responses = Vec::new();
@@ -786,7 +812,9 @@ pub async fn accept_suggestion(
     if let Some(ref val) = body.modified_value
         && val.len() > 4000
     {
-        return Err(AppError::Validation("modified_value exceeds 4000 characters".into()));
+        return Err(AppError::Validation(
+            "modified_value exceeds 4000 characters".into(),
+        ));
     }
 
     // Fetch the suggestion
@@ -917,11 +945,7 @@ pub async fn reject_suggestion(
     .bind(suggestion_id)
     .fetch_optional(&state.pool)
     .await?
-    .ok_or_else(|| {
-        AppError::NotFound(format!(
-            "pending suggestion not found: {suggestion_id}"
-        ))
-    })?;
+    .ok_or_else(|| AppError::NotFound(format!("pending suggestion not found: {suggestion_id}")))?;
 
     tracing::info!(
         suggestion_id = %suggestion_id,

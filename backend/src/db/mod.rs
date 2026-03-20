@@ -1,7 +1,7 @@
 use std::time::Duration;
 
-use sqlx::postgres::{PgConnectOptions, PgPoolOptions, PgSslMode};
 use sqlx::PgPool;
+use sqlx::postgres::{PgConnectOptions, PgPoolOptions, PgSslMode};
 use uuid::Uuid;
 
 use crate::config::AppConfig;
@@ -61,11 +61,7 @@ impl AppState {
 /// to ILIKE name match via the provided lookup query.
 ///
 /// ADR-0006 Pattern 2: Unified write path for UI and AI inputs.
-pub async fn resolve_lookup(
-    pool: &PgPool,
-    value: &str,
-    lookup_query: &str,
-) -> Option<Uuid> {
+pub async fn resolve_lookup(pool: &PgPool, value: &str, lookup_query: &str) -> Option<Uuid> {
     // Try parsing as UUID first (UI dropdowns send IDs)
     if let Ok(id) = Uuid::parse_str(value) {
         return Some(id);

@@ -5,11 +5,11 @@ import {
   Button,
   Card,
   Col,
+  Descriptions,
   Empty,
   Row,
   Space,
   Spin,
-  Statistic,
   Table,
   Tag,
   Tooltip,
@@ -54,21 +54,15 @@ const TechnicalMetadataPage: React.FC = () => {
   const [tablesMap, setTablesMap] = useState<Record<string, TechnicalTable[]>>({});
   const [columns, setColumns] = useState<TechnicalColumn[]>([]);
   const [selectedTable, setSelectedTable] = useState<TechnicalTable | null>(null);
+  const [selectedSchema, setSelectedSchema] = useState<string | null>(null);
+  const [selectedSystem, setSelectedSystem] = useState<SourceSystem | null>(null);
   const [loadingSystems, setLoadingSystems] = useState(false);
   const [loadingColumns, setLoadingColumns] = useState(false);
   const [expandedKeys, setExpandedKeys] = useState<React.Key[]>([]);
 
-  // Use a ref for the node data map to avoid mutating state during render
   const treeNodeDataMapRef = useRef<Record<string, TreeNodeData>>({});
-
-  // Track which systems/schemas have been loaded
   const [loadedSystems, setLoadedSystems] = useState<Set<string>>(new Set());
   const [loadedSchemas, setLoadedSchemas] = useState<Set<string>>(new Set());
-
-  // Summary counts
-  const totalSchemas = Object.values(schemasMap).reduce((sum, arr) => sum + arr.length, 0);
-  const totalTables = Object.values(tablesMap).reduce((sum, arr) => sum + arr.length, 0);
-  const totalColumns = columns.length;
 
   const fetchSystems = useCallback(async () => {
     setLoadingSystems(true);
@@ -125,7 +119,6 @@ const TechnicalMetadataPage: React.FC = () => {
     }
   };
 
-  // Async load handler for Ant Design Tree's loadData prop
   const onLoadData = async (treeNode: EventDataNode<TreeDataNode>): Promise<void> => {
     const keyStr = String(treeNode.key);
     const nodeData = treeNodeDataMapRef.current[keyStr];
@@ -144,13 +137,26 @@ const TechnicalMetadataPage: React.FC = () => {
 
   const onTreeSelect = (selectedKeys: React.Key[]) => {
     if (selectedKeys.length === 0) return;
-
     const keyStr = String(selectedKeys[0]);
     const nodeData = treeNodeDataMapRef.current[keyStr];
     if (!nodeData) return;
 
-    if (nodeData.type === 'table' && nodeData.tableId) {
-      // Find the table in the tablesMap
+    if (nodeData.type === 'system' && nodeData.systemId) {
+      const system = systems.find((s) => s.system_id === nodeData.systemId);
+      if (system) {
+        setSelectedSystem(system);
+        setSelectedSchema(null);
+        setSelectedTable(null);
+        setColumns([]);
+      }
+    } else if (nodeData.type === 'schema' && nodeData.schemaId) {
+      const schema = Object.values(schemasMap).flat().find((s) => s.schema_id === nodeData.schemaId);
+      if (schema) {
+        setSelectedSchema(schema.schema_name);
+        setSelectedTable(null);
+        setColumns([]);
+      }
+    } else if (nodeData.type === 'table' && nodeData.tableId) {
       for (const tables of Object.values(tablesMap)) {
         const table = tables.find((t) => t.table_id === nodeData.tableId);
         if (table) {
@@ -183,152 +189,80 @@ const TechnicalMetadataPage: React.FC = () => {
           const tableKey = `table-${table.table_id}`;
           map[tableKey] = { type: 'table', tableId: table.table_id };
 
-          const tooltipLines: string[] = [];
-          if (table.description) tooltipLines.push(table.description);
-          if (table.row_count !== null && table.row_count !== undefined) {
-            tooltipLines.push(`${table.row_count.toLocaleString()} rows`);
-          }
-          if (table.size_bytes !== null && table.size_bytes !== undefined) {
-            tooltipLines.push(formatBytes(table.size_bytes));
-          }
-          const tooltipText = tooltipLines.length > 0 ? tooltipLines.join(' | ') : undefined;
-
-          const titleNode = (
-            <Space size={4}>
-              <Text style={{ fontSize: 13 }}>{table.table_name}</Text>
-              <Tag style={{ fontSize: 11 }}>{table.table_type}</Tag>
-              {table.row_count !== null && table.row_count !== undefined && (
-                <Text type="secondary" style={{ fontSize: 11 }}>
-                  ({table.row_count.toLocaleString()})
-                </Text>
-              )}
-            </Space>
-          );
-
           return {
             key: tableKey,
-            title: tooltipText ? (
-              <Tooltip title={tooltipText}>{titleNode}</Tooltip>
-            ) : (
-              titleNode
-            ),
-            icon: <TableOutlined />,
+            title: table.table_name,
+            icon: <TableOutlined style={{ color: '#1B3A5C' }} />,
             isLeaf: true,
           };
         });
 
-        const schemaTitleNode = (
-          <Text style={{ fontSize: 13 }}>{schema.schema_name}</Text>
-        );
-
         return {
           key: schemaKey,
-          title: schema.description ? (
-            <Tooltip title={schema.description}>{schemaTitleNode}</Tooltip>
-          ) : (
-            schemaTitleNode
-          ),
-          icon: <FolderOutlined />,
+          title: schema.schema_name,
+          icon: <FolderOutlined style={{ color: '#D4A017' }} />,
           children: schemaLoaded ? tableChildren : undefined,
           isLeaf: false,
         };
       });
 
-      // Build system title with application info
-      const systemInfoParts: string[] = [];
-      if (system.environment) systemInfoParts.push(system.environment);
-      if (system.vendor) systemInfoParts.push(system.vendor);
+      const envTag = system.environment
+        ? ` (${system.environment.charAt(0) + system.environment.slice(1).toLowerCase()})`
+        : '';
 
       return {
         key: systemKey,
-        title: (
-          <Space size={4}>
-            <Text strong style={{ fontSize: 13 }}>
-              {system.system_name}
-            </Text>
-            <Tag style={{ fontSize: 11 }}>{system.system_type}</Tag>
-            {systemInfoParts.length > 0 && (
-              <Text type="secondary" style={{ fontSize: 11 }}>
-                ({systemInfoParts.join(', ')})
-              </Text>
-            )}
-          </Space>
-        ),
-        icon: <DatabaseOutlined />,
+        title: `${system.system_name}${envTag}`,
+        icon: <DatabaseOutlined style={{ color: '#52C41A' }} />,
         children: systemLoaded ? schemaChildren : undefined,
         isLeaf: false,
       };
     });
   };
 
-  const formatBytes = (bytes: number | null): string => {
-    if (bytes === null || bytes === undefined) return '-';
-    if (bytes < 1024) return `${bytes} B`;
-    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-    if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-    return `${(bytes / (1024 * 1024 * 1024)).toFixed(1)} GB`;
-  };
-
   const columnTableColumns = [
-    {
-      title: 'Column Name',
-      dataIndex: 'column_name',
-      key: 'column_name',
-      render: (name: string) => (
-        <Text code style={{ fontSize: 12 }}>
-          {name}
-        </Text>
-      ),
-    },
     {
       title: '#',
       dataIndex: 'ordinal_position',
       key: 'ordinal_position',
-      width: 50,
+      width: 45,
       align: 'center' as const,
+      render: (val: number) => <Text type="secondary" style={{ fontSize: 12 }}>{val}</Text>,
+    },
+    {
+      title: 'Column Name',
+      dataIndex: 'column_name',
+      key: 'column_name',
+      render: (name: string, record: TechnicalColumn) => (
+        <Space size={4}>
+          <Text code style={{ fontSize: 12 }}>{name}</Text>
+          {record.is_primary_key && <Tag color="gold" style={{ fontSize: 10 }}>PK</Tag>}
+          {record.is_foreign_key && <Tag color="blue" style={{ fontSize: 10 }}>FK</Tag>}
+        </Space>
+      ),
     },
     {
       title: 'Data Type',
-      dataIndex: 'data_type',
       key: 'data_type',
-      width: 120,
-      render: (type: string, record: TechnicalColumn) => {
-        let display = type;
+      width: 140,
+      render: (_: unknown, record: TechnicalColumn) => {
+        let display = record.data_type;
         if (record.max_length) display += `(${record.max_length})`;
-        else if (record.numeric_precision) display += `(${record.numeric_precision})`;
-        return display;
+        else if (record.numeric_precision) {
+          display += `(${record.numeric_precision}`;
+          if (record.numeric_scale) display += `,${record.numeric_scale}`;
+          display += ')';
+        }
+        return <Text style={{ fontSize: 12, fontFamily: 'monospace' }}>{display}</Text>;
       },
     },
     {
       title: 'Nullable',
       dataIndex: 'is_nullable',
       key: 'is_nullable',
-      width: 80,
+      width: 70,
       align: 'center' as const,
-      render: (val: boolean) => (val ? 'Yes' : 'No'),
-    },
-    {
-      title: 'Keys',
-      key: 'keys',
-      width: 100,
-      render: (_: unknown, record: TechnicalColumn) => (
-        <Space size={4}>
-          {record.is_primary_key && (
-            <Tooltip title="Primary Key">
-              <Tag color="gold" icon={<KeyOutlined />}>
-                PK
-              </Tag>
-            </Tooltip>
-          )}
-          {record.is_foreign_key && (
-            <Tooltip title="Foreign Key">
-              <Tag color="blue" icon={<LinkOutlined />}>
-                FK
-              </Tag>
-            </Tooltip>
-          )}
-        </Space>
-      ),
+      render: (val: boolean) => val ? <Text type="secondary">Yes</Text> : <Text strong>No</Text>,
     },
     {
       title: 'Linked Element',
@@ -336,28 +270,27 @@ const TechnicalMetadataPage: React.FC = () => {
       key: 'element_name',
       render: (name: string | null, record: TechnicalColumn) =>
         name ? (
-          <a onClick={() => navigate(`/data-dictionary/${record.element_id}`)}>{name}</a>
+          <a onClick={() => navigate(`/data-dictionary/${record.element_id}`)}>
+            <Tag color="purple" style={{ cursor: 'pointer' }}><LinkOutlined /> {name}</Tag>
+          </a>
         ) : (
-          <Text type="secondary">-</Text>
+          <Text type="secondary" style={{ fontSize: 12 }}>—</Text>
         ),
     },
     {
-      title: 'Naming Compliance',
+      title: 'Naming',
       key: 'naming_compliance',
-      width: 170,
+      width: 100,
+      align: 'center' as const,
       render: (_: unknown, record: TechnicalColumn) => {
-        if (record.naming_standard_compliant === null) {
-          return <Text type="secondary">-</Text>;
+        if (record.naming_standard_compliant === null || record.naming_standard_compliant === undefined) {
+          return <Text type="secondary">—</Text>;
         }
         return record.naming_standard_compliant ? (
-          <Tag icon={<CheckCircleOutlined />} color="success">
-            Compliant
-          </Tag>
+          <Tag icon={<CheckCircleOutlined />} color="success" style={{ fontSize: 11 }}>OK</Tag>
         ) : (
           <Tooltip title={record.naming_standard_violation || 'Naming violation'}>
-            <Tag icon={<CloseCircleOutlined />} color="error">
-              Violation
-            </Tag>
+            <Tag icon={<CloseCircleOutlined />} color="error" style={{ fontSize: 11 }}>Violation</Tag>
           </Tooltip>
         );
       },
@@ -376,137 +309,104 @@ const TechnicalMetadataPage: React.FC = () => {
         ]}
       />
 
-      <Space align="center" style={{ marginBottom: 16 }}>
-        <Button
-          type="text"
-          icon={<ArrowLeftOutlined />}
-          onClick={() => navigate('/data-dictionary')}
-        />
-        <Title level={3} style={{ margin: 0 }}>
-          Technical Metadata Browser
-        </Title>
-      </Space>
-
-      {/* Summary statistics */}
-      <Row gutter={16} style={{ marginBottom: 16 }}>
-        <Col xs={6}>
-          <Card size="small">
-            <Statistic
-              title="Source Systems"
-              value={systems.length}
-              prefix={<DatabaseOutlined />}
-              valueStyle={{ fontSize: 20 }}
-            />
-          </Card>
-        </Col>
-        <Col xs={6}>
-          <Card size="small">
-            <Statistic
-              title="Schemas"
-              value={totalSchemas}
-              prefix={<FolderOutlined />}
-              valueStyle={{ fontSize: 20 }}
-            />
-          </Card>
-        </Col>
-        <Col xs={6}>
-          <Card size="small">
-            <Statistic
-              title="Tables"
-              value={totalTables}
-              prefix={<TableOutlined />}
-              valueStyle={{ fontSize: 20 }}
-            />
-          </Card>
-        </Col>
-        <Col xs={6}>
-          <Card size="small">
-            <Statistic
-              title="Columns (selected)"
-              value={totalColumns}
-              valueStyle={{ fontSize: 20 }}
-            />
-          </Card>
-        </Col>
-      </Row>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+        <Space align="center">
+          <Button type="text" icon={<ArrowLeftOutlined />} onClick={() => navigate('/data-dictionary')} />
+          <Title level={3} style={{ margin: 0 }}>Technical Metadata Browser</Title>
+        </Space>
+        <Text type="secondary">{systems.length} source system{systems.length !== 1 ? 's' : ''} registered</Text>
+      </div>
 
       <Row gutter={16}>
-        <Col xs={24} md={8} lg={6}>
+        {/* Tree Panel — wider */}
+        <Col xs={24} md={10} lg={8}>
           <Card
-            title="Source Systems"
             size="small"
-            style={{ height: 'calc(100vh - 320px)', overflow: 'auto' }}
+            title={<Text strong>Source Systems</Text>}
+            style={{ height: 'calc(100vh - 180px)', overflow: 'auto' }}
           >
             {loadingSystems ? (
-              <div style={{ textAlign: 'center', padding: 40 }}>
-                <Spin />
-              </div>
+              <div style={{ textAlign: 'center', padding: 40 }}><Spin /></div>
             ) : systems.length === 0 ? (
-              <Empty
-                description="No source systems registered"
-                image={Empty.PRESENTED_IMAGE_SIMPLE}
-              />
+              <Empty description="No source systems registered" image={Empty.PRESENTED_IMAGE_SIMPLE} />
             ) : (
               <Tree
                 showIcon
+                showLine={{ showLeafIcon: false }}
                 treeData={treeData}
                 expandedKeys={expandedKeys}
                 onExpand={onTreeExpand}
-                loadData={onLoadData}
                 onSelect={onTreeSelect}
+                loadData={onLoadData}
                 style={{ fontSize: 13 }}
               />
             )}
           </Card>
         </Col>
-        <Col xs={24} md={16} lg={18}>
-          <Card
-            title={
-              selectedTable ? (
+
+        {/* Detail Panel */}
+        <Col xs={24} md={14} lg={16}>
+          {!selectedTable && !selectedSystem ? (
+            <Card size="small" style={{ height: 'calc(100vh - 180px)' }}>
+              <Empty
+                description="Select a system, schema, or table from the tree"
+                image={Empty.PRESENTED_IMAGE_SIMPLE}
+                style={{ paddingTop: 80 }}
+              />
+            </Card>
+          ) : selectedTable ? (
+            <Card
+              size="small"
+              title={
                 <Space>
                   <TableOutlined />
                   <Text strong>{selectedTable.table_name}</Text>
-                  <Tag>{selectedTable.table_type}</Tag>
-                  {selectedTable.row_count !== null && (
-                    <Text type="secondary" style={{ fontSize: 12 }}>
-                      {selectedTable.row_count?.toLocaleString()} rows
-                    </Text>
+                  <Tag color={selectedTable.table_type === 'VIEW' ? 'blue' : 'default'}>{selectedTable.table_type}</Tag>
+                  {selectedTable.row_count != null && (
+                    <Text type="secondary" style={{ fontSize: 12 }}>{selectedTable.row_count.toLocaleString()} rows</Text>
                   )}
-                  {selectedTable.size_bytes !== null && (
-                    <Text type="secondary" style={{ fontSize: 12 }}>
-                      ({formatBytes(selectedTable.size_bytes)})
-                    </Text>
-                  )}
+                  {selectedTable.is_pii && <Tag color="red">PII</Tag>}
                 </Space>
-              ) : (
-                'Columns'
-              )
-            }
-            size="small"
-          >
-            {!selectedTable ? (
-              <Empty
-                description="Select a table from the tree to view its columns"
-                image={Empty.PRESENTED_IMAGE_SIMPLE}
+              }
+              style={{ height: 'calc(100vh - 180px)', overflow: 'auto' }}
+            >
+              {selectedTable.description && (
+                <div style={{ marginBottom: 16 }}>
+                  <Text type="secondary">{selectedTable.description}</Text>
+                </div>
+              )}
+              <Table
+                columns={columnTableColumns}
+                dataSource={columns}
+                rowKey="column_id"
+                loading={loadingColumns}
+                pagination={false}
+                size="small"
+                scroll={{ y: 'calc(100vh - 340px)' }}
               />
-            ) : (
-              <>
-                {selectedTable.description && (
-                  <div style={{ marginBottom: 16 }}>
-                    <Text type="secondary">{selectedTable.description}</Text>
-                  </div>
-                )}
-                <Table
-                  columns={columnTableColumns}
-                  dataSource={columns}
-                  rowKey="column_id"
-                  loading={loadingColumns}
-                  pagination={false}
-                  size="small"
-                />
-              </>
-            )}
-          </Card>
+            </Card>
+          ) : selectedSystem ? (
+            <Card
+              size="small"
+              title={
+                <Space>
+                  <DatabaseOutlined />
+                  <Text strong>{selectedSystem.system_name}</Text>
+                </Space>
+              }
+              style={{ height: 'calc(100vh - 180px)', overflow: 'auto' }}
+            >
+              <Descriptions column={2} bordered size="small">
+                <Descriptions.Item label="System Code">{selectedSystem.system_code}</Descriptions.Item>
+                <Descriptions.Item label="System Type"><Tag>{selectedSystem.system_type}</Tag></Descriptions.Item>
+                <Descriptions.Item label="Environment">
+                  {selectedSystem.environment ? <Tag color="blue">{selectedSystem.environment}</Tag> : '—'}
+                </Descriptions.Item>
+                <Descriptions.Item label="Vendor">{selectedSystem.vendor || '—'}</Descriptions.Item>
+                <Descriptions.Item label="Description" span={2}>{selectedSystem.description || '—'}</Descriptions.Item>
+              </Descriptions>
+            </Card>
+          ) : null}
         </Col>
       </Row>
     </div>

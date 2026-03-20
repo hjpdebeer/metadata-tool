@@ -285,7 +285,7 @@ pub async fn ingest_technical(
             None
         } else {
             let id = sqlx::query_scalar::<_, Uuid>(
-                "SELECT application_id FROM applications WHERE app_code = $1 AND deleted_at IS NULL",
+                "SELECT application_id FROM applications WHERE application_code = $1 AND deleted_at IS NULL AND is_current_version = TRUE",
             )
             .bind(app_code)
             .fetch_optional(&state.pool)
@@ -343,7 +343,7 @@ pub async fn ingest_technical(
         INSERT INTO source_systems (system_code, system_name, system_type, description,
                                     application_id, environment, last_seen_at)
         VALUES ($1, $2, $3, $4, $5, $6, CURRENT_TIMESTAMP)
-        ON CONFLICT (system_code) WHERE deleted_at IS NULL
+        ON CONFLICT (system_code)
         DO UPDATE SET
             system_name   = EXCLUDED.system_name,
             system_type   = EXCLUDED.system_type,
@@ -388,7 +388,7 @@ pub async fn ingest_technical(
             r#"
             INSERT INTO technical_schemas (system_id, schema_name, description, last_seen_at)
             VALUES ($1, $2, $3, CURRENT_TIMESTAMP)
-            ON CONFLICT (system_id, schema_name) WHERE deleted_at IS NULL
+            ON CONFLICT (system_id, schema_name)
             DO UPDATE SET
                 description  = COALESCE(EXCLUDED.description, technical_schemas.description),
                 last_seen_at = CURRENT_TIMESTAMP,
@@ -440,7 +440,7 @@ pub async fn ingest_technical(
                 INSERT INTO technical_tables (schema_id, table_name, table_type, description,
                                               row_count, is_pii, last_seen_at)
                 VALUES ($1, $2, $3, $4, $5, $6, CURRENT_TIMESTAMP)
-                ON CONFLICT (schema_id, table_name) WHERE deleted_at IS NULL
+                ON CONFLICT (schema_id, table_name)
                 DO UPDATE SET
                     table_type   = EXCLUDED.table_type,
                     description  = COALESCE(EXCLUDED.description, technical_tables.description),
@@ -533,7 +533,7 @@ pub async fn ingest_technical(
                         last_seen_at
                     )
                     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, CURRENT_TIMESTAMP)
-                    ON CONFLICT (table_id, column_name) WHERE deleted_at IS NULL
+                    ON CONFLICT (table_id, column_name)
                     DO UPDATE SET
                         ordinal_position          = EXCLUDED.ordinal_position,
                         data_type                 = EXCLUDED.data_type,
@@ -1173,7 +1173,7 @@ pub async fn ingest_elements(
                 status_id, created_by
             )
             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
-            ON CONFLICT (element_code) WHERE deleted_at IS NULL AND is_current_version = TRUE
+            ON CONFLICT (element_code, version_number)
             DO UPDATE SET
                 element_name       = EXCLUDED.element_name,
                 description        = EXCLUDED.description,

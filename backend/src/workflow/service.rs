@@ -662,17 +662,40 @@ async fn create_task_for_entity_role(
     let entity_name = resolve_entity_name(pool, &entity_type_name, instance.entity_id).await?;
 
     // Look up the assigned user from the entity's ownership column.
+    // Resolves the entity type to determine which table to query.
     // Uses a safe static match to avoid SQL injection (Principle 10).
-    let assigned_user_id: Option<Uuid> = match user_column {
-        "steward_user_id" => {
+    let entity_table = sqlx::query_scalar::<_, String>(
+        "SELECT table_name FROM workflow_entity_types WHERE entity_type_id = $1",
+    )
+    .bind(instance.entity_type_id)
+    .fetch_optional(pool)
+    .await?
+    .unwrap_or_default();
+
+    let assigned_user_id: Option<Uuid> = match (entity_table.as_str(), user_column) {
+        ("glossary_terms", "steward_user_id") => {
             sqlx::query_scalar("SELECT steward_user_id FROM glossary_terms WHERE term_id = $1 AND deleted_at IS NULL")
                 .bind(instance.entity_id)
                 .fetch_optional(pool)
                 .await?
                 .flatten()
         }
-        "owner_user_id" => {
+        ("glossary_terms", "owner_user_id") => {
             sqlx::query_scalar("SELECT owner_user_id FROM glossary_terms WHERE term_id = $1 AND deleted_at IS NULL")
+                .bind(instance.entity_id)
+                .fetch_optional(pool)
+                .await?
+                .flatten()
+        }
+        ("applications", "steward_user_id") => {
+            sqlx::query_scalar("SELECT steward_user_id FROM applications WHERE application_id = $1 AND deleted_at IS NULL")
+                .bind(instance.entity_id)
+                .fetch_optional(pool)
+                .await?
+                .flatten()
+        }
+        ("applications", "owner_user_id") => {
+            sqlx::query_scalar("SELECT business_owner_id FROM applications WHERE application_id = $1 AND deleted_at IS NULL")
                 .bind(instance.entity_id)
                 .fetch_optional(pool)
                 .await?
@@ -705,6 +728,7 @@ async fn create_task_for_entity_role(
     .await?;
 
     // Notify the assigned user
+    #[allow(clippy::collapsible_if)] // Intentionally separate: Some check vs Err check
     if let Some(user_id) = assigned_user_id {
         if let Err(e) = notifications::queue_workflow_task_notification(
             pool,
@@ -770,11 +794,12 @@ async fn update_entity_status(
     match entity_type.table_name.as_str() {
         "glossary_terms" => {
             if state_code == super::STATE_ACCEPTED {
-                // Stamp approved_at and recalculate next_review_date from approval date
+                // Stamp approved_at, set is_current_version, recalculate next_review_date
                 sqlx::query(
                     "UPDATE glossary_terms
                      SET status_id = $1,
                          approved_at = CURRENT_TIMESTAMP,
+                         is_current_version = TRUE,
                          next_review_date = CURRENT_DATE + (
                              SELECT COALESCE(grf.months_interval, 12) * INTERVAL '1 month'
                              FROM glossary_review_frequencies grf
@@ -787,6 +812,32 @@ async fn update_entity_status(
                 .bind(instance.entity_id)
                 .execute(pool)
                 .await?;
+
+                // Version swap: if this is an amendment (has previous_version_id),
+                // mark the old version as no longer current.
+                let previous_id = sqlx::query_scalar::<_, Option<Uuid>>(
+                    "SELECT previous_version_id FROM glossary_terms WHERE term_id = $1",
+                )
+                .bind(instance.entity_id)
+                .fetch_one(pool)
+                .await?;
+
+                if let Some(old_term_id) = previous_id {
+                    sqlx::query(
+                        "UPDATE glossary_terms
+                         SET is_current_version = FALSE, updated_at = CURRENT_TIMESTAMP
+                         WHERE term_id = $1",
+                    )
+                    .bind(old_term_id)
+                    .execute(pool)
+                    .await?;
+
+                    tracing::info!(
+                        new_term_id = %instance.entity_id,
+                        old_term_id = %old_term_id,
+                        "version swap: amendment approved, old version superseded"
+                    );
+                }
             } else {
                 sqlx::query(
                     "UPDATE glossary_terms SET status_id = $1, updated_at = CURRENT_TIMESTAMP WHERE term_id = $2",
@@ -816,13 +867,32 @@ async fn update_entity_status(
             .await?;
         }
         "applications" => {
-            sqlx::query(
-                "UPDATE applications SET status_id = $1, updated_at = CURRENT_TIMESTAMP WHERE application_id = $2",
-            )
-            .bind(status_id)
-            .bind(instance.entity_id)
-            .execute(pool)
-            .await?;
+            if state_code == super::STATE_ACCEPTED {
+                sqlx::query(
+                    "UPDATE applications
+                     SET status_id = $1,
+                         approved_at = CURRENT_TIMESTAMP,
+                         next_review_date = CURRENT_DATE + (
+                             SELECT COALESCE(grf.months_interval, 12) * INTERVAL '1 month'
+                             FROM glossary_review_frequencies grf
+                             WHERE grf.frequency_id = applications.review_frequency_id
+                         ),
+                         updated_at = CURRENT_TIMESTAMP
+                     WHERE application_id = $2",
+                )
+                .bind(status_id)
+                .bind(instance.entity_id)
+                .execute(pool)
+                .await?;
+            } else {
+                sqlx::query(
+                    "UPDATE applications SET status_id = $1, updated_at = CURRENT_TIMESTAMP WHERE application_id = $2",
+                )
+                .bind(status_id)
+                .bind(instance.entity_id)
+                .execute(pool)
+                .await?;
+            }
         }
         "business_processes" => {
             sqlx::query(

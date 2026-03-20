@@ -143,6 +143,7 @@ export interface GlossaryTerm {
   is_current_version: boolean;
   is_cbt: boolean;
   golden_source: string | null;
+  golden_source_app_id: string | null;
   used_in_reports: string | null;
   used_in_policies: string | null;
   regulatory_reporting_usage: string | null;
@@ -205,6 +206,7 @@ export interface GlossaryTermDetailView {
   regulatory_reporting_usage: string | null;
   is_cbt: boolean;
   golden_source: string | null;
+  golden_source_app_id: string | null;
   confidence_level_id: string | null;
   visibility_id: string | null;
   language_id: string | null;
@@ -225,6 +227,7 @@ export interface GlossaryTermDetailView {
   visibility_name: string | null;
   language_name: string | null;
   parent_term_name: string | null;
+  golden_source_app_name: string | null;
   owner_name: string | null;
   steward_name: string | null;
   domain_owner_name: string | null;
@@ -274,6 +277,7 @@ export interface UpdateGlossaryTermRequest {
   review_frequency_id?: string;
   is_cbt?: boolean;
   golden_source?: string;
+  golden_source_app_id?: string;
   confidence_level_id?: string;
   visibility_id?: string;
   language_id?: string;
@@ -429,6 +433,16 @@ export const glossaryApi = {
 
   updateTerm(id: string, data: UpdateGlossaryTermRequest): Promise<AxiosResponse<GlossaryTerm>> {
     return api.put(`/glossary/terms/${id}`, data);
+  },
+
+  /** Propose an amendment to an accepted term. Creates a new version in DRAFT. */
+  amendTerm(id: string): Promise<AxiosResponse<GlossaryTerm>> {
+    return api.post(`/glossary/terms/${id}/amend`);
+  },
+
+  /** Discard a draft amendment. Only the creator can discard. */
+  discardAmendment(id: string): Promise<AxiosResponse<void>> {
+    return api.delete(`/glossary/terms/${id}/discard`);
   },
 
   // ----- Reference data -----

@@ -11,6 +11,38 @@ export interface ApplicationClassification {
   display_order: number;
 }
 
+// --- New lookup types ---
+
+export interface DisasterRecoveryTier {
+  dr_tier_id: string;
+  tier_code: string;
+  tier_name: string;
+  rto_hours: number;
+  rpo_minutes: number;
+  description: string | null;
+}
+
+export interface ApplicationLifecycleStage {
+  stage_id: string;
+  stage_code: string;
+  stage_name: string;
+  description: string | null;
+}
+
+export interface ApplicationCriticalityTier {
+  tier_id: string;
+  tier_code: string;
+  tier_name: string;
+  description: string | null;
+}
+
+export interface ApplicationRiskRating {
+  rating_id: string;
+  rating_code: string;
+  rating_name: string;
+  description: string | null;
+}
+
 // --- Application types ---
 
 export interface Application {
@@ -18,19 +50,50 @@ export interface Application {
   application_name: string;
   application_code: string;
   description: string;
+  // Classification & type
   classification_id: string | null;
+  deployment_type: string | null;
+  technology_stack: unknown | null;
+  // Ownership & governance
   status_id: string;
   business_owner_id: string | null;
   technical_owner_id: string | null;
+  steward_user_id: string | null;
+  approver_user_id: string | null;
+  organisational_unit: string | null;
+  // Vendor & product
   vendor: string | null;
+  vendor_product_name: string | null;
   version: string | null;
-  deployment_type: string | null;
-  technology_stack: unknown | null;
-  is_critical: boolean;
-  criticality_rationale: string | null;
+  license_type: string | null;
+  // Business context
+  abbreviation: string | null;
+  external_reference_id: string | null;
+  business_capability: string | null;
+  user_base: string | null;
+  // Criticality & risk
+  is_cba: boolean;
+  cba_rationale: string | null;
+  criticality_tier_id: string | null;
+  risk_rating_id: string | null;
+  // Compliance
+  data_classification_id: string | null;
+  regulatory_scope: string | null;
+  last_security_assessment: string | null;
+  // Operational
+  support_model: string | null;
+  dr_tier_id: string | null;
+  // Lifecycle
+  lifecycle_stage_id: string | null;
   go_live_date: string | null;
   retirement_date: string | null;
+  contract_end_date: string | null;
+  review_frequency_id: string | null;
+  next_review_date: string | null;
+  approved_at: string | null;
+  // Reference
   documentation_url: string | null;
+  // Audit
   created_by: string;
   updated_by: string | null;
   created_at: string;
@@ -42,39 +105,73 @@ export interface ApplicationListItem {
   application_name: string;
   application_code: string;
   description: string;
+  abbreviation: string | null;
   classification_name: string | null;
-  classification_code: string | null;
-  vendor: string | null;
-  deployment_type: string | null;
-  is_critical: boolean;
   status_code: string;
-  status_name: string | null;
+  status_name: string;
   business_owner_name: string | null;
+  technical_owner_name: string | null;
+  vendor: string | null;
+  is_cba: boolean;
+  deployment_type: string | null;
+  lifecycle_stage_name: string | null;
   created_at: string;
   updated_at: string;
 }
 
 export interface ApplicationFullView {
+  // Entity columns
   application_id: string;
   application_name: string;
   application_code: string;
   description: string;
   classification_id: string | null;
   classification_name: string | null;
+  deployment_type: string | null;
+  technology_stack: unknown | null;
   status_id: string;
-  status_code: string;
+  status_code: string | null;
   business_owner_id: string | null;
   business_owner_name: string | null;
   technical_owner_id: string | null;
   technical_owner_name: string | null;
+  steward_user_id: string | null;
+  steward_name: string | null;
+  approver_user_id: string | null;
+  approver_name: string | null;
+  organisational_unit: string | null;
   vendor: string | null;
+  vendor_product_name: string | null;
   version: string | null;
-  deployment_type: string | null;
-  technology_stack: unknown | null;
-  is_critical: boolean;
-  criticality_rationale: string | null;
+  license_type: string | null;
+  abbreviation: string | null;
+  external_reference_id: string | null;
+  business_capability: string | null;
+  user_base: string | null;
+  is_cba: boolean;
+  cba_rationale: string | null;
+  criticality_tier_id: string | null;
+  criticality_tier_name: string | null;
+  risk_rating_id: string | null;
+  risk_rating_name: string | null;
+  data_classification_id: string | null;
+  data_classification_name: string | null;
+  regulatory_scope: string | null;
+  last_security_assessment: string | null;
+  support_model: string | null;
+  dr_tier_id: string | null;
+  dr_tier_name: string | null;
+  dr_tier_rto_hours: number | null;
+  dr_tier_rpo_minutes: number | null;
+  lifecycle_stage_id: string | null;
+  lifecycle_stage_name: string | null;
   go_live_date: string | null;
   retirement_date: string | null;
+  contract_end_date: string | null;
+  review_frequency_id: string | null;
+  review_frequency_name: string | null;
+  next_review_date: string | null;
+  approved_at: string | null;
   documentation_url: string | null;
   created_by: string;
   created_by_name: string | null;
@@ -82,7 +179,7 @@ export interface ApplicationFullView {
   updated_by_name: string | null;
   created_at: string;
   updated_at: string;
-  workflow_instance_id: string | null;
+  // Junction data
   data_elements_count: number;
   interfaces_count: number;
   linked_processes: string[];
@@ -118,17 +215,21 @@ export interface ApplicationDataElementLink {
 
 export interface CreateApplicationRequest {
   application_name: string;
-  application_code: string;
   description: string;
   classification_id?: string;
   vendor?: string;
+  vendor_product_name?: string;
   version?: string;
   deployment_type?: string;
   technology_stack?: string;
-  is_critical?: boolean;
-  criticality_rationale?: string;
+  is_cba?: boolean;
+  cba_rationale?: string;
   go_live_date?: string;
   documentation_url?: string;
+  abbreviation?: string;
+  external_reference_id?: string;
+  license_type?: string;
+  lifecycle_stage_id?: string;
 }
 
 export interface UpdateApplicationRequest {
@@ -136,13 +237,36 @@ export interface UpdateApplicationRequest {
   description?: string;
   classification_id?: string;
   vendor?: string;
+  vendor_product_name?: string;
   version?: string;
   deployment_type?: string;
   technology_stack?: string;
-  is_critical?: boolean;
-  criticality_rationale?: string;
+  is_cba?: boolean;
+  cba_rationale?: string;
+  go_live_date?: string;
   retirement_date?: string;
   documentation_url?: string;
+  abbreviation?: string;
+  external_reference_id?: string;
+  business_capability?: string;
+  user_base?: string;
+  license_type?: string;
+  lifecycle_stage_id?: string;
+  criticality_tier_id?: string;
+  risk_rating_id?: string;
+  data_classification_id?: string;
+  regulatory_scope?: string;
+  last_security_assessment?: string;
+  support_model?: string;
+  dr_tier_id?: string;
+  contract_end_date?: string;
+  review_frequency_id?: string;
+  // Ownership
+  business_owner_id?: string;
+  technical_owner_id?: string;
+  steward_user_id?: string;
+  approver_user_id?: string;
+  organisational_unit?: string;
 }
 
 export interface LinkDataElementRequest {
@@ -157,7 +281,7 @@ export interface ListApplicationsParams {
   classification_id?: string;
   status?: string;
   deployment_type?: string;
-  is_critical?: boolean;
+  is_cba?: boolean;
   page?: number;
   page_size?: number;
 }
@@ -185,12 +309,28 @@ export const applicationsApi = {
     return api.get('/applications/classifications');
   },
 
+  listDrTiers(): Promise<AxiosResponse<DisasterRecoveryTier[]>> {
+    return api.get('/applications/dr-tiers');
+  },
+
+  listLifecycleStages(): Promise<AxiosResponse<ApplicationLifecycleStage[]>> {
+    return api.get('/applications/lifecycle-stages');
+  },
+
+  listCriticalityTiers(): Promise<AxiosResponse<ApplicationCriticalityTier[]>> {
+    return api.get('/applications/criticality-tiers');
+  },
+
+  listRiskRatings(): Promise<AxiosResponse<ApplicationRiskRating[]>> {
+    return api.get('/applications/risk-ratings');
+  },
+
   linkDataElement(appId: string, data: LinkDataElementRequest): Promise<AxiosResponse<ApplicationDataElementLink>> {
-    return api.post(`/applications/${appId}/data-elements`, data);
+    return api.post(`/applications/${appId}/elements`, data);
   },
 
   listAppElements(appId: string): Promise<AxiosResponse<ApplicationDataElementLink[]>> {
-    return api.get(`/applications/${appId}/data-elements`);
+    return api.get(`/applications/${appId}/elements`);
   },
 
   listInterfaces(appId: string): Promise<AxiosResponse<ApplicationInterface[]>> {

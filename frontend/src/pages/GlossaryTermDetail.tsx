@@ -30,6 +30,7 @@ import {
   LinkOutlined,
   PlusOutlined,
   SafetyCertificateOutlined,
+  DeleteOutlined,
   SendOutlined,
   UndoOutlined,
   UserOutlined,
@@ -98,14 +99,15 @@ const GlossaryTermDetail: React.FC = () => {
   const [transitionAction, setTransitionAction] = useState('');
   const [transitionComments, setTransitionComments] = useState('');
 
-  // Ownership assignment state
+  // Ownership assignment state — uses {value, label} to prevent UUID display
+  type LabeledValue = { value: string; label: string };
   const [allUsers, setAllUsers] = useState<UserListItem[]>([]);
   const [allOrgUnits, setAllOrgUnits] = useState<OrganisationalUnit[]>([]);
   const [ownershipLoading, setOwnershipLoading] = useState(false);
-  const [ownerUserId, setOwnerUserId] = useState<string | undefined>();
-  const [stewardUserId, setStewardUserId] = useState<string | undefined>();
-  const [domainOwnerUserId, setDomainOwnerUserId] = useState<string | undefined>();
-  const [approverUserId, setApproverUserId] = useState<string | undefined>();
+  const [ownerUserId, setOwnerUserId] = useState<LabeledValue | undefined>();
+  const [stewardUserId, setStewardUserId] = useState<LabeledValue | undefined>();
+  const [domainOwnerUserId, setDomainOwnerUserId] = useState<LabeledValue | undefined>();
+  const [approverUserId, setApproverUserId] = useState<LabeledValue | undefined>();
   const [orgUnit, setOrgUnit] = useState<string | undefined>();
 
   // Tag management state
@@ -164,13 +166,17 @@ const GlossaryTermDetail: React.FC = () => {
     fetchWorkflowInstance();
   }, [fetchDetail, fetchLookups, fetchWorkflowInstance]);
 
-  // Sync ownership state when detail loads
+  // Sync ownership state from detail response — uses resolved names so UUIDs never display
   useEffect(() => {
     if (detail) {
-      setOwnerUserId(detail.owner_user_id || undefined);
-      setStewardUserId(detail.steward_user_id || undefined);
-      setDomainOwnerUserId(detail.domain_owner_user_id || undefined);
-      setApproverUserId(detail.approver_user_id || undefined);
+      setOwnerUserId(detail.owner_user_id && detail.owner_name
+        ? { value: detail.owner_user_id, label: detail.owner_name } : undefined);
+      setStewardUserId(detail.steward_user_id && detail.steward_name
+        ? { value: detail.steward_user_id, label: detail.steward_name } : undefined);
+      setDomainOwnerUserId(detail.domain_owner_user_id && detail.domain_owner_name
+        ? { value: detail.domain_owner_user_id, label: detail.domain_owner_name } : undefined);
+      setApproverUserId(detail.approver_user_id && detail.approver_name
+        ? { value: detail.approver_user_id, label: detail.approver_name } : undefined);
       setOrgUnit(detail.organisational_unit || undefined);
     }
   }, [detail]);
@@ -182,10 +188,10 @@ const GlossaryTermDetail: React.FC = () => {
     setOwnershipLoading(true);
     try {
       await glossaryApi.updateTerm(id, {
-        owner_user_id: ownerUserId || undefined,
-        steward_user_id: stewardUserId || undefined,
-        domain_owner_user_id: domainOwnerUserId || undefined,
-        approver_user_id: approverUserId || undefined,
+        owner_user_id: ownerUserId?.value || undefined,
+        steward_user_id: stewardUserId?.value || undefined,
+        domain_owner_user_id: domainOwnerUserId?.value || undefined,
+        approver_user_id: approverUserId?.value || undefined,
         organisational_unit: orgUnit || undefined,
       } as Record<string, unknown>);
       message.success('Ownership updated successfully.');
@@ -271,6 +277,39 @@ const GlossaryTermDetail: React.FC = () => {
       fetchDetail();
     } catch {
       message.error('Failed to remove tag.');
+    }
+  };
+
+  // --- Amendment ---
+
+  const handleProposeAmendment = async () => {
+    if (!id) return;
+    try {
+      const response = await glossaryApi.amendTerm(id);
+      message.success('Amendment created. You can now edit the new draft version.');
+      navigate(`/glossary/${response.data.term_id}`);
+    } catch (err: unknown) {
+      const apiMsg = (err as { response?: { data?: { error?: { message?: string } } } })
+        ?.response?.data?.error?.message;
+      message.error(apiMsg || 'Failed to create amendment.');
+    }
+  };
+
+  const handleDiscardAmendment = async () => {
+    if (!id) return;
+    try {
+      await glossaryApi.discardAmendment(id);
+      message.success('Amendment discarded.');
+      // Navigate to the original term
+      if (detail?.previous_version_id) {
+        navigate(`/glossary/${detail.previous_version_id}`);
+      } else {
+        navigate('/glossary');
+      }
+    } catch (err: unknown) {
+      const apiMsg = (err as { response?: { data?: { error?: { message?: string } } } })
+        ?.response?.data?.error?.message;
+      message.error(apiMsg || 'Failed to discard amendment.');
     }
   };
 
@@ -378,6 +417,19 @@ const GlossaryTermDetail: React.FC = () => {
           Submit for Review
         </Button>,
       );
+      // Discard button: only for amendments (has previous_version_id), only for creator or admin
+      if (detail?.previous_version_id && (currentUserId === detail?.created_by || user?.roles?.includes('ADMIN') || user?.roles?.includes('admin'))) {
+        buttons.push(
+          <Button
+            key="discard"
+            danger
+            icon={<DeleteOutlined />}
+            onClick={handleDiscardAmendment}
+          >
+            Discard Amendment
+          </Button>,
+        );
+      }
     }
 
     // Under Review: only the assigned Data Steward (or admin) can act
@@ -457,16 +509,31 @@ const GlossaryTermDetail: React.FC = () => {
       );
     }
 
-    buttons.push(
-      <Button
-        key="edit"
-        icon={<EditOutlined />}
-        onClick={() => navigate(`/glossary/${id}/edit`)}
-        disabled={status === 'ACCEPTED' || status === 'DEPRECATED'}
-      >
-        Edit
-      </Button>,
-    );
+    if (status === 'ACCEPTED') {
+      buttons.push(
+        <Button
+          key="amend"
+          type="primary"
+          icon={<EditOutlined />}
+          onClick={handleProposeAmendment}
+        >
+          Propose Amendment
+        </Button>,
+      );
+    }
+
+    // Edit button: available in draft/revised/under review/pending approval states
+    if (!['ACCEPTED', 'DEPRECATED', 'REJECTED'].includes(status)) {
+      buttons.push(
+        <Button
+          key="edit"
+          icon={<EditOutlined />}
+          onClick={() => navigate(`/glossary/${id}/edit`)}
+        >
+          Edit
+        </Button>,
+      );
+    }
 
     return buttons;
   };
@@ -898,6 +965,17 @@ const GlossaryTermDetail: React.FC = () => {
             <Descriptions.Item label={<>Golden Source <AiHint /></>}>
               {term.golden_source || <EmptyValue />}
             </Descriptions.Item>
+            <Descriptions.Item label="Golden Source Application">
+              {detail.golden_source_app_id && detail.golden_source_app_name ? (
+                <Link to={`/applications/${detail.golden_source_app_id}`}>
+                  <Tag color="blue" style={{ cursor: 'pointer' }}>
+                    <LinkOutlined /> {detail.golden_source_app_name}
+                  </Tag>
+                </Link>
+              ) : (
+                <EmptyValue />
+              )}
+            </Descriptions.Item>
             <Descriptions.Item label="Confidence Level">
               {detail.confidence_level_name ? (
                 <Tag
@@ -1036,6 +1114,9 @@ const GlossaryTermDetail: React.FC = () => {
           >
             {statusLabels[status] || status}
           </Tag>
+          {term.version_number > 1 && (
+            <Tag color="geekblue">v{term.version_number}</Tag>
+          )}
           {term.is_cbt && (
             <Tag color="red">
               <SafetyCertificateOutlined /> CBT
@@ -1056,6 +1137,24 @@ const GlossaryTermDetail: React.FC = () => {
           type="error"
           showIcon
           icon={<SafetyCertificateOutlined />}
+          style={{ marginBottom: 16 }}
+          banner
+        />
+      )}
+
+      {/* --- Amendment Context Banners --- */}
+      {detail.previous_version_id && (
+        <Alert
+          message={`Amendment of v${(term.version_number || 2) - 1}`}
+          description={
+            <span>
+              This is a draft amendment. The original accepted version remains visible until this amendment is approved.{' '}
+              <Link to={`/glossary/${detail.previous_version_id}`}>View original version</Link>
+            </span>
+          }
+          type="info"
+          showIcon
+          icon={<EditOutlined />}
           style={{ marginBottom: 16 }}
           banner
         />
@@ -1104,8 +1203,9 @@ const GlossaryTermDetail: React.FC = () => {
               </div>
               <Select
                 style={{ width: '100%' }}
+                labelInValue
                 value={ownerUserId}
-                onChange={(val) => setOwnerUserId(val)}
+                onChange={(val) => setOwnerUserId(val || undefined)}
                 options={allUsers.map((u) => ({ value: u.user_id, label: `${u.display_name} (${u.email})` }))}
                 placeholder="Select owner..."
                 showSearch
@@ -1120,8 +1220,9 @@ const GlossaryTermDetail: React.FC = () => {
               </div>
               <Select
                 style={{ width: '100%' }}
+                labelInValue
                 value={stewardUserId}
-                onChange={(val) => setStewardUserId(val)}
+                onChange={(val) => setStewardUserId(val || undefined)}
                 options={allUsers.map((u) => ({ value: u.user_id, label: `${u.display_name} (${u.email})` }))}
                 placeholder="Select steward..."
                 showSearch
@@ -1136,8 +1237,9 @@ const GlossaryTermDetail: React.FC = () => {
               </div>
               <Select
                 style={{ width: '100%' }}
+                labelInValue
                 value={domainOwnerUserId}
-                onChange={(val) => setDomainOwnerUserId(val)}
+                onChange={(val) => setDomainOwnerUserId(val || undefined)}
                 options={allUsers.map((u) => ({ value: u.user_id, label: `${u.display_name} (${u.email})` }))}
                 placeholder="Select domain owner..."
                 showSearch
@@ -1152,8 +1254,9 @@ const GlossaryTermDetail: React.FC = () => {
               </div>
               <Select
                 style={{ width: '100%' }}
+                labelInValue
                 value={approverUserId}
-                onChange={(val) => setApproverUserId(val)}
+                onChange={(val) => setApproverUserId(val || undefined)}
                 options={allUsers.map((u) => ({ value: u.user_id, label: `${u.display_name} (${u.email})` }))}
                 placeholder="Select approver..."
                 showSearch

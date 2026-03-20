@@ -34,6 +34,8 @@ use metadata_tool::db::{self, AppState};
         api::glossary::get_term,
         api::glossary::create_term,
         api::glossary::update_term,
+        api::glossary::amend_term,
+        api::glossary::discard_amendment,
         api::glossary::list_domains,
         api::glossary::list_categories,
         api::glossary::list_term_types,
@@ -94,6 +96,10 @@ use metadata_tool::db::{self, AppState};
         api::applications::create_application,
         api::applications::update_application,
         api::applications::list_classifications,
+        api::applications::list_dr_tiers,
+        api::applications::list_lifecycle_stages,
+        api::applications::list_criticality_tiers,
+        api::applications::list_risk_ratings,
         api::applications::link_data_element,
         api::applications::list_app_elements,
         api::applications::list_interfaces,
@@ -279,6 +285,8 @@ async fn main() -> anyhow::Result<()> {
         )
         .route("/api/v1/glossary/terms", get(api::glossary::list_terms).post(api::glossary::create_term))
         .route("/api/v1/glossary/terms/{term_id}", get(api::glossary::get_term).put(api::glossary::update_term))
+        .route("/api/v1/glossary/terms/{term_id}/amend", post(api::glossary::amend_term))
+        .route("/api/v1/glossary/terms/{term_id}/discard", delete(api::glossary::discard_amendment))
         .route("/api/v1/glossary/terms/{term_id}/ai-enrich", post(api::glossary::ai_enrich_term))
         .route("/api/v1/glossary/terms/{term_id}/regulatory-tags", post(api::glossary::attach_regulatory_tag))
         .route("/api/v1/glossary/terms/{term_id}/regulatory-tags/{tag_id}", delete(api::glossary::detach_regulatory_tag))
@@ -332,6 +340,10 @@ async fn main() -> anyhow::Result<()> {
         // Applications
         .route("/api/v1/applications", get(api::applications::list_applications).post(api::applications::create_application))
         .route("/api/v1/applications/classifications", get(api::applications::list_classifications))
+        .route("/api/v1/applications/dr-tiers", get(api::applications::list_dr_tiers))
+        .route("/api/v1/applications/lifecycle-stages", get(api::applications::list_lifecycle_stages))
+        .route("/api/v1/applications/criticality-tiers", get(api::applications::list_criticality_tiers))
+        .route("/api/v1/applications/risk-ratings", get(api::applications::list_risk_ratings))
         .route("/api/v1/applications/{app_id}", get(api::applications::get_application).put(api::applications::update_application))
         .route("/api/v1/applications/{app_id}/elements", get(api::applications::list_app_elements).post(api::applications::link_data_element))
         .route("/api/v1/applications/{app_id}/interfaces", get(api::applications::list_interfaces))

@@ -244,8 +244,45 @@ async fn fetch_entity_data(
 
             Ok((json, existing))
         }
+        "application" => {
+            let row = sqlx::query_as::<_, crate::domain::applications::Application>(
+                "SELECT * FROM applications WHERE application_id = $1 AND deleted_at IS NULL",
+            )
+            .bind(entity_id)
+            .fetch_optional(pool)
+            .await?
+            .ok_or_else(|| {
+                AppError::NotFound(format!("application not found: {entity_id}"))
+            })?;
+
+            let json = serde_json::json!({
+                "application_name": row.application_name,
+                "application_code": row.application_code,
+                "description": row.description,
+                "abbreviation": row.abbreviation,
+                "business_capability": row.business_capability,
+                "user_base": row.user_base,
+                "regulatory_scope": row.regulatory_scope,
+                "license_type": row.license_type,
+                "vendor": row.vendor,
+                "vendor_product_name": row.vendor_product_name,
+                "deployment_type": row.deployment_type,
+            });
+
+            let mut existing = Vec::new();
+            if !row.application_name.is_empty() { existing.push("application_name".to_string()); }
+            if !row.description.is_empty() { existing.push("description".to_string()); }
+            if row.abbreviation.is_some() { existing.push("abbreviation".to_string()); }
+            if row.business_capability.is_some() { existing.push("business_capability".to_string()); }
+            if row.user_base.is_some() { existing.push("user_base".to_string()); }
+            if row.regulatory_scope.is_some() { existing.push("regulatory_scope".to_string()); }
+            if row.license_type.is_some() { existing.push("license_type".to_string()); }
+            if row.data_classification_id.is_some() { existing.push("data_classification".to_string()); }
+
+            Ok((json, existing))
+        }
         _ => Err(AppError::Validation(format!(
-            "unsupported entity type for AI enrichment: {entity_type} — supported types: glossary_term, data_element"
+            "unsupported entity type for AI enrichment: {entity_type} — supported types: glossary_term, data_element, application"
         ))),
     }
 }
@@ -462,6 +499,46 @@ async fn apply_suggestion_to_entity(
                 }
             }
         }
+        "application" => {
+            match field_name {
+                "description" => {
+                    sqlx::query("UPDATE applications SET description = $1, updated_by = $2, updated_at = CURRENT_TIMESTAMP WHERE application_id = $3 AND deleted_at IS NULL")
+                        .bind(value).bind(user_id).bind(entity_id).execute(pool).await?;
+                }
+                "abbreviation" => {
+                    sqlx::query("UPDATE applications SET abbreviation = $1, updated_by = $2, updated_at = CURRENT_TIMESTAMP WHERE application_id = $3 AND deleted_at IS NULL")
+                        .bind(value).bind(user_id).bind(entity_id).execute(pool).await?;
+                }
+                "business_capability" => {
+                    sqlx::query("UPDATE applications SET business_capability = $1, updated_by = $2, updated_at = CURRENT_TIMESTAMP WHERE application_id = $3 AND deleted_at IS NULL")
+                        .bind(value).bind(user_id).bind(entity_id).execute(pool).await?;
+                }
+                "user_base" => {
+                    sqlx::query("UPDATE applications SET user_base = $1, updated_by = $2, updated_at = CURRENT_TIMESTAMP WHERE application_id = $3 AND deleted_at IS NULL")
+                        .bind(value).bind(user_id).bind(entity_id).execute(pool).await?;
+                }
+                "regulatory_scope" => {
+                    sqlx::query("UPDATE applications SET regulatory_scope = $1, updated_by = $2, updated_at = CURRENT_TIMESTAMP WHERE application_id = $3 AND deleted_at IS NULL")
+                        .bind(value).bind(user_id).bind(entity_id).execute(pool).await?;
+                }
+                "license_type" => {
+                    sqlx::query("UPDATE applications SET license_type = $1, updated_by = $2, updated_at = CURRENT_TIMESTAMP WHERE application_id = $3 AND deleted_at IS NULL")
+                        .bind(value).bind(user_id).bind(entity_id).execute(pool).await?;
+                }
+                // Lookup field: data_classification (UUID from embedded prompt)
+                "data_classification" => {
+                    if let Ok(uuid) = Uuid::parse_str(value) {
+                        sqlx::query("UPDATE applications SET data_classification_id = $1, updated_by = $2, updated_at = CURRENT_TIMESTAMP WHERE application_id = $3 AND deleted_at IS NULL")
+                            .bind(uuid).bind(user_id).bind(entity_id).execute(pool).await?;
+                    }
+                }
+                _ => {
+                    return Err(AppError::Validation(format!(
+                        "cannot apply suggestion to field '{field_name}' on application"
+                    )));
+                }
+            }
+        }
         _ => {
             return Err(AppError::Validation(format!(
                 "cannot apply suggestion to unsupported entity type: {entity_type}"
@@ -502,10 +579,20 @@ pub async fn enrich(
         fetch_entity_data(&state.pool, &body.entity_type, body.entity_id).await?;
 
     // Fetch lookup tables for the AI prompt (CODING_STANDARDS Section 15.6)
-    let lookups = if body.entity_type == "glossary_term" {
-        fetch_glossary_lookups(&state.pool).await?
-    } else {
-        serde_json::json!({})
+    let lookups = match body.entity_type.as_str() {
+        "glossary_term" => fetch_glossary_lookups(&state.pool).await?,
+        "application" => {
+            // Embed data_classifications for the lookup-in-prompt pattern (Section 15.6)
+            let classifications = sqlx::query_as::<_, IdName>(
+                "SELECT classification_id AS id, classification_name AS name FROM data_classifications ORDER BY display_order ASC",
+            )
+            .fetch_all(&state.pool)
+            .await?;
+            serde_json::json!({
+                "data_classification": classifications.iter().map(|r| serde_json::json!({"id": r.id, "name": r.name})).collect::<Vec<_>>(),
+            })
+        }
+        _ => serde_json::json!({}),
     };
 
     // Call AI enrichment service
@@ -527,9 +614,10 @@ pub async fn enrich(
             || s.field_name.ends_with("_by")
             || matches!(
                 s.field_name.as_str(),
-                "status_id" | "version_number" | "is_current_version" | "is_cbt" | "is_cde"
+                "status_id" | "version_number" | "is_current_version" | "is_cbt" | "is_cde" | "is_cba"
                     | "is_nullable" | "is_active" | "is_critical"
                     | "parent_term" | "child_terms" | "related_terms"
+                    | "golden_source" | "golden_source_app_id"
             )
         {
             return false;

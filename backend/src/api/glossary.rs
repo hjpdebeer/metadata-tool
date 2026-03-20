@@ -36,17 +36,29 @@ pub async fn list_terms(
     let offset = (page - 1) * page_size;
     let is_admin = claims.roles.iter().any(|r| r == "ADMIN" || r == "admin");
 
-    // Visibility filter: Accepted/Deprecated visible to all; others only to
-    // creator, assigned owners/steward/approver, or admins.
+    // Visibility + version filter:
+    // - Current versions (is_current_version = TRUE): Accepted/Deprecated visible to all,
+    //   others visible only to involved users or admins.
+    // - Non-current versions (amendments in progress): visible only to involved users or admins.
     let visibility_clause = r#"
           AND (
-              es.status_code IN ('ACCEPTED', 'DEPRECATED')
-              OR gt.created_by = $7
-              OR gt.owner_user_id = $7
-              OR gt.steward_user_id = $7
-              OR gt.domain_owner_user_id = $7
-              OR gt.approver_user_id = $7
-              OR $8::BOOLEAN = TRUE
+              (gt.is_current_version = TRUE AND (
+                  es.status_code IN ('ACCEPTED', 'DEPRECATED')
+                  OR gt.created_by = $7
+                  OR gt.owner_user_id = $7
+                  OR gt.steward_user_id = $7
+                  OR gt.domain_owner_user_id = $7
+                  OR gt.approver_user_id = $7
+                  OR $8::BOOLEAN = TRUE
+              ))
+              OR (gt.is_current_version = FALSE AND (
+                  gt.created_by = $7
+                  OR gt.owner_user_id = $7
+                  OR gt.steward_user_id = $7
+                  OR gt.domain_owner_user_id = $7
+                  OR gt.approver_user_id = $7
+                  OR $8::BOOLEAN = TRUE
+              ))
           )
     "#;
 
@@ -56,8 +68,7 @@ pub async fn list_terms(
         SELECT COUNT(*)
         FROM glossary_terms gt
         JOIN entity_statuses es ON es.status_id = gt.status_id
-        WHERE gt.is_current_version = TRUE
-          AND gt.deleted_at IS NULL
+        WHERE gt.deleted_at IS NULL
           AND ($1::TEXT IS NULL OR gt.search_vector @@ plainto_tsquery('english', $1))
           AND ($2::UUID IS NULL OR gt.domain_id = $2)
           AND ($3::UUID IS NULL OR gt.category_id = $3)
@@ -108,8 +119,7 @@ pub async fn list_terms(
         LEFT JOIN glossary_term_types gtt ON gtt.term_type_id = gt.term_type_id
         LEFT JOIN users uo ON uo.user_id = gt.owner_user_id
         LEFT JOIN users us ON us.user_id = gt.steward_user_id
-        WHERE gt.is_current_version = TRUE
-          AND gt.deleted_at IS NULL
+        WHERE gt.deleted_at IS NULL
           AND ($1::TEXT IS NULL OR gt.search_vector @@ plainto_tsquery('english', $1))
           AND ($2::UUID IS NULL OR gt.domain_id = $2)
           AND ($3::UUID IS NULL OR gt.category_id = $3)
@@ -117,7 +127,7 @@ pub async fn list_terms(
           AND ($5::UUID IS NULL OR gt.term_type_id = $5)
           AND ($6::BOOLEAN IS NULL OR gt.is_cbt = $6)
           {visibility}
-        ORDER BY gt.term_name ASC
+        ORDER BY gt.term_name ASC, gt.version_number DESC
         LIMIT $9
         OFFSET $10
         "#,
@@ -162,8 +172,9 @@ const GLOSSARY_TERM_COLUMNS: &str = r#"
     approved_at, review_frequency_id, next_review_date,
     parent_term_id, source_reference, regulatory_reference,
     used_in_reports, used_in_policies, regulatory_reporting_usage,
-    is_cbt, golden_source, confidence_level_id,
+    is_cbt, golden_source, golden_source_app_id, confidence_level_id,
     visibility_id, language_id, external_reference,
+    previous_version_id,
     created_by, updated_by, created_at, updated_at
 "#;
 
@@ -200,7 +211,7 @@ pub async fn get_term(
             gt.parent_term_id, gt.source_reference, gt.regulatory_reference,
             gt.used_in_reports, gt.used_in_policies,
             gt.regulatory_reporting_usage,
-            gt.is_cbt, gt.golden_source, gt.confidence_level_id,
+            gt.is_cbt, gt.golden_source, gt.golden_source_app_id, gt.confidence_level_id,
             gt.visibility_id, gt.language_id, gt.external_reference,
             gt.previous_version_id,
             gt.created_by, gt.updated_by, gt.created_at, gt.updated_at,
@@ -215,6 +226,7 @@ pub async fn get_term(
             gvl.visibility_name,
             gl.language_name,
             pt.term_name                  AS parent_term_name,
+            gsapp.application_name        AS golden_source_app_name,
             uo.display_name               AS owner_name,
             us.display_name               AS steward_name,
             udo.display_name              AS domain_owner_name,
@@ -232,6 +244,7 @@ pub async fn get_term(
         LEFT JOIN glossary_visibility_levels gvl ON gvl.visibility_id = gt.visibility_id
         LEFT JOIN glossary_languages gl     ON gl.language_id = gt.language_id
         LEFT JOIN glossary_terms pt         ON pt.term_id = gt.parent_term_id
+        LEFT JOIN applications gsapp       ON gsapp.application_id = gt.golden_source_app_id
         LEFT JOIN users uo                  ON uo.user_id = gt.owner_user_id
         LEFT JOIN users us                  ON us.user_id = gt.steward_user_id
         LEFT JOIN users udo                 ON udo.user_id = gt.domain_owner_user_id
@@ -546,13 +559,14 @@ pub async fn update_term(
             regulatory_reporting_usage = COALESCE($26, regulatory_reporting_usage),
             is_cbt                   = COALESCE($27, is_cbt),
             golden_source            = COALESCE($28, golden_source),
-            confidence_level_id      = COALESCE($29, confidence_level_id),
-            visibility_id            = COALESCE($30, visibility_id),
-            language_id              = COALESCE($31, language_id),
-            external_reference       = COALESCE($32, external_reference),
-            updated_by               = $33,
+            golden_source_app_id     = COALESCE($29, golden_source_app_id),
+            confidence_level_id      = COALESCE($30, confidence_level_id),
+            visibility_id            = COALESCE($31, visibility_id),
+            language_id              = COALESCE($32, language_id),
+            external_reference       = COALESCE($33, external_reference),
+            updated_by               = $34,
             updated_at               = CURRENT_TIMESTAMP
-        WHERE term_id = $34 AND deleted_at IS NULL
+        WHERE term_id = $35 AND deleted_at IS NULL
         RETURNING {cols}
         "#,
         cols = GLOSSARY_TERM_COLUMNS,
@@ -587,6 +601,7 @@ pub async fn update_term(
         .bind(body.regulatory_reporting_usage.as_deref())
         .bind(body.is_cbt)
         .bind(body.golden_source.as_deref())
+        .bind(body.golden_source_app_id)
         .bind(body.confidence_level_id)
         .bind(body.visibility_id)
         .bind(body.language_id)
@@ -597,6 +612,326 @@ pub async fn update_term(
         .await?;
 
     Ok(Json(term))
+}
+
+// ---------------------------------------------------------------------------
+// amend_term — POST /api/v1/glossary/terms/:term_id/amend
+// ---------------------------------------------------------------------------
+
+/// Propose an amendment to an accepted glossary term. Creates a new version
+/// in DRAFT status with all fields copied from the current version.
+/// The original remains ACCEPTED and visible until the amendment is approved.
+#[utoipa::path(
+    post,
+    path = "/api/v1/glossary/terms/{term_id}/amend",
+    params(("term_id" = Uuid, Path, description = "Term ID of the accepted term to amend")),
+    responses(
+        (status = 201, description = "Amendment created in DRAFT status", body = GlossaryTerm),
+        (status = 422, description = "Term is not in ACCEPTED status")
+    ),
+    security(("bearer_auth" = [])),
+    tag = "glossary"
+)]
+pub async fn amend_term(
+    State(state): State<AppState>,
+    Extension(claims): Extension<Claims>,
+    Path(term_id): Path<Uuid>,
+) -> AppResult<(StatusCode, Json<GlossaryTerm>)> {
+    // Verify the term exists and is ACCEPTED
+    let original = sqlx::query_as::<_, GlossaryTerm>(
+        &format!(
+            "SELECT {cols} FROM glossary_terms WHERE term_id = $1 AND deleted_at IS NULL",
+            cols = GLOSSARY_TERM_COLUMNS
+        ),
+    )
+    .bind(term_id)
+    .fetch_optional(&state.pool)
+    .await?
+    .ok_or_else(|| AppError::NotFound(format!("glossary term not found: {term_id}")))?;
+
+    // Check status is ACCEPTED
+    let status_code = sqlx::query_scalar::<_, String>(
+        "SELECT status_code FROM entity_statuses WHERE status_id = $1",
+    )
+    .bind(original.status_id)
+    .fetch_one(&state.pool)
+    .await?;
+
+    if status_code != "ACCEPTED" {
+        return Err(AppError::Validation(
+            "only accepted terms can be amended".into(),
+        ));
+    }
+
+    // If an amendment already exists, return it instead of creating a new one
+    let existing_amendment = sqlx::query_as::<_, GlossaryTerm>(
+        &format!(
+            "SELECT {cols} FROM glossary_terms WHERE previous_version_id = $1 AND deleted_at IS NULL AND is_current_version = FALSE LIMIT 1",
+            cols = GLOSSARY_TERM_COLUMNS
+        ),
+    )
+    .bind(term_id)
+    .fetch_optional(&state.pool)
+    .await?;
+
+    if let Some(existing) = existing_amendment {
+        return Ok((StatusCode::OK, Json(existing)));
+    }
+
+    let draft_status_id = sqlx::query_scalar::<_, Uuid>(
+        "SELECT status_id FROM entity_statuses WHERE status_code = 'DRAFT'",
+    )
+    .fetch_one(&state.pool)
+    .await?;
+
+    let new_version = original.version_number + 1;
+
+    // Insert new version with all fields copied, new term_id, DRAFT status
+    let amendment = sqlx::query_as::<_, GlossaryTerm>(
+        &format!(
+            r#"
+            INSERT INTO glossary_terms (
+                term_name, term_code, definition, abbreviation,
+                business_context, examples, definition_notes, counter_examples,
+                formula, unit_of_measure_id,
+                term_type_id, domain_id, category_id, classification_id,
+                owner_user_id, steward_user_id, domain_owner_user_id,
+                approver_user_id, organisational_unit,
+                status_id, version_number, is_current_version,
+                review_frequency_id,
+                parent_term_id, source_reference, regulatory_reference,
+                used_in_reports, used_in_policies, regulatory_reporting_usage,
+                is_cbt, golden_source, golden_source_app_id, confidence_level_id,
+                visibility_id, language_id, external_reference,
+                previous_version_id, created_by
+            )
+            VALUES (
+                $1, $2, $3, $4, $5, $6, $7, $8, $9, $10,
+                $11, $12, $13, $14, $15, $16, $17, $18, $19,
+                $20, $21, FALSE,
+                $22, $23, $24, $25, $26, $27, $28,
+                $29, $30, $31, $32, $33, $34, $35,
+                $36, $37
+            )
+            RETURNING {cols}
+            "#,
+            cols = GLOSSARY_TERM_COLUMNS
+        ),
+    )
+    .bind(&original.term_name)
+    .bind(&original.term_code) // same term_code, new version_number
+    .bind(&original.definition)
+    .bind(original.abbreviation.as_deref())
+    .bind(original.business_context.as_deref())
+    .bind(original.examples.as_deref())
+    .bind(original.definition_notes.as_deref())
+    .bind(original.counter_examples.as_deref())
+    .bind(original.formula.as_deref())
+    .bind(original.unit_of_measure_id)
+    .bind(original.term_type_id)
+    .bind(original.domain_id)
+    .bind(original.category_id)
+    .bind(original.classification_id)
+    .bind(original.owner_user_id)
+    .bind(original.steward_user_id)
+    .bind(original.domain_owner_user_id)
+    .bind(original.approver_user_id)
+    .bind(original.organisational_unit.as_deref())
+    .bind(draft_status_id)                  // $20
+    .bind(new_version)                      // $21
+    .bind(original.review_frequency_id)     // $22
+    .bind(original.parent_term_id)          // $23
+    .bind(original.source_reference.as_deref())
+    .bind(original.regulatory_reference.as_deref())
+    .bind(original.used_in_reports.as_deref())
+    .bind(original.used_in_policies.as_deref())
+    .bind(original.regulatory_reporting_usage.as_deref())
+    .bind(original.is_cbt)                  // $29
+    .bind(original.golden_source.as_deref())
+    .bind(original.golden_source_app_id)
+    .bind(original.confidence_level_id)
+    .bind(original.visibility_id)
+    .bind(original.language_id)
+    .bind(original.external_reference.as_deref())
+    .bind(term_id)                          // $36 = previous_version_id
+    .bind(claims.sub)                       // $37 = created_by
+    .fetch_one(&state.pool)
+    .await?;
+
+    // Copy junction data from original term
+    // Aliases
+    sqlx::query(
+        r#"
+        INSERT INTO glossary_term_aliases (term_id, alias_name, alias_type)
+        SELECT $1, alias_name, alias_type
+        FROM glossary_term_aliases WHERE term_id = $2
+        "#,
+    )
+    .bind(amendment.term_id)
+    .bind(term_id)
+    .execute(&state.pool)
+    .await?;
+
+    // Regulatory tags
+    sqlx::query(
+        r#"
+        INSERT INTO glossary_term_regulatory_tags (term_id, tag_id, created_by)
+        SELECT $1, tag_id, $3
+        FROM glossary_term_regulatory_tags WHERE term_id = $2
+        "#,
+    )
+    .bind(amendment.term_id)
+    .bind(term_id)
+    .bind(claims.sub)
+    .execute(&state.pool)
+    .await?;
+
+    // Subject areas
+    sqlx::query(
+        r#"
+        INSERT INTO glossary_term_subject_areas (term_id, subject_area_id, is_primary, created_by)
+        SELECT $1, subject_area_id, is_primary, $3
+        FROM glossary_term_subject_areas WHERE term_id = $2
+        "#,
+    )
+    .bind(amendment.term_id)
+    .bind(term_id)
+    .bind(claims.sub)
+    .execute(&state.pool)
+    .await?;
+
+    // Tags
+    sqlx::query(
+        r#"
+        INSERT INTO glossary_term_tags (term_id, tag_id, created_by)
+        SELECT $1, tag_id, $3
+        FROM glossary_term_tags WHERE term_id = $2
+        "#,
+    )
+    .bind(amendment.term_id)
+    .bind(term_id)
+    .bind(claims.sub)
+    .execute(&state.pool)
+    .await?;
+
+    // Initiate workflow for the amendment
+    workflow::service::initiate_workflow(
+        &state.pool,
+        workflow::ENTITY_GLOSSARY_TERM,
+        amendment.term_id,
+        claims.sub,
+    )
+    .await?;
+
+    Ok((StatusCode::CREATED, Json(amendment)))
+}
+
+// ---------------------------------------------------------------------------
+// discard_amendment — DELETE /api/v1/glossary/terms/:term_id/discard
+// ---------------------------------------------------------------------------
+
+/// Discard a draft amendment. Only the creator can discard, and only in DRAFT status.
+/// Soft-deletes the amendment and cancels its workflow instance.
+#[utoipa::path(
+    delete,
+    path = "/api/v1/glossary/terms/{term_id}/discard",
+    params(("term_id" = Uuid, Path, description = "Amendment term ID to discard")),
+    responses(
+        (status = 204, description = "Amendment discarded"),
+        (status = 403, description = "Only the creator can discard"),
+        (status = 422, description = "Term is not a draft amendment")
+    ),
+    security(("bearer_auth" = [])),
+    tag = "glossary"
+)]
+pub async fn discard_amendment(
+    State(state): State<AppState>,
+    Extension(claims): Extension<Claims>,
+    Path(term_id): Path<Uuid>,
+) -> AppResult<StatusCode> {
+    // Fetch the term
+    let row = sqlx::query_as::<_, GlossaryTerm>(
+        &format!(
+            "SELECT {cols} FROM glossary_terms WHERE term_id = $1 AND deleted_at IS NULL",
+            cols = GLOSSARY_TERM_COLUMNS
+        ),
+    )
+    .bind(term_id)
+    .fetch_optional(&state.pool)
+    .await?
+    .ok_or_else(|| AppError::NotFound(format!("glossary term not found: {term_id}")))?;
+
+    // Must be an amendment (has previous_version_id)
+    if row.previous_version_id.is_none() {
+        return Err(AppError::Validation(
+            "only amendments can be discarded — use the workflow to manage original terms".into(),
+        ));
+    }
+
+    // Must be in DRAFT status
+    let status_code = sqlx::query_scalar::<_, String>(
+        "SELECT status_code FROM entity_statuses WHERE status_id = $1",
+    )
+    .bind(row.status_id)
+    .fetch_one(&state.pool)
+    .await?;
+
+    if status_code != "DRAFT" {
+        return Err(AppError::Validation(
+            "only draft amendments can be discarded — submitted amendments must be rejected through the workflow".into(),
+        ));
+    }
+
+    // Only the creator can discard
+    let is_admin = claims.roles.iter().any(|r| r == "ADMIN" || r == "admin");
+    if row.created_by != claims.sub && !is_admin {
+        return Err(AppError::Forbidden(
+            "only the amendment creator or an admin can discard it".into(),
+        ));
+    }
+
+    // Hard delete: a never-submitted draft has no governance value.
+    // (Rejected amendments are preserved via soft delete for audit trail.)
+
+    // Delete junction data first (FK constraints)
+    sqlx::query("DELETE FROM glossary_term_aliases WHERE term_id = $1")
+        .bind(term_id).execute(&state.pool).await?;
+    sqlx::query("DELETE FROM glossary_term_regulatory_tags WHERE term_id = $1")
+        .bind(term_id).execute(&state.pool).await?;
+    sqlx::query("DELETE FROM glossary_term_subject_areas WHERE term_id = $1")
+        .bind(term_id).execute(&state.pool).await?;
+    sqlx::query("DELETE FROM glossary_term_tags WHERE term_id = $1")
+        .bind(term_id).execute(&state.pool).await?;
+
+    // Delete workflow tasks and history, then the instance
+    sqlx::query(
+        r#"
+        DELETE FROM workflow_tasks
+        WHERE instance_id IN (SELECT instance_id FROM workflow_instances WHERE entity_id = $1)
+        "#,
+    )
+    .bind(term_id)
+    .execute(&state.pool)
+    .await?;
+
+    sqlx::query(
+        r#"
+        DELETE FROM workflow_history
+        WHERE instance_id IN (SELECT instance_id FROM workflow_instances WHERE entity_id = $1)
+        "#,
+    )
+    .bind(term_id)
+    .execute(&state.pool)
+    .await?;
+
+    sqlx::query("DELETE FROM workflow_instances WHERE entity_id = $1")
+        .bind(term_id).execute(&state.pool).await?;
+
+    // Delete the amendment term itself
+    sqlx::query("DELETE FROM glossary_terms WHERE term_id = $1")
+        .bind(term_id).execute(&state.pool).await?;
+
+    Ok(StatusCode::NO_CONTENT)
 }
 
 // ---------------------------------------------------------------------------

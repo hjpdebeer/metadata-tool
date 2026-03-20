@@ -22,6 +22,8 @@ import { ArrowLeftOutlined, PlusOutlined, RobotOutlined } from '@ant-design/icon
 import { glossaryApi } from '../services/glossaryApi';
 import { aiApi } from '../services/aiApi';
 import { usersApi } from '../services/usersApi';
+import { applicationsApi } from '../services/applicationsApi';
+import type { ApplicationListItem } from '../services/applicationsApi';
 import type {
   CreateGlossaryTermRequest,
   DataClassificationRef,
@@ -62,6 +64,7 @@ const GlossaryTermForm: React.FC = () => {
   const [users, setUsers] = useState<UserListItem[]>([]);
 
   const [allTerms, setAllTerms] = useState<GlossaryTermListItem[]>([]);
+  const [allApplications, setAllApplications] = useState<ApplicationListItem[]>([]);
   const [aliases, setAliases] = useState<{ alias_id: string; alias_name: string; alias_type: string | null }[]>([]);
   const [addingAlias, setAddingAlias] = useState(false);
   const [newAliasName, setNewAliasName] = useState('');
@@ -83,6 +86,7 @@ const GlossaryTermForm: React.FC = () => {
       glossaryApi.listLanguages(),
       usersApi.listUsers({ page_size: 500, is_active: true }),
       glossaryApi.listTerms({ page_size: 500 }),
+      applicationsApi.listApplications({ page_size: 500 }),
     ]);
 
     if (results[0].status === 'fulfilled') setDomains(results[0].value.data);
@@ -109,6 +113,14 @@ const GlossaryTermForm: React.FC = () => {
         setAllTerms(termData);
       } else {
         setAllTerms((termData as unknown as { data: GlossaryTermListItem[] }).data || []);
+      }
+    }
+    if (results[11].status === 'fulfilled') {
+      const appData = results[11].value.data;
+      if (Array.isArray(appData)) {
+        setAllApplications(appData);
+      } else {
+        setAllApplications((appData as unknown as { data: ApplicationListItem[] }).data || []);
       }
     }
   }, []);
@@ -144,6 +156,7 @@ const GlossaryTermForm: React.FC = () => {
         review_frequency_id: detail.review_frequency_id || undefined,
         is_cbt: detail.is_cbt,
         golden_source: detail.golden_source || undefined,
+        golden_source_app_id: detail.golden_source_app_id || undefined,
         confidence_level_id: detail.confidence_level_id || undefined,
         visibility_id: detail.visibility_id || undefined,
         language_id: detail.language_id || undefined,
@@ -217,7 +230,7 @@ const GlossaryTermForm: React.FC = () => {
         'term_type_id', 'unit_of_measure_id', 'classification_id',
         'owner_user_id', 'steward_user_id', 'domain_owner_user_id', 'approver_user_id',
         'organisational_unit', 'review_frequency_id',
-        'golden_source', 'confidence_level_id', 'visibility_id', 'language_id',
+        'golden_source', 'golden_source_app_id', 'confidence_level_id', 'visibility_id', 'language_id',
         'used_in_reports', 'used_in_policies', 'regulatory_reporting_usage',
         'source_reference', 'regulatory_reference', 'external_reference',
         'parent_term_id',
@@ -384,6 +397,10 @@ const GlossaryTermForm: React.FC = () => {
   const parentTermOptions = allTerms
     .filter((t) => t.term_id !== id)
     .map((t) => ({ value: t.term_id, label: t.term_name }));
+  const applicationOptions = allApplications.map((a) => ({
+    value: a.application_id,
+    label: `${a.application_name} (${a.application_code})`,
+  }));
 
   const handleAddAlias = async () => {
     const name = newAliasName.trim();
@@ -793,9 +810,20 @@ const GlossaryTermForm: React.FC = () => {
                 <Switch checkedChildren="CBT" unCheckedChildren="No" />
               </Form.Item>
             </Col>
-            <Col xs={24} md={10}>
+            <Col xs={24} md={9}>
               <Form.Item name="golden_source" label="Golden Source">
                 <Input placeholder="Authoritative source system" />
+              </Form.Item>
+            </Col>
+            <Col xs={24} md={9}>
+              <Form.Item name="golden_source_app_id" label="Golden Source Application">
+                <Select
+                  placeholder="Select application"
+                  options={applicationOptions}
+                  allowClear
+                  showSearch
+                  optionFilterProp="label"
+                />
               </Form.Item>
             </Col>
             {/* Confidence Level is managed by the Data Quality module, not edited here */}

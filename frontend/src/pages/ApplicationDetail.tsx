@@ -6,6 +6,7 @@ import {
   Button,
   Card,
   Col,
+  Collapse,
   Descriptions,
   Divider,
   Form,
@@ -32,19 +33,23 @@ import {
   LinkOutlined,
   SendOutlined,
   UndoOutlined,
+  UserOutlined,
   WarningOutlined,
 } from '@ant-design/icons';
 import { applicationsApi } from '../services/applicationsApi';
 import { dataDictionaryApi } from '../services/dataDictionaryApi';
 import { workflowApi } from '../services/glossaryApi';
+import { usersApi } from '../services/usersApi';
 import type {
   ApplicationDataElementLink,
   ApplicationFullView,
   ApplicationInterface,
 } from '../services/applicationsApi';
 import type { DataElementListItem } from '../services/dataDictionaryApi';
-import type { WorkflowInstanceView } from '../services/glossaryApi';
+import type { WorkflowInstanceView, OrganisationalUnit } from '../services/glossaryApi';
+import type { UserListItem } from '../services/usersApi';
 import { useAuth } from '../hooks/useAuth';
+import { glossaryApi } from '../services/glossaryApi';
 
 const { Title, Text } = Typography;
 
@@ -52,6 +57,7 @@ const statusColors: Record<string, string> = {
   DRAFT: 'default',
   PROPOSED: 'processing',
   UNDER_REVIEW: 'warning',
+  PENDING_APPROVAL: 'processing',
   REVISED: 'orange',
   ACCEPTED: 'success',
   REJECTED: 'error',
@@ -62,6 +68,7 @@ const statusLabels: Record<string, string> = {
   DRAFT: 'Draft',
   PROPOSED: 'Proposed',
   UNDER_REVIEW: 'Under Review',
+  PENDING_APPROVAL: 'Pending Approval',
   REVISED: 'Revised',
   ACCEPTED: 'Accepted',
   REJECTED: 'Rejected',
@@ -82,10 +89,18 @@ const deploymentTypeLabels: Record<string, string> = {
   SAAS: 'SaaS',
 };
 
+/** Placeholder for empty values */
+const EmptyValue: React.FC<{ text?: string }> = ({ text }) => (
+  <Text type="secondary" italic style={{ fontSize: 13 }}>
+    {text || 'Not yet populated'}
+  </Text>
+);
+
 const ApplicationDetail: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const { user } = useAuth();
+  const currentUserId = user?.user_id;
 
   const [application, setApplication] = useState<ApplicationFullView | null>(null);
   const [linkedElements, setLinkedElements] = useState<ApplicationDataElementLink[]>([]);
@@ -104,7 +119,16 @@ const ApplicationDetail: React.FC = () => {
   const [availableElements, setAvailableElements] = useState<DataElementListItem[]>([]);
   const [elementsLoading, setElementsLoading] = useState(false);
 
-  const isSteward = user?.roles?.includes('data_steward') || user?.roles?.includes('admin');
+  // Ownership assignment state
+  const [allUsers, setAllUsers] = useState<UserListItem[]>([]);
+  const [allOrgUnits, setAllOrgUnits] = useState<OrganisationalUnit[]>([]);
+  const [ownershipLoading, setOwnershipLoading] = useState(false);
+  type LabeledValue = { value: string; label: string };
+  const [businessOwnerId, setBusinessOwnerId] = useState<LabeledValue | undefined>();
+  const [technicalOwnerId, setTechnicalOwnerId] = useState<LabeledValue | undefined>();
+  const [stewardUserId, setStewardUserId] = useState<LabeledValue | undefined>();
+  const [approverUserId, setApproverUserId] = useState<LabeledValue | undefined>();
+  const [orgUnit, setOrgUnit] = useState<string | undefined>();
 
   const fetchApplication = useCallback(async () => {
     if (!id) return;
@@ -112,16 +136,6 @@ const ApplicationDetail: React.FC = () => {
     try {
       const response = await applicationsApi.getApplication(id);
       setApplication(response.data);
-
-      // Fetch workflow instance if one exists
-      if (response.data.workflow_instance_id) {
-        try {
-          const wfResponse = await workflowApi.getInstance(response.data.workflow_instance_id);
-          setWorkflowInstance(wfResponse.data);
-        } catch {
-          // Workflow instance may not exist yet
-        }
-      }
     } catch {
       message.error('Failed to load application details.');
       navigate('/applications');
@@ -129,6 +143,16 @@ const ApplicationDetail: React.FC = () => {
       setLoading(false);
     }
   }, [id, navigate]);
+
+  const fetchWorkflowInstance = useCallback(async () => {
+    if (!id) return;
+    try {
+      const response = await workflowApi.getInstanceByEntity(id);
+      setWorkflowInstance(response.data);
+    } catch {
+      setWorkflowInstance(null);
+    }
+  }, [id]);
 
   const fetchLinkedElements = useCallback(async () => {
     if (!id) return;
@@ -150,9 +174,23 @@ const ApplicationDetail: React.FC = () => {
     }
   }, [id]);
 
+  const fetchLookups = useCallback(async () => {
+    const [usersRes, orgRes] = await Promise.allSettled([
+      usersApi.listUsers({ page_size: 500, is_active: true }),
+      glossaryApi.listOrganisationalUnits(),
+    ]);
+    if (usersRes.status === 'fulfilled') {
+      const data = usersRes.value.data;
+      setAllUsers(Array.isArray(data) ? data : (data as unknown as { data: UserListItem[] }).data || []);
+    }
+    if (orgRes.status === 'fulfilled') setAllOrgUnits(orgRes.value.data);
+  }, []);
+
   useEffect(() => {
     fetchApplication();
-  }, [fetchApplication]);
+    fetchWorkflowInstance();
+    fetchLookups();
+  }, [fetchApplication, fetchWorkflowInstance, fetchLookups]);
 
   useEffect(() => {
     fetchLinkedElements();
@@ -161,6 +199,21 @@ const ApplicationDetail: React.FC = () => {
   useEffect(() => {
     fetchInterfaces();
   }, [fetchInterfaces]);
+
+  // Sync ownership state from response — uses resolved names so UUIDs never display
+  useEffect(() => {
+    if (application) {
+      setBusinessOwnerId(application.business_owner_id && application.business_owner_name
+        ? { value: application.business_owner_id, label: application.business_owner_name } : undefined);
+      setTechnicalOwnerId(application.technical_owner_id && application.technical_owner_name
+        ? { value: application.technical_owner_id, label: application.technical_owner_name } : undefined);
+      setStewardUserId(application.steward_user_id && application.steward_name
+        ? { value: application.steward_user_id, label: application.steward_name } : undefined);
+      setApproverUserId(application.approver_user_id && application.approver_name
+        ? { value: application.approver_user_id, label: application.approver_name } : undefined);
+      setOrgUnit(application.organisational_unit || undefined);
+    }
+  }, [application]);
 
   const fetchAvailableElements = async () => {
     setElementsLoading(true);
@@ -180,10 +233,50 @@ const ApplicationDetail: React.FC = () => {
     }
   };
 
+  // --- Ownership assignment ---
+
+  const handleSaveOwnership = async () => {
+    if (!id) return;
+    setOwnershipLoading(true);
+    try {
+      await applicationsApi.updateApplication(id, {
+        business_owner_id: businessOwnerId?.value || undefined,
+        technical_owner_id: technicalOwnerId?.value || undefined,
+        steward_user_id: stewardUserId?.value || undefined,
+        approver_user_id: approverUserId?.value || undefined,
+        organisational_unit: orgUnit || undefined,
+      });
+      message.success('Ownership updated successfully.');
+      fetchApplication();
+    } catch {
+      message.error('Failed to update ownership.');
+    } finally {
+      setOwnershipLoading(false);
+    }
+  };
+
+  const ownershipComplete = !!(businessOwnerId && technicalOwnerId && stewardUserId && approverUserId);
+
+  // --- Workflow ---
+
   const handleWorkflowAction = (action: string) => {
-    if (!application?.workflow_instance_id) {
+    if (!workflowInstance?.instance_id) {
       message.error('No active workflow for this application.');
       return;
+    }
+    if (action === 'SUBMIT') {
+      const missing: string[] = [];
+      if (!application?.business_owner_id) missing.push('Business Owner');
+      if (!application?.technical_owner_id) missing.push('Technical Owner');
+      if (!application?.steward_user_id) missing.push('Data Steward');
+      if (!application?.approver_user_id) missing.push('Approver');
+      if (missing.length > 0) {
+        message.warning(
+          `Please assign all ownership fields before submitting: ${missing.join(', ')}. Use the Ownership section below to assign owners.`,
+          8,
+        );
+        return;
+      }
     }
     setTransitionAction(action);
     setTransitionComments('');
@@ -191,20 +284,23 @@ const ApplicationDetail: React.FC = () => {
   };
 
   const submitTransition = async () => {
-    if (!application?.workflow_instance_id) return;
+    if (!workflowInstance?.instance_id) return;
 
     setActionLoading(true);
     try {
       await workflowApi.transitionWorkflow(
-        application.workflow_instance_id,
+        workflowInstance.instance_id,
         transitionAction,
         transitionComments || undefined,
       );
       message.success(`Workflow action "${transitionAction}" completed successfully.`);
       setTransitionModalOpen(false);
       fetchApplication();
-    } catch {
-      message.error(`Failed to perform action "${transitionAction}".`);
+      fetchWorkflowInstance();
+    } catch (error: unknown) {
+      const apiMsg = (error as { response?: { data?: { error?: { message?: string } } } })
+        ?.response?.data?.error?.message;
+      message.error(apiMsg || `Failed to perform action "${transitionAction}".`, 8);
     } finally {
       setActionLoading(false);
     }
@@ -232,13 +328,22 @@ const ApplicationDetail: React.FC = () => {
   };
 
   const formatDate = (dateStr: string | null | undefined) => {
-    if (!dateStr) return '-';
+    if (!dateStr) return null;
     return new Date(dateStr).toLocaleString('en-ZA', {
       year: 'numeric',
       month: 'short',
       day: 'numeric',
       hour: '2-digit',
       minute: '2-digit',
+    });
+  };
+
+  const formatDateShort = (dateStr: string | null | undefined) => {
+    if (!dateStr) return null;
+    return new Date(dateStr).toLocaleDateString('en-ZA', {
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric',
     });
   };
 
@@ -254,10 +359,16 @@ const ApplicationDetail: React.FC = () => {
     return null;
   }
 
+  const detail = application;
   const status = application.status_code || 'DRAFT';
+
+  // --- Action buttons (matching glossary pattern) ---
 
   const renderActionButtons = () => {
     const buttons: React.ReactNode[] = [];
+    const isAdmin = user?.roles?.includes('admin') || user?.roles?.includes('ADMIN');
+    const isSteward = currentUserId === detail.steward_user_id || isAdmin;
+    const isOwner = currentUserId === detail.business_owner_id || isAdmin;
 
     if (status === 'DRAFT') {
       buttons.push(
@@ -281,7 +392,7 @@ const ApplicationDetail: React.FC = () => {
           style={{ backgroundColor: '#52C41A', borderColor: '#52C41A' }}
           onClick={() => handleWorkflowAction('APPROVE')}
         >
-          Approve
+          Approve (Steward)
         </Button>,
         <Button
           key="reject"
@@ -297,6 +408,35 @@ const ApplicationDetail: React.FC = () => {
           onClick={() => handleWorkflowAction('REVISE')}
         >
           Request Revision
+        </Button>,
+      );
+    }
+
+    if (status === 'PENDING_APPROVAL' && isOwner) {
+      buttons.push(
+        <Button
+          key="final-approve"
+          type="primary"
+          icon={<CheckOutlined />}
+          style={{ backgroundColor: '#52C41A', borderColor: '#52C41A' }}
+          onClick={() => handleWorkflowAction('APPROVE')}
+        >
+          Final Approval (Owner)
+        </Button>,
+        <Button
+          key="reject"
+          danger
+          icon={<CloseOutlined />}
+          onClick={() => handleWorkflowAction('REJECT')}
+        >
+          Reject
+        </Button>,
+        <Button
+          key="return"
+          icon={<UndoOutlined />}
+          onClick={() => handleWorkflowAction('REVISE')}
+        >
+          Return to Steward
         </Button>,
       );
     }
@@ -327,6 +467,8 @@ const ApplicationDetail: React.FC = () => {
 
     return buttons;
   };
+
+  const showOwnershipSection = allUsers.length > 0 && (status === 'DRAFT' || status === 'REVISED');
 
   const elementColumns = [
     {
@@ -442,6 +584,288 @@ const ApplicationDetail: React.FC = () => {
     },
   ];
 
+  // --- Collapse panels ---
+
+  const collapseItems = [
+    {
+      key: 'core',
+      label: <Text strong>Core Identity</Text>,
+      children: (
+        <Descriptions column={{ xs: 1, sm: 2, md: 3 }} bordered size="small">
+          <Descriptions.Item label="Application Name">{detail.application_name}</Descriptions.Item>
+          <Descriptions.Item label="Application Code">
+            <Text code>{detail.application_code}</Text>
+          </Descriptions.Item>
+          <Descriptions.Item label="Abbreviation">
+            {detail.abbreviation || <EmptyValue />}
+          </Descriptions.Item>
+          <Descriptions.Item label="External Reference ID">
+            {detail.external_reference_id || <EmptyValue />}
+          </Descriptions.Item>
+          <Descriptions.Item label="Description" span={2}>
+            {detail.description}
+          </Descriptions.Item>
+        </Descriptions>
+      ),
+    },
+    {
+      key: 'classification',
+      label: <Text strong>Classification</Text>,
+      children: (
+        <Descriptions column={{ xs: 1, sm: 2 }} bordered size="small">
+          <Descriptions.Item label="Classification">
+            {detail.classification_name || <EmptyValue />}
+          </Descriptions.Item>
+          <Descriptions.Item label="Deployment Type">
+            {detail.deployment_type ? (
+              <Tag color={deploymentTypeColors[detail.deployment_type] || 'default'}>
+                {deploymentTypeLabels[detail.deployment_type] || detail.deployment_type}
+              </Tag>
+            ) : (
+              <EmptyValue />
+            )}
+          </Descriptions.Item>
+          <Descriptions.Item label="Lifecycle Stage">
+            {detail.lifecycle_stage_name ? (
+              <Tag color="blue">{detail.lifecycle_stage_name}</Tag>
+            ) : (
+              <EmptyValue />
+            )}
+          </Descriptions.Item>
+          {detail.technology_stack != null ? (
+            <Descriptions.Item label="Technology Stack" span={2}>
+              <Text code style={{ fontSize: 12, whiteSpace: 'pre-wrap' }}>
+                {typeof detail.technology_stack === 'string'
+                  ? detail.technology_stack
+                  : JSON.stringify(detail.technology_stack, null, 2)}
+              </Text>
+            </Descriptions.Item>
+          ) : (
+            <Descriptions.Item label="Technology Stack">
+              <EmptyValue />
+            </Descriptions.Item>
+          )}
+        </Descriptions>
+      ),
+    },
+    {
+      key: 'vendor',
+      label: <Text strong>Vendor & Product</Text>,
+      children: (
+        <Descriptions column={{ xs: 1, sm: 2 }} bordered size="small">
+          <Descriptions.Item label="Vendor">
+            {detail.vendor || <EmptyValue />}
+          </Descriptions.Item>
+          <Descriptions.Item label="Vendor Product Name">
+            {detail.vendor_product_name || <EmptyValue />}
+          </Descriptions.Item>
+          <Descriptions.Item label="Version">
+            {detail.version || <EmptyValue />}
+          </Descriptions.Item>
+          <Descriptions.Item label="License Type">
+            {detail.license_type || <EmptyValue />}
+          </Descriptions.Item>
+          {detail.documentation_url && (
+            <Descriptions.Item label="Documentation" span={2}>
+              <a href={detail.documentation_url} target="_blank" rel="noopener noreferrer">
+                {detail.documentation_url} <LinkOutlined />
+              </a>
+            </Descriptions.Item>
+          )}
+        </Descriptions>
+      ),
+    },
+    {
+      key: 'business',
+      label: <Text strong>Business Context</Text>,
+      children: (
+        <Descriptions column={{ xs: 1, sm: 2 }} bordered size="small">
+          <Descriptions.Item label="Business Capability">
+            {detail.business_capability || <EmptyValue />}
+          </Descriptions.Item>
+          <Descriptions.Item label="User Base">
+            {detail.user_base || <EmptyValue />}
+          </Descriptions.Item>
+        </Descriptions>
+      ),
+    },
+    {
+      key: 'ownership',
+      label: <Text strong>Ownership</Text>,
+      children: (
+        <Descriptions column={{ xs: 1, sm: 2 }} bordered size="small">
+          <Descriptions.Item label="Business Owner">
+            {detail.business_owner_name || <EmptyValue />}
+          </Descriptions.Item>
+          <Descriptions.Item label="Technical Owner">
+            {detail.technical_owner_name || <EmptyValue />}
+          </Descriptions.Item>
+          <Descriptions.Item label="Data Steward">
+            {detail.steward_name || <EmptyValue />}
+          </Descriptions.Item>
+          <Descriptions.Item label="Approver">
+            {detail.approver_name || <EmptyValue />}
+          </Descriptions.Item>
+          <Descriptions.Item label="Organisational Unit" span={2}>
+            {detail.organisational_unit || <EmptyValue />}
+          </Descriptions.Item>
+        </Descriptions>
+      ),
+    },
+    {
+      key: 'criticality',
+      label: <Text strong>Criticality & Risk</Text>,
+      children: (
+        <div>
+          {detail.is_cba && (
+            <Alert
+              message="Critical Business Application"
+              description={detail.cba_rationale || 'No rationale provided.'}
+              type="error"
+              showIcon
+              icon={<WarningOutlined />}
+              style={{ marginBottom: 16 }}
+            />
+          )}
+          <Descriptions column={{ xs: 1, sm: 2 }} bordered size="small">
+            <Descriptions.Item label="CBA Designation">
+              {detail.is_cba ? (
+                <Tag color="red" style={{ fontWeight: 600 }}>
+                  <WarningOutlined /> Critical Business Application
+                </Tag>
+              ) : (
+                <Tag color="default">Not CBA</Tag>
+              )}
+            </Descriptions.Item>
+            <Descriptions.Item label="CBA Rationale">
+              {detail.cba_rationale || <EmptyValue />}
+            </Descriptions.Item>
+            <Descriptions.Item label="Criticality Tier">
+              {detail.criticality_tier_name ? (
+                <Tag color="volcano">{detail.criticality_tier_name}</Tag>
+              ) : (
+                <EmptyValue />
+              )}
+            </Descriptions.Item>
+            <Descriptions.Item label="Risk Rating">
+              {detail.risk_rating_name ? (
+                <Tag color={
+                  detail.risk_rating_name === 'Critical' ? 'red' :
+                  detail.risk_rating_name === 'High' ? 'volcano' :
+                  detail.risk_rating_name === 'Medium' ? 'gold' : 'green'
+                }>
+                  {detail.risk_rating_name}
+                </Tag>
+              ) : (
+                <EmptyValue />
+              )}
+            </Descriptions.Item>
+            <Descriptions.Item label="Data Classification">
+              {detail.data_classification_name ? (
+                <Tag color="volcano">{detail.data_classification_name}</Tag>
+              ) : (
+                <EmptyValue />
+              )}
+            </Descriptions.Item>
+            <Descriptions.Item label="Regulatory Scope">
+              {detail.regulatory_scope || <EmptyValue />}
+            </Descriptions.Item>
+            <Descriptions.Item label="Last Security Assessment">
+              {formatDateShort(detail.last_security_assessment) || <EmptyValue />}
+            </Descriptions.Item>
+          </Descriptions>
+        </div>
+      ),
+    },
+    {
+      key: 'operational',
+      label: <Text strong>Operational</Text>,
+      children: (
+        <Descriptions column={{ xs: 1, sm: 2 }} bordered size="small">
+          <Descriptions.Item label="Support Model">
+            {detail.support_model || <EmptyValue />}
+          </Descriptions.Item>
+          <Descriptions.Item label="DR Tier">
+            {detail.dr_tier_name ? (
+              <Tag color="purple">{detail.dr_tier_name}</Tag>
+            ) : (
+              <EmptyValue />
+            )}
+          </Descriptions.Item>
+          <Descriptions.Item label="RTO / RPO">
+            {detail.dr_tier_rto_hours != null && detail.dr_tier_rpo_minutes != null ? (
+              <span>
+                RTO: <Text strong>{detail.dr_tier_rto_hours}h</Text>{' '}
+                / RPO: <Text strong>{detail.dr_tier_rpo_minutes}min</Text>
+              </span>
+            ) : (
+              <EmptyValue />
+            )}
+          </Descriptions.Item>
+        </Descriptions>
+      ),
+    },
+    {
+      key: 'lifecycle',
+      label: <Text strong>Lifecycle</Text>,
+      children: (
+        <Descriptions column={{ xs: 1, sm: 2 }} bordered size="small">
+          <Descriptions.Item label="Go-Live Date">
+            {formatDateShort(detail.go_live_date) || <EmptyValue />}
+          </Descriptions.Item>
+          <Descriptions.Item label="Retirement Date">
+            {formatDateShort(detail.retirement_date) || <EmptyValue />}
+          </Descriptions.Item>
+          <Descriptions.Item label="Contract End Date">
+            {formatDateShort(detail.contract_end_date) || <EmptyValue />}
+          </Descriptions.Item>
+          <Descriptions.Item label="Review Frequency">
+            {detail.review_frequency_name || <EmptyValue />}
+          </Descriptions.Item>
+          <Descriptions.Item label="Next Review Date">
+            {formatDateShort(detail.next_review_date) || <EmptyValue text="Not scheduled" />}
+          </Descriptions.Item>
+          <Descriptions.Item label="Approved Date">
+            {formatDate(detail.approved_at) || <EmptyValue text="Not yet approved" />}
+          </Descriptions.Item>
+          <Descriptions.Item label="Created">
+            {formatDate(detail.created_at)}
+            {detail.created_by_name ? ` by ${detail.created_by_name}` : ''}
+          </Descriptions.Item>
+          <Descriptions.Item label="Last Updated">
+            {formatDate(detail.updated_at)}
+            {detail.updated_by_name ? ` by ${detail.updated_by_name}` : ''}
+          </Descriptions.Item>
+        </Descriptions>
+      ),
+    },
+    {
+      key: 'relationships',
+      label: <Text strong>Relationships</Text>,
+      children: (
+        <Descriptions column={{ xs: 1, sm: 3 }} bordered size="small">
+          <Descriptions.Item label="Linked Data Elements">
+            <Text strong>{detail.data_elements_count}</Text>
+          </Descriptions.Item>
+          <Descriptions.Item label="Interfaces">
+            <Text strong>{detail.interfaces_count}</Text>
+          </Descriptions.Item>
+          <Descriptions.Item label="Linked Processes">
+            {detail.linked_processes?.length > 0 ? (
+              <Space wrap size={[4, 4]}>
+                {detail.linked_processes.map((name, idx) => (
+                  <Tag key={idx} color="green">{name}</Tag>
+                ))}
+              </Space>
+            ) : (
+              <EmptyValue text="None" />
+            )}
+          </Descriptions.Item>
+        </Descriptions>
+      ),
+    },
+  ];
+
   return (
     <div>
       <Breadcrumb
@@ -452,15 +876,18 @@ const ApplicationDetail: React.FC = () => {
         ]}
       />
 
+      {/* --- Header --- */}
       <div
         style={{
           display: 'flex',
           justifyContent: 'space-between',
           alignItems: 'flex-start',
           marginBottom: 16,
+          flexWrap: 'wrap',
+          gap: 12,
         }}
       >
-        <Space align="center">
+        <Space align="center" wrap>
           <Button
             type="text"
             icon={<ArrowLeftOutlined />}
@@ -469,43 +896,54 @@ const ApplicationDetail: React.FC = () => {
           <Title level={3} style={{ margin: 0 }}>
             {application.application_name}
           </Title>
+          {detail.abbreviation && (
+            <Tag color="geekblue" style={{ fontFamily: 'monospace', fontSize: 12 }}>
+              {detail.abbreviation}
+            </Tag>
+          )}
           <Tag
             color={statusColors[status] || 'default'}
             style={{ fontSize: 14, padding: '2px 12px' }}
           >
             {statusLabels[status] || status}
           </Tag>
-          {application.is_critical && (
+          {detail.is_cba && (
             <Tag color="red" style={{ fontSize: 14, padding: '2px 12px', fontWeight: 600 }}>
-              Critical
+              <WarningOutlined /> CBA
             </Tag>
           )}
+          {detail.lifecycle_stage_name && (
+            <Tag color="blue">{detail.lifecycle_stage_name}</Tag>
+          )}
         </Space>
-        <Space>{renderActionButtons()}</Space>
+        <Space wrap>{renderActionButtons()}</Space>
       </div>
 
-      {application.is_critical && (
+      {/* --- CBA Banner --- */}
+      {detail.is_cba && (
         <Alert
           type="error"
           showIcon
           icon={<WarningOutlined />}
-          message="Critical Application"
+          message="Critical Business Application"
           description={
             <div>
               <Text strong>Rationale: </Text>
-              <Text>{application.criticality_rationale || 'No rationale provided.'}</Text>
+              <Text>{detail.cba_rationale || 'No rationale provided.'}</Text>
             </div>
           }
-          style={{ marginBottom: 24 }}
+          style={{ marginBottom: 16 }}
+          banner
         />
       )}
 
+      {/* --- Summary statistics --- */}
       <Row gutter={16} style={{ marginBottom: 24 }}>
         <Col xs={24} sm={8}>
           <Card>
             <Statistic
               title="Linked Data Elements"
-              value={application.data_elements_count}
+              value={detail.data_elements_count}
               prefix={<LinkOutlined />}
             />
           </Card>
@@ -514,7 +952,7 @@ const ApplicationDetail: React.FC = () => {
           <Card>
             <Statistic
               title="Interfaces"
-              value={application.interfaces_count}
+              value={detail.interfaces_count}
               prefix={<ApiOutlined />}
             />
           </Card>
@@ -523,104 +961,151 @@ const ApplicationDetail: React.FC = () => {
           <Card>
             <Statistic
               title="Linked Processes"
-              value={application.linked_processes?.length || 0}
+              value={detail.linked_processes?.length || 0}
             />
           </Card>
         </Col>
       </Row>
 
-      <Card title="Application Details" style={{ marginBottom: 24 }}>
-        <Descriptions column={{ xs: 1, sm: 1, md: 2 }} bordered size="small">
-          <Descriptions.Item label="Application Name">{application.application_name}</Descriptions.Item>
-          <Descriptions.Item label="Application Code">
-            <Text code>{application.application_code}</Text>
-          </Descriptions.Item>
-          <Descriptions.Item label="Description" span={2}>
-            {application.description}
-          </Descriptions.Item>
-          <Descriptions.Item label="Classification">
-            {application.classification_name || '-'}
-          </Descriptions.Item>
-          <Descriptions.Item label="Vendor">
-            {application.vendor || '-'}
-          </Descriptions.Item>
-          <Descriptions.Item label="Version">
-            {application.version || '-'}
-          </Descriptions.Item>
-          <Descriptions.Item label="Deployment Type">
-            {application.deployment_type ? (
-              <Tag color={deploymentTypeColors[application.deployment_type] || 'default'}>
-                {deploymentTypeLabels[application.deployment_type] || application.deployment_type}
-              </Tag>
-            ) : (
-              '-'
-            )}
-          </Descriptions.Item>
-          {application.technology_stack != null ? (
-            <Descriptions.Item label="Technology Stack" span={2}>
-              <Text code style={{ fontSize: 12, whiteSpace: 'pre-wrap' }}>
-                {typeof application.technology_stack === 'string'
-                  ? application.technology_stack
-                  : JSON.stringify(application.technology_stack, null, 2)}
-              </Text>
-            </Descriptions.Item>
-          ) : null}
-          <Descriptions.Item label="Critical">
-            {application.is_critical ? (
-              <Tag color="red" style={{ fontWeight: 600 }}>
-                Critical
-              </Tag>
-            ) : (
-              <Text type="secondary">No</Text>
-            )}
-          </Descriptions.Item>
-          <Descriptions.Item label="Status">
-            <Tag color={statusColors[status] || 'default'}>
-              {statusLabels[status] || status}
-            </Tag>
-          </Descriptions.Item>
-          <Descriptions.Item label="Business Owner">
-            {application.business_owner_name || '-'}
-          </Descriptions.Item>
-          <Descriptions.Item label="Technical Owner">
-            {application.technical_owner_name || '-'}
-          </Descriptions.Item>
-          <Descriptions.Item label="Go-Live Date">
-            {application.go_live_date
-              ? new Date(application.go_live_date).toLocaleDateString('en-ZA', {
-                  year: 'numeric',
-                  month: 'short',
-                  day: 'numeric',
-                })
-              : '-'}
-          </Descriptions.Item>
-          <Descriptions.Item label="Retirement Date">
-            {application.retirement_date
-              ? new Date(application.retirement_date).toLocaleDateString('en-ZA', {
-                  year: 'numeric',
-                  month: 'short',
-                  day: 'numeric',
-                })
-              : '-'}
-          </Descriptions.Item>
-          {application.documentation_url && (
-            <Descriptions.Item label="Documentation" span={2}>
-              <a href={application.documentation_url} target="_blank" rel="noopener noreferrer">
-                {application.documentation_url}
-              </a>
-            </Descriptions.Item>
+      {/* --- Ownership Assignment (shown in DRAFT/REVISED status) --- */}
+      {showOwnershipSection && (
+        <Card
+          title={
+            <Space>
+              <UserOutlined />
+              <Text strong>Assign Ownership</Text>
+              {ownershipComplete ? (
+                <Tag color="success">Complete</Tag>
+              ) : (
+                <Tag color="warning">Required before submission</Tag>
+              )}
+            </Space>
+          }
+          style={{
+            marginBottom: 24,
+            border: ownershipComplete ? '1px solid #B7EB8F' : '1px solid #FFD591',
+            background: ownershipComplete ? '#F6FFED' : '#FFF7E6',
+          }}
+        >
+          {!ownershipComplete && (
+            <Alert
+              message="All ownership fields must be assigned before this application can be submitted for review."
+              type="warning"
+              showIcon
+              style={{ marginBottom: 16 }}
+            />
           )}
-          <Descriptions.Item label="Created">
-            {formatDate(application.created_at)}
-            {application.created_by_name ? ` by ${application.created_by_name}` : ''}
-          </Descriptions.Item>
-          <Descriptions.Item label="Last Updated">
-            {formatDate(application.updated_at)}
-            {application.updated_by_name ? ` by ${application.updated_by_name}` : ''}
-          </Descriptions.Item>
-        </Descriptions>
+          <Row gutter={[16, 16]}>
+            <Col xs={24} md={12}>
+              <div style={{ marginBottom: 4 }}>
+                <Text strong>Business Owner</Text>
+                {!businessOwnerId && <Text type="danger"> *</Text>}
+              </div>
+              <Select
+                style={{ width: '100%' }}
+                labelInValue
+                value={businessOwnerId}
+                onChange={(val) => setBusinessOwnerId(val || undefined)}
+                options={allUsers.map((u) => ({ value: u.user_id, label: `${u.display_name} (${u.email})` }))}
+                placeholder="Select business owner..."
+                showSearch
+                optionFilterProp="label"
+                allowClear
+              />
+            </Col>
+            <Col xs={24} md={12}>
+              <div style={{ marginBottom: 4 }}>
+                <Text strong>Technical Owner</Text>
+                {!technicalOwnerId && <Text type="danger"> *</Text>}
+              </div>
+              <Select
+                style={{ width: '100%' }}
+                labelInValue
+                value={technicalOwnerId}
+                onChange={(val) => setTechnicalOwnerId(val || undefined)}
+                options={allUsers.map((u) => ({ value: u.user_id, label: `${u.display_name} (${u.email})` }))}
+                placeholder="Select technical owner..."
+                showSearch
+                optionFilterProp="label"
+                allowClear
+              />
+            </Col>
+            <Col xs={24} md={12}>
+              <div style={{ marginBottom: 4 }}>
+                <Text strong>Data Steward</Text>
+                {!stewardUserId && <Text type="danger"> *</Text>}
+              </div>
+              <Select
+                style={{ width: '100%' }}
+                labelInValue
+                value={stewardUserId}
+                onChange={(val) => setStewardUserId(val || undefined)}
+                options={allUsers.map((u) => ({ value: u.user_id, label: `${u.display_name} (${u.email})` }))}
+                placeholder="Select steward..."
+                showSearch
+                optionFilterProp="label"
+                allowClear
+              />
+            </Col>
+            <Col xs={24} md={12}>
+              <div style={{ marginBottom: 4 }}>
+                <Text strong>Approver</Text>
+                {!approverUserId && <Text type="danger"> *</Text>}
+              </div>
+              <Select
+                style={{ width: '100%' }}
+                labelInValue
+                value={approverUserId}
+                onChange={(val) => setApproverUserId(val || undefined)}
+                options={allUsers.map((u) => ({ value: u.user_id, label: `${u.display_name} (${u.email})` }))}
+                placeholder="Select approver..."
+                showSearch
+                optionFilterProp="label"
+                allowClear
+              />
+            </Col>
+          </Row>
+          <Row gutter={[16, 16]} style={{ marginTop: 16 }}>
+            <Col xs={24} md={12}>
+              <div style={{ marginBottom: 4 }}>
+                <Text strong>Organisational Unit</Text>
+              </div>
+              <Select
+                style={{ width: '100%' }}
+                value={orgUnit}
+                onChange={(val) => setOrgUnit(val)}
+                options={allOrgUnits.map((u) => ({ value: u.unit_name, label: u.unit_name }))}
+                placeholder="Select organisational unit..."
+                showSearch
+                optionFilterProp="label"
+                allowClear
+              />
+            </Col>
+          </Row>
+          <div style={{ marginTop: 16, textAlign: 'right' }}>
+            <Button
+              type="primary"
+              onClick={handleSaveOwnership}
+              loading={ownershipLoading}
+              disabled={!businessOwnerId && !technicalOwnerId && !stewardUserId && !approverUserId}
+            >
+              Save Ownership
+            </Button>
+          </div>
+        </Card>
+      )}
+
+      {/* --- 9-Section Collapse --- */}
+      <Card style={{ marginBottom: 24 }}>
+        <Collapse
+          defaultActiveKey={['core', 'classification']}
+          ghost
+          items={collapseItems}
+          size="large"
+        />
       </Card>
 
+      {/* --- Linked Data Elements --- */}
       <Card
         title="Linked Data Elements"
         style={{ marginBottom: 24 }}
@@ -649,6 +1134,7 @@ const ApplicationDetail: React.FC = () => {
         />
       </Card>
 
+      {/* --- Interfaces --- */}
       {interfaces.length > 0 && (
         <Card title="Interfaces" style={{ marginBottom: 24 }}>
           <Table
@@ -661,6 +1147,7 @@ const ApplicationDetail: React.FC = () => {
         </Card>
       )}
 
+      {/* --- Workflow Section --- */}
       {workflowInstance && (
         <Card title="Workflow" style={{ marginBottom: 24 }}>
           <Descriptions column={{ xs: 1, sm: 2 }} size="small" style={{ marginBottom: 16 }}>

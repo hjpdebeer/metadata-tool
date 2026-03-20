@@ -75,7 +75,7 @@ const ApplicationsPage: React.FC = () => {
   const [selectedDeploymentType, setSelectedDeploymentType] = useState<string | undefined>(
     searchParams.get('deployment_type') || undefined,
   );
-  const [criticalOnly, setCriticalOnly] = useState(searchParams.get('critical') === 'true');
+  const [cbaOnly, setCbaOnly] = useState(searchParams.get('cba') === 'true');
   const [currentPage, setCurrentPage] = useState(
     Number(searchParams.get('page')) || 1,
   );
@@ -93,7 +93,7 @@ const ApplicationsPage: React.FC = () => {
         classification_id: selectedClassification,
         status: selectedStatus,
         deployment_type: selectedDeploymentType,
-        is_critical: criticalOnly || undefined,
+        is_cba: cbaOnly || undefined,
       };
 
       const response = await applicationsApi.listApplications(params);
@@ -112,7 +112,7 @@ const ApplicationsPage: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  }, [currentPage, pageSize, searchQuery, selectedClassification, selectedStatus, selectedDeploymentType, criticalOnly]);
+  }, [currentPage, pageSize, searchQuery, selectedClassification, selectedStatus, selectedDeploymentType, cbaOnly]);
 
   const fetchClassifications = useCallback(async () => {
     try {
@@ -138,11 +138,11 @@ const ApplicationsPage: React.FC = () => {
     if (selectedClassification) params.classification_id = selectedClassification;
     if (selectedStatus) params.status = selectedStatus;
     if (selectedDeploymentType) params.deployment_type = selectedDeploymentType;
-    if (criticalOnly) params.critical = 'true';
+    if (cbaOnly) params.cba = 'true';
     if (currentPage > 1) params.page = String(currentPage);
     if (pageSize !== 20) params.page_size = String(pageSize);
     setSearchParams(params, { replace: true });
-  }, [searchQuery, selectedClassification, selectedStatus, selectedDeploymentType, criticalOnly, currentPage, pageSize, setSearchParams]);
+  }, [searchQuery, selectedClassification, selectedStatus, selectedDeploymentType, cbaOnly, currentPage, pageSize, setSearchParams]);
 
   const handleSearch = (value: string) => {
     setSearchQuery(value);
@@ -164,8 +164,8 @@ const ApplicationsPage: React.FC = () => {
     setCurrentPage(1);
   };
 
-  const handleCriticalToggle = (checked: boolean) => {
-    setCriticalOnly(checked);
+  const handleCbaToggle = (checked: boolean) => {
+    setCbaOnly(checked);
     setCurrentPage(1);
   };
 
@@ -225,15 +225,15 @@ const ApplicationsPage: React.FC = () => {
         ),
     },
     {
-      title: 'Critical',
-      dataIndex: 'is_critical',
-      key: 'is_critical',
+      title: 'CBA',
+      dataIndex: 'is_cba',
+      key: 'is_cba',
       width: 90,
       align: 'center' as const,
-      render: (isCritical: boolean) =>
-        isCritical ? (
+      render: (isCba: boolean) =>
+        isCba ? (
           <Tag color="red" style={{ fontWeight: 600 }}>
-            Critical
+            CBA
           </Tag>
         ) : null,
     },
@@ -331,10 +331,10 @@ const ApplicationsPage: React.FC = () => {
             allowClear
           />
           <Space>
-            <Text type="secondary">Critical only</Text>
+            <Text type="secondary">CBA only</Text>
             <Switch
-              checked={criticalOnly}
-              onChange={handleCriticalToggle}
+              checked={cbaOnly}
+              onChange={handleCbaToggle}
               size="small"
             />
           </Space>

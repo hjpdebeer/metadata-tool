@@ -83,12 +83,16 @@ pub struct GlossaryTerm {
     // Section 8: Quality
     pub is_cbt: bool,
     pub golden_source: Option<String>,
+    pub golden_source_app_id: Option<Uuid>,
     pub confidence_level_id: Option<Uuid>,
 
     // Section 9: Discoverability
     pub visibility_id: Option<Uuid>,
     pub language_id: Option<Uuid>,
     pub external_reference: Option<String>,
+
+    // Versioning
+    pub previous_version_id: Option<Uuid>,
 
     // Audit
     pub created_by: Uuid,
@@ -141,6 +145,7 @@ pub struct GlossaryTermDetailRow {
     pub regulatory_reporting_usage: Option<String>,
     pub is_cbt: bool,
     pub golden_source: Option<String>,
+    pub golden_source_app_id: Option<Uuid>,
     pub confidence_level_id: Option<Uuid>,
     pub visibility_id: Option<Uuid>,
     pub language_id: Option<Uuid>,
@@ -161,6 +166,7 @@ pub struct GlossaryTermDetailRow {
     pub visibility_name: Option<String>,
     pub language_name: Option<String>,
     pub parent_term_name: Option<String>,
+    pub golden_source_app_name: Option<String>,
     pub owner_name: Option<String>,
     pub steward_name: Option<String>,
     pub domain_owner_name: Option<String>,
@@ -209,6 +215,7 @@ pub struct GlossaryTermDetail {
     pub regulatory_reporting_usage: Option<String>,
     pub is_cbt: bool,
     pub golden_source: Option<String>,
+    pub golden_source_app_id: Option<Uuid>,
     pub confidence_level_id: Option<Uuid>,
     pub visibility_id: Option<Uuid>,
     pub language_id: Option<Uuid>,
@@ -229,6 +236,7 @@ pub struct GlossaryTermDetail {
     pub visibility_name: Option<String>,
     pub language_name: Option<String>,
     pub parent_term_name: Option<String>,
+    pub golden_source_app_name: Option<String>,
     pub owner_name: Option<String>,
     pub steward_name: Option<String>,
     pub domain_owner_name: Option<String>,
@@ -314,6 +322,7 @@ impl GlossaryTermDetail {
             regulatory_reporting_usage: row.regulatory_reporting_usage,
             is_cbt: row.is_cbt,
             golden_source: row.golden_source,
+            golden_source_app_id: row.golden_source_app_id,
             confidence_level_id: row.confidence_level_id,
             visibility_id: row.visibility_id,
             language_id: row.language_id,
@@ -333,6 +342,7 @@ impl GlossaryTermDetail {
             visibility_name: row.visibility_name,
             language_name: row.language_name,
             parent_term_name: row.parent_term_name,
+            golden_source_app_name: row.golden_source_app_name,
             owner_name: row.owner_name,
             steward_name: row.steward_name,
             domain_owner_name: row.domain_owner_name,
@@ -466,6 +476,7 @@ pub struct UpdateGlossaryTermRequest {
     // Quality
     pub is_cbt: Option<bool>,
     pub golden_source: Option<String>,
+    pub golden_source_app_id: Option<Uuid>,
     pub confidence_level_id: Option<Uuid>,
 
     // Discoverability

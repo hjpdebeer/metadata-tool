@@ -794,15 +794,15 @@ async fn process_row(
     // Set to NULL here — the caller handles the second pass.
     let parent_term_id: Option<Uuid> = if parent_term_val.is_some() {
         // Try to resolve from already-existing terms (not in this batch)
-        let id = sqlx::query_scalar::<_, Uuid>(
+        // May be None — second pass will resolve within-batch references
+        sqlx::query_scalar::<_, Uuid>(
             "SELECT term_id FROM glossary_terms WHERE term_name ILIKE $1 AND is_current_version = TRUE AND deleted_at IS NULL LIMIT 1",
         )
         .bind(parent_term_val.as_deref().unwrap_or(""))
         .fetch_optional(ctx.pool)
         .await
         .ok()
-        .flatten();
-        id // May be None — second pass will resolve within-batch references
+        .flatten()
     } else {
         None
     };

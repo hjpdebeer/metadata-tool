@@ -11,34 +11,9 @@ import type {
   ListApplicationsParams,
 } from '../services/applicationsApi';
 
+import { statusColors, statusLabels, statusOptions } from '../constants/statusConfig';
+
 const { Title, Text } = Typography;
-
-const statusColors: Record<string, string> = {
-  DRAFT: 'default',
-  PROPOSED: 'processing',
-  UNDER_REVIEW: 'warning',
-  REVISED: 'orange',
-  ACCEPTED: 'success',
-  REJECTED: 'error',
-  DEPRECATED: 'default',
-};
-
-const statusLabels: Record<string, string> = {
-  DRAFT: 'Draft',
-  PROPOSED: 'Proposed',
-  UNDER_REVIEW: 'Under Review',
-  PENDING_APPROVAL: 'Pending Approval',
-  REVISED: 'Revised',
-  ACCEPTED: 'Accepted',
-  REJECTED: 'Rejected',
-  DEPRECATED: 'Deprecated',
-  SUPERSEDED: 'Superseded',
-};
-
-const statusOptions = Object.entries(statusLabels).map(([value, label]) => ({
-  value,
-  label,
-}));
 
 const deploymentTypeColors: Record<string, string> = {
   ON_PREMISE: 'default',

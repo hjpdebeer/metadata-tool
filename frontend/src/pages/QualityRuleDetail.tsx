@@ -208,8 +208,7 @@ const QualityRuleDetail: React.FC = () => {
     return null;
   }
 
-  const status = rule.status_id ? 'DRAFT' : 'DRAFT'; // Status code will come from the API view
-  // We attempt to derive status from the workflow instance if available
+  // Derive status from workflow instance if available
   const statusCode = workflowInstance?.current_state_name?.toUpperCase().replace(/\s+/g, '_') || 'DRAFT';
 
   const renderActionButtons = () => {
@@ -481,12 +480,12 @@ const QualityRuleDetail: React.FC = () => {
           <Descriptions.Item label="Description" span={2}>
             {rule.description}
           </Descriptions.Item>
-          <Descriptions.Item label="Dimension">{rule.dimension_id}</Descriptions.Item>
-          <Descriptions.Item label="Rule Type">{rule.rule_type_id}</Descriptions.Item>
+          <Descriptions.Item label="Dimension">{rule.dimension_name || '-'}</Descriptions.Item>
+          <Descriptions.Item label="Rule Type">{rule.rule_type_name || '-'}</Descriptions.Item>
           <Descriptions.Item label="Data Element">
-            {rule.element_id ? (
+            {rule.element_name ? (
               <a onClick={() => navigate(`/data-dictionary/${rule.element_id}`)}>
-                {rule.element_id}
+                {rule.element_name}
               </a>
             ) : (
               '-'

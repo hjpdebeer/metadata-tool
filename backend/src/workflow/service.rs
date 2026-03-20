@@ -136,7 +136,7 @@ pub async fn initiate_workflow(
     .bind(STATE_DRAFT)
     .fetch_optional(pool)
     .await?
-    .ok_or_else(|| AppError::Workflow("DRAFT workflow state not found".into()))?;
+    .ok_or_else(|| AppError::Workflow("draft workflow state not found".into()))?;
 
     // Create the workflow instance
     let instance = sqlx::query_as::<_, WorkflowInstance>(
@@ -1096,6 +1096,43 @@ async fn validate_ownership_before_submit(
         }
         if row.domain_owner_user_id.is_none() {
             missing.push("Data Domain Owner");
+        }
+        if row.approver_user_id.is_none() {
+            missing.push("Approver");
+        }
+
+        if !missing.is_empty() {
+            return Err(AppError::Validation(format!(
+                "cannot submit for review — the following ownership fields must be assigned: {}",
+                missing.join(", ")
+            )));
+        }
+    } else if entity_type.as_str() == "applications" {
+        #[derive(sqlx::FromRow)]
+        struct AppOwnershipCheck {
+            business_owner_id: Option<Uuid>,
+            technical_owner_id: Option<Uuid>,
+            steward_user_id: Option<Uuid>,
+            approver_user_id: Option<Uuid>,
+        }
+
+        let row = sqlx::query_as::<_, AppOwnershipCheck>(
+            "SELECT business_owner_id, technical_owner_id, steward_user_id, approver_user_id FROM applications WHERE application_id = $1 AND deleted_at IS NULL",
+        )
+        .bind(instance.entity_id)
+        .fetch_optional(pool)
+        .await?
+        .ok_or_else(|| AppError::NotFound("entity not found for ownership check".into()))?;
+
+        let mut missing = Vec::new();
+        if row.business_owner_id.is_none() {
+            missing.push("Business Owner");
+        }
+        if row.technical_owner_id.is_none() {
+            missing.push("Technical Owner");
+        }
+        if row.steward_user_id.is_none() {
+            missing.push("Data Steward");
         }
         if row.approver_user_id.is_none() {
             missing.push("Approver");

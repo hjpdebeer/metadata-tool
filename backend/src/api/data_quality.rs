@@ -589,12 +589,12 @@ pub async fn create_assessment(
         let period_start = now
             .date_naive()
             .and_hms_opt(0, 0, 0)
-            .unwrap()
+            .expect("midnight (00:00:00) is always valid")
             .and_utc();
         let period_end = now
             .date_naive()
             .and_hms_opt(23, 59, 59)
-            .unwrap()
+            .expect("end of day (23:59:59) is always valid")
             .and_utc();
 
         // Insert a quality_scores record for this element + dimension + period

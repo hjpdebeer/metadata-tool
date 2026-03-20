@@ -76,11 +76,7 @@ const LoginPage: React.FC = () => {
           onFinish={onFinish}
           layout="vertical"
           size="large"
-          initialValues={
-            import.meta.env.DEV
-              ? { email: 'admin@example.com', password: 'metadata123' }
-              : undefined
-          }
+          initialValues={undefined}
         >
           <Form.Item
             name="email"

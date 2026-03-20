@@ -12,34 +12,9 @@ import type {
   ListTermsParams,
 } from '../services/glossaryApi';
 
+import { statusColors, statusLabels, statusOptions } from '../constants/statusConfig';
+
 const { Title } = Typography;
-
-const statusColors: Record<string, string> = {
-  DRAFT: 'default',
-  PROPOSED: 'processing',
-  UNDER_REVIEW: 'warning',
-  REVISED: 'orange',
-  ACCEPTED: 'success',
-  REJECTED: 'error',
-  DEPRECATED: 'default',
-};
-
-const statusLabels: Record<string, string> = {
-  DRAFT: 'Draft',
-  PROPOSED: 'Proposed',
-  UNDER_REVIEW: 'Under Review',
-  PENDING_APPROVAL: 'Pending Approval',
-  REVISED: 'Revised',
-  ACCEPTED: 'Accepted',
-  REJECTED: 'Rejected',
-  DEPRECATED: 'Deprecated',
-  SUPERSEDED: 'Superseded',
-};
-
-const statusOptions = Object.entries(statusLabels).map(([value, label]) => ({
-  value,
-  label,
-}));
 
 const GlossaryPage: React.FC = () => {
   const navigate = useNavigate();

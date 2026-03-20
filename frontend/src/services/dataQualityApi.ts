@@ -46,6 +46,10 @@ export interface QualityRule {
   created_at: string;
   updated_at: string;
   workflow_instance_id: string | null;
+  // Resolved lookup names (from JOINs in detail query)
+  dimension_name: string;
+  rule_type_name: string;
+  element_name: string | null;
 }
 
 export interface QualityRuleListItem {

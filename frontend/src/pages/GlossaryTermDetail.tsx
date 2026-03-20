@@ -48,31 +48,9 @@ import type { UserListItem } from '../services/usersApi';
 import AiEnrichmentPanel from '../components/AiEnrichmentPanel';
 import { useAuth } from '../hooks/useAuth';
 
+import { statusColors, statusLabels } from '../constants/statusConfig';
+
 const { Title, Text, Paragraph } = Typography;
-
-const statusColors: Record<string, string> = {
-  DRAFT: 'default',
-  PROPOSED: 'processing',
-  UNDER_REVIEW: 'warning',
-  PENDING_APPROVAL: 'processing',
-  REVISED: 'orange',
-  ACCEPTED: 'success',
-  REJECTED: 'error',
-  DEPRECATED: 'default',
-  SUPERSEDED: 'default',
-};
-
-const statusLabels: Record<string, string> = {
-  DRAFT: 'Draft',
-  PROPOSED: 'Proposed',
-  UNDER_REVIEW: 'Under Review',
-  PENDING_APPROVAL: 'Pending Approval',
-  REVISED: 'Revised',
-  ACCEPTED: 'Accepted',
-  REJECTED: 'Rejected',
-  DEPRECATED: 'Deprecated',
-  SUPERSEDED: 'Superseded',
-};
 
 /** Small sparkle icon for AI-suggestible fields */
 const AiHint: React.FC = () => (
@@ -322,10 +300,10 @@ const GlossaryTermDetail: React.FC = () => {
     // Pre-flight check: warn user about missing ownership before opening modal
     if (action === 'SUBMIT') {
       const missing: string[] = [];
-      if (!detail.owner_user_id) missing.push('Business Term Owner');
-      if (!detail.steward_user_id) missing.push('Data Steward');
-      if (!detail.domain_owner_user_id) missing.push('Data Domain Owner');
-      if (!detail.approver_user_id) missing.push('Approver');
+      if (!detail?.owner_user_id) missing.push('Business Term Owner');
+      if (!detail?.steward_user_id) missing.push('Data Steward');
+      if (!detail?.domain_owner_user_id) missing.push('Data Domain Owner');
+      if (!detail?.approver_user_id) missing.push('Approver');
       if (missing.length > 0) {
         message.warning(
           `Please assign all ownership fields before submitting: ${missing.join(', ')}. Use the Edit button to assign owners.`,

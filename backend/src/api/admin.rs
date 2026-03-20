@@ -457,6 +457,7 @@ pub struct LookupListParams {
 // Table name to DB mapping (SEC-001: no dynamic SQL)
 // ---------------------------------------------------------------------------
 
+// Reserved for future generic lookup table CRUD refactoring (replaces exhaustive match)
 #[allow(dead_code)]
 struct LookupTableConfig {
     db_table: &'static str,

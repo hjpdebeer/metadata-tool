@@ -244,6 +244,29 @@ async fn main() -> anyhow::Result<()> {
 
     let state = AppState::new(pool.clone(), config.clone());
 
+    // SEC-003: Warn if seeded dev accounts exist when Entra SSO is configured
+    let entra_configured = !config.entra.tenant_id.is_empty()
+        && config.entra.tenant_id != "your-tenant-id"
+        && uuid::Uuid::parse_str(&config.entra.tenant_id).is_ok();
+
+    if entra_configured {
+        let seeded_count = sqlx::query_scalar::<_, i64>(
+            "SELECT COUNT(*) FROM users WHERE email LIKE '%@example.com' AND is_active = TRUE",
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap_or(0);
+
+        if seeded_count > 0 {
+            tracing::warn!(
+                count = seeded_count,
+                "SECURITY WARNING: {seeded_count} seeded development accounts (@example.com) are active \
+                 while Entra SSO is configured. These accounts should be deactivated or deleted \
+                 before production deployment."
+            );
+        }
+    }
+
     // CORS configuration
     let cors = CorsLayer::new()
         .allow_origin(

@@ -197,7 +197,6 @@ TEXT FIELDS (return a descriptive string):
 - synonyms: suggest common synonyms or alternate names as comma-separated
 - used_in_reports: reports where this term is used
 - used_in_policies: policies referencing this term
-- golden_source: authoritative source system for this term's data
 
 LOOKUP FIELDS — For these fields, you MUST return the UUID "id" value from the provided list, NOT a display name.
 Pick the single best match from each list. If none fits well, omit the field.
@@ -761,7 +760,6 @@ Hope this helps!"#;
         assert!(prompt.contains("subject_areas"));
         assert!(prompt.contains("regulatory_reporting_usage"));
         assert!(prompt.contains("external_reference"));
-        assert!(prompt.contains("golden_source"));
         assert!(prompt.contains("used_in_reports"));
         assert!(prompt.contains("used_in_policies"));
         assert!(prompt.contains("synonyms"));

@@ -7,6 +7,7 @@
 pub mod admin;
 pub mod glossary;
 pub mod bulk_upload;
+pub mod app_bulk_upload;
 pub mod data_dictionary;
 pub mod data_quality;
 pub mod lineage;

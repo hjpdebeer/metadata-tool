@@ -1,7 +1,8 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Button, Card, Input, Select, Space, Switch, Table, Tag, Typography, message } from 'antd';
-import { PlusOutlined } from '@ant-design/icons';
+import { PlusOutlined, UploadOutlined } from '@ant-design/icons';
+import AppBulkUploadModal from '../components/AppBulkUploadModal';
 import type { TablePaginationConfig } from 'antd';
 import { applicationsApi } from '../services/applicationsApi';
 import type {
@@ -66,6 +67,7 @@ const ApplicationsPage: React.FC = () => {
   const [classifications, setClassifications] = useState<ApplicationClassification[]>([]);
   const [loading, setLoading] = useState(false);
   const [totalCount, setTotalCount] = useState(0);
+  const [bulkUploadOpen, setBulkUploadOpen] = useState(false);
 
   const [searchQuery, setSearchQuery] = useState(searchParams.get('query') || '');
   const [selectedClassification, setSelectedClassification] = useState<string | undefined>(
@@ -290,13 +292,21 @@ const ApplicationsPage: React.FC = () => {
         <Title level={3} style={{ margin: 0 }}>
           Application Registry
         </Title>
-        <Button
-          type="primary"
-          icon={<PlusOutlined />}
-          onClick={() => navigate('/applications/new')}
-        >
-          New Application
-        </Button>
+        <Space>
+          <Button
+            icon={<UploadOutlined />}
+            onClick={() => setBulkUploadOpen(true)}
+          >
+            Bulk Upload
+          </Button>
+          <Button
+            type="primary"
+            icon={<PlusOutlined />}
+            onClick={() => navigate('/applications/new')}
+          >
+            New Application
+          </Button>
+        </Space>
       </div>
       <Card>
         <Space wrap style={{ marginBottom: 16, width: '100%' }}>
@@ -357,6 +367,12 @@ const ApplicationsPage: React.FC = () => {
           }}
         />
       </Card>
+
+      <AppBulkUploadModal
+        open={bulkUploadOpen}
+        onClose={() => setBulkUploadOpen(false)}
+        onSuccess={() => fetchApplications()}
+      />
     </div>
   );
 };

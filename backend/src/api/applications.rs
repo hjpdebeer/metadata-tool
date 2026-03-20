@@ -39,13 +39,23 @@ pub async fn list_applications(
 
     let visibility_clause = r#"
           AND (
-              es.status_code IN ('ACCEPTED', 'DEPRECATED')
-              OR a.created_by = $6
-              OR a.business_owner_id = $6
-              OR a.technical_owner_id = $6
-              OR a.steward_user_id = $6
-              OR a.approver_user_id = $6
-              OR $7::BOOLEAN = TRUE
+              (a.is_current_version = TRUE AND (
+                  es.status_code IN ('ACCEPTED', 'DEPRECATED')
+                  OR a.created_by = $6
+                  OR a.business_owner_id = $6
+                  OR a.technical_owner_id = $6
+                  OR a.steward_user_id = $6
+                  OR a.approver_user_id = $6
+                  OR $7::BOOLEAN = TRUE
+              ))
+              OR (a.is_current_version = FALSE AND es.status_code NOT IN ('SUPERSEDED', 'REJECTED') AND (
+                  a.created_by = $6
+                  OR a.business_owner_id = $6
+                  OR a.technical_owner_id = $6
+                  OR a.steward_user_id = $6
+                  OR a.approver_user_id = $6
+                  OR $7::BOOLEAN = TRUE
+              ))
           )
     "#;
 
@@ -179,6 +189,7 @@ pub async fn get_application(
             a.go_live_date, a.retirement_date, a.contract_end_date,
             a.review_frequency_id, a.next_review_date, a.approved_at,
             a.documentation_url,
+            a.version_number, a.is_current_version, a.previous_version_id,
             a.created_by, a.updated_by, a.created_at, a.updated_at,
             -- Resolved lookup names
             ac.classification_name,
@@ -749,4 +760,250 @@ pub async fn list_interfaces(
     .await?;
 
     Ok(Json(interfaces))
+}
+
+// ---------------------------------------------------------------------------
+// amend_application — POST /api/v1/applications/:app_id/amend
+// ---------------------------------------------------------------------------
+
+/// Create a new draft amendment of an accepted application.
+/// Copies all fields to a new row with incremented version_number.
+#[utoipa::path(
+    post,
+    path = "/api/v1/applications/{app_id}/amend",
+    params(("app_id" = Uuid, Path, description = "Application ID of the accepted application to amend")),
+    responses(
+        (status = 201, description = "Amendment created in DRAFT status", body = Application),
+        (status = 200, description = "Existing amendment returned", body = Application),
+        (status = 422, description = "Application is not in ACCEPTED status")
+    ),
+    security(("bearer_auth" = [])),
+    tag = "applications"
+)]
+pub async fn amend_application(
+    State(state): State<AppState>,
+    Extension(claims): Extension<Claims>,
+    Path(app_id): Path<Uuid>,
+) -> AppResult<(StatusCode, Json<Application>)> {
+    // Verify the application exists
+    let original = sqlx::query_as::<_, Application>(
+        "SELECT * FROM applications WHERE application_id = $1 AND deleted_at IS NULL",
+    )
+    .bind(app_id)
+    .fetch_optional(&state.pool)
+    .await?
+    .ok_or_else(|| AppError::NotFound(format!("application not found: {app_id}")))?;
+
+    // Check status is ACCEPTED
+    let status_code = sqlx::query_scalar::<_, String>(
+        "SELECT status_code FROM entity_statuses WHERE status_id = $1",
+    )
+    .bind(original.status_id)
+    .fetch_one(&state.pool)
+    .await?;
+
+    if status_code != "ACCEPTED" {
+        return Err(AppError::Validation(
+            "only accepted applications can be amended".into(),
+        ));
+    }
+
+    // If an amendment already exists, return it instead of creating a new one
+    let existing_amendment = sqlx::query_as::<_, Application>(
+        "SELECT * FROM applications WHERE previous_version_id = $1 AND deleted_at IS NULL AND is_current_version = FALSE LIMIT 1",
+    )
+    .bind(app_id)
+    .fetch_optional(&state.pool)
+    .await?;
+
+    if let Some(existing) = existing_amendment {
+        return Ok((StatusCode::OK, Json(existing)));
+    }
+
+    let draft_status_id = sqlx::query_scalar::<_, Uuid>(
+        "SELECT status_id FROM entity_statuses WHERE status_code = 'DRAFT'",
+    )
+    .fetch_one(&state.pool)
+    .await?;
+
+    let new_version = original.version_number + 1;
+
+    // Insert new version with all fields copied, new application_id, DRAFT status
+    let amendment = sqlx::query_as::<_, Application>(
+        r#"
+        INSERT INTO applications (
+            application_name, application_code, description,
+            classification_id, deployment_type, technology_stack,
+            status_id,
+            business_owner_id, technical_owner_id,
+            steward_user_id, approver_user_id, organisational_unit,
+            vendor, vendor_product_name, version, license_type,
+            abbreviation, external_reference_id,
+            business_capability, user_base,
+            is_cba, cba_rationale,
+            criticality_tier_id, risk_rating_id,
+            data_classification_id, regulatory_scope, last_security_assessment,
+            support_model, dr_tier_id,
+            lifecycle_stage_id,
+            go_live_date, retirement_date, contract_end_date,
+            review_frequency_id,
+            documentation_url,
+            version_number, is_current_version, previous_version_id,
+            created_by
+        )
+        VALUES (
+            $1, $2, $3, $4, $5, $6, $7, $8, $9, $10,
+            $11, $12, $13, $14, $15, $16, $17, $18, $19, $20,
+            $21, $22, $23, $24, $25, $26, $27, $28, $29, $30,
+            $31, $32, $33, $34, $35, $36, FALSE, $37, $38
+        )
+        RETURNING *
+        "#,
+    )
+    .bind(&original.application_name)           // $1
+    .bind(&original.application_code)           // $2 — same code, new version
+    .bind(&original.description)                // $3
+    .bind(original.classification_id)           // $4
+    .bind(original.deployment_type.as_deref())  // $5
+    .bind(&original.technology_stack)           // $6
+    .bind(draft_status_id)                      // $7
+    .bind(original.business_owner_id)           // $8
+    .bind(original.technical_owner_id)          // $9
+    .bind(original.steward_user_id)             // $10
+    .bind(original.approver_user_id)            // $11
+    .bind(original.organisational_unit.as_deref()) // $12
+    .bind(original.vendor.as_deref())           // $13
+    .bind(original.vendor_product_name.as_deref()) // $14
+    .bind(original.version.as_deref())          // $15
+    .bind(original.license_type.as_deref())     // $16
+    .bind(original.abbreviation.as_deref())     // $17
+    .bind(original.external_reference_id.as_deref()) // $18
+    .bind(original.business_capability.as_deref()) // $19
+    .bind(original.user_base.as_deref())        // $20
+    .bind(original.is_cba)                      // $21
+    .bind(original.cba_rationale.as_deref())    // $22
+    .bind(original.criticality_tier_id)         // $23
+    .bind(original.risk_rating_id)              // $24
+    .bind(original.data_classification_id)      // $25
+    .bind(original.regulatory_scope.as_deref()) // $26
+    .bind(original.last_security_assessment)    // $27
+    .bind(original.support_model.as_deref())    // $28
+    .bind(original.dr_tier_id)                  // $29
+    .bind(original.lifecycle_stage_id)          // $30
+    .bind(original.go_live_date)                // $31
+    .bind(original.retirement_date)             // $32
+    .bind(original.contract_end_date)           // $33
+    .bind(original.review_frequency_id)         // $34
+    .bind(original.documentation_url.as_deref()) // $35
+    .bind(new_version)                          // $36
+    .bind(app_id)                               // $37 = previous_version_id
+    .bind(claims.sub)                           // $38 = created_by
+    .fetch_one(&state.pool)
+    .await?;
+
+    // Initiate workflow for the amendment
+    workflow::service::initiate_workflow(
+        &state.pool,
+        workflow::ENTITY_APPLICATION,
+        amendment.application_id,
+        claims.sub,
+    )
+    .await?;
+
+    Ok((StatusCode::CREATED, Json(amendment)))
+}
+
+// ---------------------------------------------------------------------------
+// discard_amendment — DELETE /api/v1/applications/:app_id/discard
+// ---------------------------------------------------------------------------
+
+/// Discard a draft application amendment. Only the creator or admin can discard,
+/// and only in DRAFT status. Hard deletes the amendment (never-submitted drafts
+/// have no governance value).
+#[utoipa::path(
+    delete,
+    path = "/api/v1/applications/{app_id}/discard",
+    params(("app_id" = Uuid, Path, description = "Amendment application ID to discard")),
+    responses(
+        (status = 204, description = "Amendment discarded"),
+        (status = 403, description = "Only the creator can discard"),
+        (status = 422, description = "Application is not a draft amendment")
+    ),
+    security(("bearer_auth" = [])),
+    tag = "applications"
+)]
+pub async fn discard_amendment(
+    State(state): State<AppState>,
+    Extension(claims): Extension<Claims>,
+    Path(app_id): Path<Uuid>,
+) -> AppResult<StatusCode> {
+    // Fetch the application
+    let row = sqlx::query_as::<_, Application>(
+        "SELECT * FROM applications WHERE application_id = $1 AND deleted_at IS NULL",
+    )
+    .bind(app_id)
+    .fetch_optional(&state.pool)
+    .await?
+    .ok_or_else(|| AppError::NotFound(format!("application not found: {app_id}")))?;
+
+    // Must be an amendment (has previous_version_id)
+    if row.previous_version_id.is_none() {
+        return Err(AppError::Validation(
+            "only amendments can be discarded — use the workflow to manage original applications".into(),
+        ));
+    }
+
+    // Must be in DRAFT status
+    let status_code = sqlx::query_scalar::<_, String>(
+        "SELECT status_code FROM entity_statuses WHERE status_id = $1",
+    )
+    .bind(row.status_id)
+    .fetch_one(&state.pool)
+    .await?;
+
+    if status_code != "DRAFT" {
+        return Err(AppError::Validation(
+            "only draft amendments can be discarded — submitted amendments must be rejected through the workflow".into(),
+        ));
+    }
+
+    // Only the creator or admin can discard
+    let is_admin = claims.roles.iter().any(|r| r == "ADMIN" || r == "admin");
+    if row.created_by != claims.sub && !is_admin {
+        return Err(AppError::Forbidden(
+            "only the amendment creator or an admin can discard it".into(),
+        ));
+    }
+
+    // Hard delete: a never-submitted draft has no governance value.
+
+    // Delete workflow tasks and history, then the instance
+    sqlx::query(
+        r#"
+        DELETE FROM workflow_tasks
+        WHERE instance_id IN (SELECT instance_id FROM workflow_instances WHERE entity_id = $1)
+        "#,
+    )
+    .bind(app_id)
+    .execute(&state.pool)
+    .await?;
+
+    sqlx::query(
+        r#"
+        DELETE FROM workflow_history
+        WHERE instance_id IN (SELECT instance_id FROM workflow_instances WHERE entity_id = $1)
+        "#,
+    )
+    .bind(app_id)
+    .execute(&state.pool)
+    .await?;
+
+    sqlx::query("DELETE FROM workflow_instances WHERE entity_id = $1")
+        .bind(app_id).execute(&state.pool).await?;
+
+    // Delete the amendment application itself
+    sqlx::query("DELETE FROM applications WHERE application_id = $1")
+        .bind(app_id).execute(&state.pool).await?;
+
+    Ok(StatusCode::NO_CONTENT)
 }

@@ -1,5 +1,6 @@
 import type { AxiosResponse } from 'axios';
 import api from './api';
+import type { BulkUploadResult } from './glossaryApi';
 
 // --- Application Classification types ---
 
@@ -93,6 +94,10 @@ export interface Application {
   approved_at: string | null;
   // Reference
   documentation_url: string | null;
+  // Versioning
+  version_number: number;
+  is_current_version: boolean;
+  previous_version_id: string | null;
   // Audit
   created_by: string;
   updated_by: string | null;
@@ -173,6 +178,9 @@ export interface ApplicationFullView {
   next_review_date: string | null;
   approved_at: string | null;
   documentation_url: string | null;
+  version_number: number;
+  is_current_version: boolean;
+  previous_version_id: string | null;
   created_by: string;
   created_by_name: string | null;
   updated_by: string | null;
@@ -305,6 +313,16 @@ export const applicationsApi = {
     return api.put(`/applications/${id}`, data);
   },
 
+  /** Propose an amendment to an accepted application. Creates a new version in DRAFT. */
+  amendApplication(id: string): Promise<AxiosResponse<Application>> {
+    return api.post(`/applications/${id}/amend`);
+  },
+
+  /** Discard a draft amendment. Only the creator or admin can discard. */
+  discardAmendment(id: string): Promise<AxiosResponse<void>> {
+    return api.delete(`/applications/${id}/discard`);
+  },
+
   listClassifications(): Promise<AxiosResponse<ApplicationClassification[]>> {
     return api.get('/applications/classifications');
   },
@@ -335,5 +353,31 @@ export const applicationsApi = {
 
   listInterfaces(appId: string): Promise<AxiosResponse<ApplicationInterface[]>> {
     return api.get(`/applications/${appId}/interfaces`);
+  },
+
+  // ----- Bulk upload -----
+
+  downloadBulkUploadTemplate(): Promise<void> {
+    return api.get('/applications/bulk-upload/template', {
+      responseType: 'blob',
+    }).then((response) => {
+      const url = window.URL.createObjectURL(new Blob([response.data]));
+      const link = document.createElement('a');
+      link.href = url;
+      link.setAttribute('download', 'application_bulk_upload_template.xlsx');
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(url);
+    });
+  },
+
+  uploadBulkApplications(file: File): Promise<AxiosResponse<BulkUploadResult>> {
+    const formData = new FormData();
+    formData.append('file', file);
+    return api.post('/applications/bulk-upload', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+      timeout: 120000,
+    });
   },
 };

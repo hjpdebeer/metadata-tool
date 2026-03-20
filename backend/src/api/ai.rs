@@ -87,8 +87,9 @@ async fn fetch_entity_data(
                     approved_at, review_frequency_id, next_review_date,
                     parent_term_id, source_reference, regulatory_reference,
                     used_in_reports, used_in_policies, regulatory_reporting_usage,
-                    is_cbt, golden_source, confidence_level_id,
+                    is_cbt, golden_source_app_id, confidence_level_id,
                     visibility_id, language_id, external_reference,
+                    previous_version_id,
                     created_by, updated_by, created_at, updated_at
                 FROM glossary_terms
                 WHERE term_id = $1 AND deleted_at IS NULL
@@ -621,7 +622,7 @@ pub async fn enrich(
                 "status_id" | "version_number" | "is_current_version" | "is_cbt" | "is_cde" | "is_cba"
                     | "is_nullable" | "is_active" | "is_critical"
                     | "parent_term" | "child_terms" | "related_terms"
-                    | "golden_source_app_id"
+                    | "golden_source" | "golden_source_app_id"
             )
         {
             return false;

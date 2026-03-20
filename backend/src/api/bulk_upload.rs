@@ -29,7 +29,7 @@ const MAX_FILE_SIZE: usize = 10 * 1024 * 1024;
 /// Maximum data rows to process.
 const MAX_ROWS: usize = 1000;
 
-/// Column headers in the Terms sheet (A-AH = 34 columns).
+/// Column headers in the Terms sheet (A-AF = 32 columns).
 const TEMPLATE_HEADERS: &[&str] = &[
     "Term Name",             // A  (0)
     "Definition",            // B  (1)
@@ -43,28 +43,26 @@ const TEMPLATE_HEADERS: &[&str] = &[
     "Term Type",             // J  (9)
     "Unit of Measure",       // K  (10)
     "Review Frequency",      // L  (11)
-    "Confidence Level",      // M  (12)
-    "Visibility",            // N  (13)
-    "Language",              // O  (14)
-    "Business Term Owner",   // P  (15)
-    "Data Steward",          // Q  (16)
-    "Data Domain Owner",     // R  (17)
-    "Approver",              // S  (18)
-    "Organisational Unit",   // T  (19)
-    "Parent Term",           // U  (20)
-    "Source Reference",      // V  (21)
-    "Regulatory Reference",  // W  (22)
-    "External Reference",    // X  (23)
-    "Business Rules",        // Y  (24)
-    "Examples",              // Z  (25)
-    "Used in Reports",       // AA (26)
-    "Used in Policies",      // AB (27)
-    "Regulatory Reporting",  // AC (28)
-    "CDE Flag",              // AD (29)
-    "Golden Source",         // AE (30)
-    "Regulatory Tags",       // AF (31)
-    "Subject Areas",         // AG (32)
-    "Tags",                  // AH (33)
+    "Visibility",            // M  (12)
+    "Language",              // N  (13)
+    "Business Term Owner",   // O  (14)
+    "Data Steward",          // P  (15)
+    "Data Domain Owner",     // Q  (16)
+    "Approver",              // R  (17)
+    "Organisational Unit",   // S  (18)
+    "Parent Term",           // T  (19)
+    "Source Reference",      // U  (20)
+    "Regulatory Reference",  // V  (21)
+    "External Reference",    // W  (22)
+    "Business Rules",        // X  (23)
+    "Examples",              // Y  (24)
+    "Used in Reports",       // Z  (25)
+    "Used in Policies",      // AA (26)
+    "Regulatory Reporting",  // AB (27)
+    "CBT Flag",              // AC (28)
+    "Regulatory Tags",       // AD (29)
+    "Subject Areas",         // AE (30)
+    "Tags",                  // AF (31)
 ];
 
 /// Instructions for each column (field, description, mandatory, max_length, notes).
@@ -81,7 +79,6 @@ const INSTRUCTIONS: &[(&str, &str, &str, &str, &str)] = &[
     ("Term Type",            "Type of business term (KPI, concept, etc.)",                 "No",  "",     "Select from dropdown"),
     ("Unit of Measure",      "Measurement unit if applicable",                             "No",  "",     "Select from dropdown"),
     ("Review Frequency",     "How often this term should be reviewed",                     "No",  "",     "Select from dropdown"),
-    ("Confidence Level",     "Confidence in the definition quality",                       "No",  "",     "Select from dropdown"),
     ("Visibility",           "Who can see this term",                                      "No",  "",     "Select from dropdown"),
     ("Language",             "Language of the definition",                                  "No",  "",     "Select from dropdown; default: English"),
     ("Business Term Owner",  "Email address of the business term owner",                   "Yes", "",     "Must exist in the system"),
@@ -98,8 +95,7 @@ const INSTRUCTIONS: &[(&str, &str, &str, &str, &str)] = &[
     ("Used in Reports",      "Names of reports that use this term",                        "No",  "2000", ""),
     ("Used in Policies",     "Policy documents referencing this term",                     "No",  "2000", ""),
     ("Regulatory Reporting", "Regulatory reporting usage of this term",                    "No",  "2000", ""),
-    ("CDE Flag",             "Whether this is a Critical Data Element",                    "No",  "",     "TRUE or FALSE"),
-    ("Golden Source",        "The authoritative source system for this term",               "No",  "500",  ""),
+    ("CBT Flag",             "Whether this is a Critical Business Term",                   "No",  "",     "TRUE or FALSE"),
     ("Regulatory Tags",      "Applicable regulatory frameworks",                           "No",  "",     "Comma-separated from dropdown"),
     ("Subject Areas",        "Business subject areas",                                     "No",  "",     "Comma-separated from dropdown"),
     ("Tags",                 "Freeform keywords/tags",                                     "No",  "",     "Comma-separated"),
@@ -152,10 +148,10 @@ async fn generate_template(pool: &PgPool) -> AppResult<Vec<u8>> {
         term_types,
         units,
         frequencies,
-        confidence_levels,
         visibility_levels,
         languages,
         org_units,
+        user_emails,
         reg_tags,
         subject_areas,
     ) = tokio::try_join!(
@@ -165,10 +161,10 @@ async fn generate_template(pool: &PgPool) -> AppResult<Vec<u8>> {
         fetch_names(pool, "SELECT type_name FROM glossary_term_types ORDER BY display_order"),
         fetch_names(pool, "SELECT unit_name FROM glossary_units_of_measure ORDER BY display_order"),
         fetch_names(pool, "SELECT frequency_name FROM glossary_review_frequencies ORDER BY display_order"),
-        fetch_names(pool, "SELECT level_name FROM glossary_confidence_levels ORDER BY display_order"),
         fetch_names(pool, "SELECT visibility_name FROM glossary_visibility_levels ORDER BY display_order"),
         fetch_names(pool, "SELECT language_name FROM glossary_languages ORDER BY language_name"),
         fetch_names(pool, "SELECT unit_name FROM organisational_units ORDER BY display_order"),
+        fetch_names(pool, "SELECT email FROM users WHERE is_active = TRUE AND deleted_at IS NULL ORDER BY display_name"),
         fetch_names(pool, "SELECT tag_name FROM glossary_regulatory_tags ORDER BY display_order"),
         fetch_names(pool, "SELECT area_name FROM glossary_subject_areas ORDER BY display_order"),
     )?;
@@ -202,23 +198,23 @@ async fn generate_template(pool: &PgPool) -> AppResult<Vec<u8>> {
         .set_font_color(rust_xlsxwriter::Color::White)
         .set_border(FormatBorder::Thin);
 
-    // Mandatory column indices: A(0), B(1), P(15), Q(16), R(17), S(18), T(19)
-    let mandatory_cols: &[u16] = &[0, 1, 15, 16, 17, 18, 19];
+    // Mandatory column indices: A(0), B(1), O(14), P(15), Q(16), R(17), S(18)
+    let mandatory_cols: &[u16] = &[0, 1, 14, 15, 16, 17, 18];
 
     // Each lookup list with its name
     let lookup_lists: Vec<(&str, &[String])> = vec![
-        ("Domains", &domains),
-        ("Categories", &categories),
-        ("Classifications", &classifications),
-        ("TermTypes", &term_types),
-        ("UnitsOfMeasure", &units),
-        ("ReviewFrequencies", &frequencies),
-        ("ConfidenceLevels", &confidence_levels),
-        ("VisibilityLevels", &visibility_levels),
-        ("Languages", &languages),
-        ("OrganisationalUnits", &org_units),
-        ("RegulatoryTags", &reg_tags),
-        ("SubjectAreas", &subject_areas),
+        ("Domains", &domains),             // 0
+        ("Categories", &categories),       // 1
+        ("Classifications", &classifications), // 2
+        ("TermTypes", &term_types),        // 3
+        ("UnitsOfMeasure", &units),        // 4
+        ("ReviewFrequencies", &frequencies), // 5
+        ("VisibilityLevels", &visibility_levels), // 6
+        ("Languages", &languages),         // 7
+        ("UserEmails", &user_emails),      // 8
+        ("OrganisationalUnits", &org_units), // 9
+        ("RegulatoryTags", &reg_tags),     // 10
+        ("SubjectAreas", &subject_areas),  // 11
     ];
 
     // Dropdown column mappings: (Terms column index, lookup list index)
@@ -229,10 +225,13 @@ async fn generate_template(pool: &PgPool) -> AppResult<Vec<u8>> {
         (9, 3),   // Term Type      -> TermTypes
         (10, 4),  // Unit of Measure -> UnitsOfMeasure
         (11, 5),  // Review Freq    -> ReviewFrequencies
-        (12, 6),  // Confidence     -> ConfidenceLevels
-        (13, 7),  // Visibility     -> VisibilityLevels
-        (14, 8),  // Language       -> Languages
-        (19, 9),  // Org Unit       -> OrganisationalUnits
+        (12, 6),  // Visibility     -> VisibilityLevels
+        (13, 7),  // Language       -> Languages
+        (14, 8),  // Owner email    -> UserEmails
+        (15, 8),  // Steward email  -> UserEmails
+        (16, 8),  // Domain Owner   -> UserEmails
+        (17, 8),  // Approver       -> UserEmails
+        (18, 9),  // Org Unit       -> OrganisationalUnits
     ];
 
     // Pre-build the data validations (no borrow on workbook needed yet)
@@ -627,28 +626,26 @@ async fn process_row(
     let term_type_val = non_empty(&cols[9]);
     let unit_val = non_empty(&cols[10]);
     let frequency_val = non_empty(&cols[11]);
-    let confidence_val = non_empty(&cols[12]);
-    let visibility_val = non_empty(&cols[13]);
-    let language_val = non_empty(&cols[14]);
-    let owner_email = cols[15].trim().to_string();
-    let steward_email = cols[16].trim().to_string();
-    let domain_owner_email = cols[17].trim().to_string();
-    let approver_email = cols[18].trim().to_string();
-    let org_unit_val = non_empty(&cols[19]);
-    let parent_term_val = non_empty(&cols[20]);
-    let source_reference = non_empty(&cols[21]);
-    let regulatory_reference = non_empty(&cols[22]);
-    let external_reference = non_empty(&cols[23]);
-    let business_context = non_empty(&cols[24]);
-    let examples = non_empty(&cols[25]);
-    let used_in_reports = non_empty(&cols[26]);
-    let used_in_policies = non_empty(&cols[27]);
-    let regulatory_reporting_usage = non_empty(&cols[28]);
-    let cde_flag_str = non_empty(&cols[29]);
-    let golden_source = non_empty(&cols[30]);
-    let reg_tags_str = non_empty(&cols[31]);
-    let subject_areas_str = non_empty(&cols[32]);
-    let tags_str = non_empty(&cols[33]);
+    let visibility_val = non_empty(&cols[12]);
+    let language_val = non_empty(&cols[13]);
+    let owner_email = cols[14].trim().to_string();
+    let steward_email = cols[15].trim().to_string();
+    let domain_owner_email = cols[16].trim().to_string();
+    let approver_email = cols[17].trim().to_string();
+    let org_unit_val = non_empty(&cols[18]);
+    let parent_term_val = non_empty(&cols[19]);
+    let source_reference = non_empty(&cols[20]);
+    let regulatory_reference = non_empty(&cols[21]);
+    let external_reference = non_empty(&cols[22]);
+    let business_context = non_empty(&cols[23]);
+    let examples = non_empty(&cols[24]);
+    let used_in_reports = non_empty(&cols[25]);
+    let used_in_policies = non_empty(&cols[26]);
+    let regulatory_reporting_usage = non_empty(&cols[27]);
+    let cbt_flag_str = non_empty(&cols[28]);
+    let reg_tags_str = non_empty(&cols[29]);
+    let subject_areas_str = non_empty(&cols[30]);
+    let tags_str = non_empty(&cols[31]);
 
     // --- Mandatory field validation ---
     if term_name.is_empty() {
@@ -761,11 +758,7 @@ async fn process_row(
         &mut row_errors,
     ).await;
 
-    let confidence_id = resolve_optional_lookup(
-        ctx.pool, row_num, "Confidence Level", &confidence_val,
-        "SELECT confidence_id FROM glossary_confidence_levels WHERE level_name ILIKE $1",
-        &mut row_errors,
-    ).await;
+    // Confidence level is managed by the Data Quality module — not set via bulk upload
 
     let visibility_id = resolve_optional_lookup(
         ctx.pool, row_num, "Visibility", &visibility_val,
@@ -808,7 +801,7 @@ async fn process_row(
     };
 
     // Parse CBT (Critical Business Term) flag
-    let is_cbt = cde_flag_str
+    let is_cbt = cbt_flag_str
         .as_deref()
         .map(|s| s.eq_ignore_ascii_case("true"))
         .unwrap_or(false);
@@ -828,19 +821,19 @@ async fn process_row(
             term_name, definition, definition_notes, counter_examples,
             formula, abbreviation, domain_id, category_id, classification_id,
             term_type_id, unit_of_measure_id, review_frequency_id,
-            confidence_level_id, visibility_id, language_id,
+            visibility_id, language_id,
             owner_user_id, steward_user_id, domain_owner_user_id,
             approver_user_id, organisational_unit, parent_term_id,
             source_reference, regulatory_reference, external_reference,
             business_context, examples, used_in_reports, used_in_policies,
-            regulatory_reporting_usage, is_cbt, golden_source,
+            regulatory_reporting_usage, is_cbt,
             status_id, version_number, is_current_version, created_by
         )
         VALUES (
             $1, $2, $3, $4, $5, $6, $7, $8, $9, $10,
             $11, $12, $13, $14, $15, $16, $17, $18, $19, $20,
-            $21, $22, $23, $24, $25, $26, $27, $28, $29, $30,
-            $31, $32, 1, TRUE, $33
+            $21, $22, $23, $24, $25, $26, $27, $28,
+            $29, $30, 1, TRUE, $31
         )
         RETURNING term_id
         "#,
@@ -857,27 +850,25 @@ async fn process_row(
     .bind(term_type_id)                     // $10
     .bind(unit_id)                          // $11
     .bind(effective_frequency_id)           // $12
-    .bind(confidence_id)                    // $13
-    .bind(visibility_id)                    // $14
-    .bind(language_id)                      // $15
-    .bind(owner_user_id)                    // $16
-    .bind(steward_user_id)                  // $17
-    .bind(domain_owner_user_id)             // $18
-    .bind(approver_user_id)                 // $19
-    .bind(organisational_unit.as_deref())   // $20
-    .bind(parent_term_id)                   // $21
-    .bind(source_reference.as_deref())      // $22
-    .bind(regulatory_reference.as_deref())  // $23
-    .bind(external_reference.as_deref())    // $24
-    .bind(business_context.as_deref())      // $25
-    .bind(examples.as_deref())              // $26
-    .bind(used_in_reports.as_deref())       // $27
-    .bind(used_in_policies.as_deref())      // $28
-    .bind(regulatory_reporting_usage.as_deref()) // $29
-    .bind(is_cbt)                           // $30
-    .bind(golden_source.as_deref())         // $31
-    .bind(ctx.draft_status_id)               // $32
-    .bind(ctx.user_id)                      // $33
+    .bind(visibility_id)                    // $13
+    .bind(language_id)                      // $14
+    .bind(owner_user_id)                    // $15
+    .bind(steward_user_id)                  // $16
+    .bind(domain_owner_user_id)             // $17
+    .bind(approver_user_id)                 // $18
+    .bind(organisational_unit.as_deref())   // $19
+    .bind(parent_term_id)                   // $20
+    .bind(source_reference.as_deref())      // $21
+    .bind(regulatory_reference.as_deref())  // $22
+    .bind(external_reference.as_deref())    // $23
+    .bind(business_context.as_deref())      // $24
+    .bind(examples.as_deref())              // $25
+    .bind(used_in_reports.as_deref())       // $26
+    .bind(used_in_policies.as_deref())      // $27
+    .bind(regulatory_reporting_usage.as_deref()) // $28
+    .bind(is_cbt)                           // $29
+    .bind(ctx.draft_status_id)              // $30
+    .bind(ctx.user_id)                      // $31
     .fetch_one(ctx.pool)
     .await
     .map_err(|e| {

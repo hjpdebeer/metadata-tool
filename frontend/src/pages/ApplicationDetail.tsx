@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useNavigate, useParams, Link } from 'react-router-dom';
 import {
   Alert,
   Breadcrumb,
@@ -29,6 +29,7 @@ import {
   ArrowLeftOutlined,
   CheckOutlined,
   CloseOutlined,
+  DeleteOutlined,
   EditOutlined,
   LinkOutlined,
   SendOutlined,
@@ -63,6 +64,7 @@ const statusColors: Record<string, string> = {
   ACCEPTED: 'success',
   REJECTED: 'error',
   DEPRECATED: 'default',
+  SUPERSEDED: 'default',
 };
 
 const statusLabels: Record<string, string> = {
@@ -74,6 +76,7 @@ const statusLabels: Record<string, string> = {
   ACCEPTED: 'Accepted',
   REJECTED: 'Rejected',
   DEPRECATED: 'Deprecated',
+  SUPERSEDED: 'Superseded',
 };
 
 const deploymentTypeColors: Record<string, string> = {
@@ -304,6 +307,39 @@ const ApplicationDetail: React.FC = () => {
     }
   };
 
+  // --- Amendment ---
+
+  const handleProposeAmendment = async () => {
+    if (!id) return;
+    try {
+      const response = await applicationsApi.amendApplication(id);
+      message.success('Amendment created. You can now edit the new draft version.');
+      navigate(`/applications/${response.data.application_id}`);
+    } catch (err: unknown) {
+      const apiMsg = (err as { response?: { data?: { error?: { message?: string } } } })
+        ?.response?.data?.error?.message;
+      message.error(apiMsg || 'Failed to create amendment.');
+    }
+  };
+
+  const handleDiscardAmendment = async () => {
+    if (!id) return;
+    try {
+      await applicationsApi.discardAmendment(id);
+      message.success('Amendment discarded.');
+      // Navigate to the original application
+      if (application?.previous_version_id) {
+        navigate(`/applications/${application.previous_version_id}`);
+      } else {
+        navigate('/applications');
+      }
+    } catch (err: unknown) {
+      const apiMsg = (err as { response?: { data?: { error?: { message?: string } } } })
+        ?.response?.data?.error?.message;
+      message.error(apiMsg || 'Failed to discard amendment.');
+    }
+  };
+
   const handleLinkElement = async () => {
     try {
       const values = await linkForm.validateFields();
@@ -379,6 +415,19 @@ const ApplicationDetail: React.FC = () => {
           Submit for Review
         </Button>,
       );
+      // Discard button: only for amendments (has previous_version_id), only for creator or admin
+      if (detail?.previous_version_id && (currentUserId === detail?.created_by || isAdmin)) {
+        buttons.push(
+          <Button
+            key="discard"
+            danger
+            icon={<DeleteOutlined />}
+            onClick={handleDiscardAmendment}
+          >
+            Discard Amendment
+          </Button>,
+        );
+      }
     }
 
     if (status === 'UNDER_REVIEW' && isSteward) {
@@ -452,16 +501,31 @@ const ApplicationDetail: React.FC = () => {
       );
     }
 
-    buttons.push(
-      <Button
-        key="edit"
-        icon={<EditOutlined />}
-        onClick={() => navigate(`/applications/${id}/edit`)}
-        disabled={status === 'ACCEPTED' || status === 'DEPRECATED'}
-      >
-        Edit
-      </Button>,
-    );
+    if (status === 'ACCEPTED') {
+      buttons.push(
+        <Button
+          key="amend"
+          type="primary"
+          icon={<EditOutlined />}
+          onClick={handleProposeAmendment}
+        >
+          Propose Amendment
+        </Button>,
+      );
+    }
+
+    // Edit button: available in draft/revised/under review/pending approval states
+    if (!['ACCEPTED', 'DEPRECATED', 'REJECTED', 'SUPERSEDED'].includes(status)) {
+      buttons.push(
+        <Button
+          key="edit"
+          icon={<EditOutlined />}
+          onClick={() => navigate(`/applications/${id}/edit`)}
+        >
+          Edit
+        </Button>,
+      );
+    }
 
     return buttons;
   };
@@ -905,6 +969,9 @@ const ApplicationDetail: React.FC = () => {
           >
             {statusLabels[status] || status}
           </Tag>
+          {detail.version_number > 1 && (
+            <Tag color="geekblue">v{detail.version_number}</Tag>
+          )}
           {detail.is_cba && (
             <Tag color="red" style={{ fontSize: 14, padding: '2px 12px', fontWeight: 600 }}>
               <WarningOutlined /> CBA
@@ -930,6 +997,24 @@ const ApplicationDetail: React.FC = () => {
               <Text>{detail.cba_rationale || 'No rationale provided.'}</Text>
             </div>
           }
+          style={{ marginBottom: 16 }}
+          banner
+        />
+      )}
+
+      {/* --- Amendment Context Banner --- */}
+      {detail.previous_version_id && (
+        <Alert
+          message={`Amendment of v${(detail.version_number || 2) - 1}`}
+          description={
+            <span>
+              This is a draft amendment. The original accepted version remains visible until this amendment is approved.{' '}
+              <Link to={`/applications/${detail.previous_version_id}`}>View original version</Link>
+            </span>
+          }
+          type="info"
+          showIcon
+          icon={<EditOutlined />}
           style={{ marginBottom: 16 }}
           banner
         />

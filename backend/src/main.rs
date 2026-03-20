@@ -90,6 +90,9 @@ use metadata_tool::db::{self, AppState};
         api::lineage::delete_edge,
         api::lineage::list_node_types,
         api::lineage::impact_analysis,
+        // Applications — bulk upload
+        api::app_bulk_upload::download_app_template,
+        api::app_bulk_upload::bulk_upload_apps,
         // Applications
         api::applications::list_applications,
         api::applications::get_application,
@@ -103,6 +106,8 @@ use metadata_tool::db::{self, AppState};
         api::applications::link_data_element,
         api::applications::list_app_elements,
         api::applications::list_interfaces,
+        api::applications::amend_application,
+        api::applications::discard_amendment,
         // Processes
         api::processes::list_processes,
         api::processes::get_process,
@@ -338,13 +343,20 @@ async fn main() -> anyhow::Result<()> {
         .route("/api/v1/lineage/nodes/{node_id}", delete(api::lineage::delete_node))
         .route("/api/v1/lineage/edges/{edge_id}", delete(api::lineage::delete_edge))
         .route("/api/v1/lineage/impact/{node_id}", get(api::lineage::impact_analysis))
-        // Applications
+        // Applications — bulk upload routes BEFORE {app_id} to avoid path conflicts
+        .route("/api/v1/applications/bulk-upload/template", get(api::app_bulk_upload::download_app_template))
+        .route("/api/v1/applications/bulk-upload",
+            post(api::app_bulk_upload::bulk_upload_apps)
+                .layer(DefaultBodyLimit::max(10 * 1024 * 1024))
+        )
         .route("/api/v1/applications", get(api::applications::list_applications).post(api::applications::create_application))
         .route("/api/v1/applications/classifications", get(api::applications::list_classifications))
         .route("/api/v1/applications/dr-tiers", get(api::applications::list_dr_tiers))
         .route("/api/v1/applications/lifecycle-stages", get(api::applications::list_lifecycle_stages))
         .route("/api/v1/applications/criticality-tiers", get(api::applications::list_criticality_tiers))
         .route("/api/v1/applications/risk-ratings", get(api::applications::list_risk_ratings))
+        .route("/api/v1/applications/{app_id}/amend", post(api::applications::amend_application))
+        .route("/api/v1/applications/{app_id}/discard", delete(api::applications::discard_amendment))
         .route("/api/v1/applications/{app_id}", get(api::applications::get_application).put(api::applications::update_application))
         .route("/api/v1/applications/{app_id}/elements", get(api::applications::list_app_elements).post(api::applications::link_data_element))
         .route("/api/v1/applications/{app_id}/interfaces", get(api::applications::list_interfaces))

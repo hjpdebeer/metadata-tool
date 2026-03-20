@@ -904,10 +904,12 @@ async fn update_entity_status(
         }
         "applications" => {
             if state_code == super::STATE_ACCEPTED {
+                // Stamp approved_at, set is_current_version, recalculate next_review_date
                 sqlx::query(
                     "UPDATE applications
                      SET status_id = $1,
                          approved_at = CURRENT_TIMESTAMP,
+                         is_current_version = TRUE,
                          next_review_date = CURRENT_DATE + (
                              SELECT COALESCE(grf.months_interval, 12) * INTERVAL '1 month'
                              FROM glossary_review_frequencies grf
@@ -920,6 +922,54 @@ async fn update_entity_status(
                 .bind(instance.entity_id)
                 .execute(pool)
                 .await?;
+
+                // Version swap: if this is an amendment (has previous_version_id),
+                // mark the old version as no longer current.
+                let previous_id = sqlx::query_scalar::<_, Option<Uuid>>(
+                    "SELECT previous_version_id FROM applications WHERE application_id = $1",
+                )
+                .bind(instance.entity_id)
+                .fetch_one(pool)
+                .await?;
+
+                if let Some(old_app_id) = previous_id {
+                    // Mark old version as SUPERSEDED
+                    let superseded_status_id = sqlx::query_scalar::<_, Uuid>(
+                        "SELECT status_id FROM entity_statuses WHERE status_code = 'SUPERSEDED'",
+                    )
+                    .fetch_one(pool)
+                    .await?;
+
+                    sqlx::query(
+                        "UPDATE applications
+                         SET is_current_version = FALSE,
+                             status_id = $1,
+                             updated_at = CURRENT_TIMESTAMP
+                         WHERE application_id = $2",
+                    )
+                    .bind(superseded_status_id)
+                    .bind(old_app_id)
+                    .execute(pool)
+                    .await?;
+
+                    // Also mark the old version's workflow instance as completed
+                    sqlx::query(
+                        "UPDATE workflow_instances
+                         SET completed_at = CURRENT_TIMESTAMP,
+                             completion_notes = 'Superseded by newer version',
+                             updated_at = CURRENT_TIMESTAMP
+                         WHERE entity_id = $1 AND completed_at IS NULL",
+                    )
+                    .bind(old_app_id)
+                    .execute(pool)
+                    .await?;
+
+                    tracing::info!(
+                        new_app_id = %instance.entity_id,
+                        old_app_id = %old_app_id,
+                        "version swap: application amendment approved, old version superseded"
+                    );
+                }
             } else {
                 sqlx::query(
                     "UPDATE applications SET status_id = $1, updated_at = CURRENT_TIMESTAMP WHERE application_id = $2",

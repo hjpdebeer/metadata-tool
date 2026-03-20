@@ -5,9 +5,11 @@ import {
   SettingOutlined,
   TeamOutlined,
   BellOutlined,
+  KeyOutlined,
 } from '@ant-design/icons';
 import AdminLookupTables from './admin/AdminLookupTables';
 import AdminSystemConfig from './admin/AdminSystemConfig';
+import AdminApiKeys from './admin/AdminApiKeys';
 import UserManagementPage from './UserManagementPage';
 import NotificationPreferencesPage from './NotificationPreferencesPage';
 
@@ -34,6 +36,15 @@ const AdminPanel: React.FC = () => {
         </span>
       ),
       children: <AdminSystemConfig />,
+    },
+    {
+      key: 'api-keys',
+      label: (
+        <span>
+          <KeyOutlined /> API Keys
+        </span>
+      ),
+      children: <AdminApiKeys />,
     },
     {
       key: 'users',

@@ -11,6 +11,7 @@ import {
   Divider,
   Input,
   Modal,
+  Progress,
   Row,
   Select,
   Space,
@@ -34,6 +35,7 @@ import {
   KeyOutlined,
   LinkOutlined,
   PlusOutlined,
+  RobotOutlined,
   SafetyCertificateOutlined,
   SendOutlined,
   UndoOutlined,
@@ -47,7 +49,7 @@ import { dataQualityApi } from '../services/dataQualityApi';
 import type { DataElementFullView, TechnicalColumn } from '../services/dataDictionaryApi';
 import type { OrganisationalUnit, WorkflowInstanceView } from '../services/glossaryApi';
 import type { UserListItem } from '../services/usersApi';
-import type { QualityRuleListItem } from '../services/dataQualityApi';
+import type { QualityRuleListItem, AiRuleSuggestion } from '../services/dataQualityApi';
 import { useAuth } from '../hooks/useAuth';
 import AiEnrichmentPanel from '../components/AiEnrichmentPanel';
 
@@ -138,6 +140,92 @@ const DataElementDetail: React.FC = () => {
       setQualityRulesLoading(false);
     }
   }, [id]);
+
+  // AI-suggested quality rules
+  const [aiRuleSuggestions, setAiRuleSuggestions] = useState<AiRuleSuggestion[]>([]);
+  const [aiRulesLoading, setAiRulesLoading] = useState(false);
+  const [aiRulesProvider, setAiRulesProvider] = useState('');
+  const [acceptingRuleIndex, setAcceptingRuleIndex] = useState<number | null>(null);
+
+  const handleSuggestQualityRules = async () => {
+    if (!id) return;
+    setAiRulesLoading(true);
+    setAiRuleSuggestions([]);
+    try {
+      const response = await dataQualityApi.suggestQualityRules(id);
+      setAiRuleSuggestions(response.data.suggestions);
+      setAiRulesProvider(`${response.data.provider} / ${response.data.model}`);
+      if (response.data.suggestions.length === 0) {
+        message.info('AI did not suggest any quality rules for this element.');
+      }
+    } catch {
+      message.error('Failed to get AI quality rule suggestions.');
+    } finally {
+      setAiRulesLoading(false);
+    }
+  };
+
+  const handleAcceptRuleSuggestion = async (suggestion: AiRuleSuggestion, index: number) => {
+    if (!id) return;
+    setAcceptingRuleIndex(index);
+    try {
+      await dataQualityApi.acceptRuleSuggestion({
+        element_id: id,
+        dimension_code: suggestion.dimension,
+        rule_name: suggestion.rule_name,
+        description: suggestion.description,
+        comparison_type: suggestion.comparison_type,
+        comparison_value: suggestion.comparison_value,
+        threshold_percentage: suggestion.threshold_percentage,
+        severity: suggestion.severity,
+      });
+      message.success(`Quality rule "${suggestion.rule_name}" created successfully.`);
+      // Remove from suggestions list
+      setAiRuleSuggestions((prev) => prev.filter((_, i) => i !== index));
+      // Refresh the rules list
+      fetchQualityRules();
+    } catch {
+      message.error(`Failed to create quality rule "${suggestion.rule_name}".`);
+    } finally {
+      setAcceptingRuleIndex(null);
+    }
+  };
+
+  const handleDismissRuleSuggestion = (index: number) => {
+    setAiRuleSuggestions((prev) => prev.filter((_, i) => i !== index));
+  };
+
+  const handleAcceptAllRuleSuggestions = async () => {
+    if (!id || aiRuleSuggestions.length === 0) return;
+    setAiRulesLoading(true);
+    let accepted = 0;
+    let failed = 0;
+    for (const suggestion of aiRuleSuggestions) {
+      try {
+        await dataQualityApi.acceptRuleSuggestion({
+          element_id: id,
+          dimension_code: suggestion.dimension,
+          rule_name: suggestion.rule_name,
+          description: suggestion.description,
+          comparison_type: suggestion.comparison_type,
+          comparison_value: suggestion.comparison_value,
+          threshold_percentage: suggestion.threshold_percentage,
+          severity: suggestion.severity,
+        });
+        accepted++;
+      } catch {
+        failed++;
+      }
+    }
+    setAiRuleSuggestions([]);
+    fetchQualityRules();
+    if (failed === 0) {
+      message.success(`All ${accepted} quality rules created successfully.`);
+    } else {
+      message.warning(`${accepted} rules created, ${failed} failed.`);
+    }
+    setAiRulesLoading(false);
+  };
 
   useEffect(() => {
     fetchElement(true);
@@ -960,17 +1048,154 @@ const DataElementDetail: React.FC = () => {
           </Space>
         }
         extra={
-          <Button
-            type="primary"
-            size="small"
-            icon={<PlusOutlined />}
-            onClick={() => navigate(`/data-quality/rules/new?element_id=${id}`)}
-          >
-            Create Quality Rule
-          </Button>
+          <Space>
+            <Button
+              size="small"
+              icon={<RobotOutlined />}
+              onClick={handleSuggestQualityRules}
+              loading={aiRulesLoading}
+            >
+              Suggest Quality Rules
+            </Button>
+            <Button
+              type="primary"
+              size="small"
+              icon={<PlusOutlined />}
+              onClick={() => navigate(`/data-quality/rules/new?element_id=${id}`)}
+            >
+              Create Quality Rule
+            </Button>
+          </Space>
         }
         style={{ marginBottom: 24 }}
       >
+        {/* AI Suggestions */}
+        {aiRuleSuggestions.length > 0 && (
+          <div style={{ marginBottom: 16 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+              <Space>
+                <RobotOutlined style={{ color: '#722ED1' }} />
+                <Text strong>AI-Suggested Quality Rules</Text>
+                <Text type="secondary">({aiRulesProvider})</Text>
+              </Space>
+              <Space>
+                <Button
+                  type="primary"
+                  size="small"
+                  icon={<CheckOutlined />}
+                  onClick={handleAcceptAllRuleSuggestions}
+                  loading={aiRulesLoading}
+                >
+                  Accept All ({aiRuleSuggestions.length})
+                </Button>
+                <Button
+                  size="small"
+                  onClick={() => setAiRuleSuggestions([])}
+                >
+                  Dismiss All
+                </Button>
+              </Space>
+            </div>
+            {aiRuleSuggestions.map((suggestion, index) => {
+              const dimensionColors: Record<string, string> = {
+                COMPLETENESS: '#1890FF',
+                UNIQUENESS: '#722ED1',
+                VALIDITY: '#13C2C2',
+                ACCURACY: '#52C41A',
+                TIMELINESS: '#FA8C16',
+                CONSISTENCY: '#EB2F96',
+              };
+              const severityColors: Record<string, string> = {
+                LOW: '#52C41A',
+                MEDIUM: '#1890FF',
+                HIGH: '#FA8C16',
+                CRITICAL: '#FF4D4F',
+              };
+              return (
+                <Card
+                  key={`ai-rule-${index}`}
+                  size="small"
+                  style={{
+                    marginBottom: 8,
+                    borderLeft: `3px solid ${dimensionColors[suggestion.dimension] || '#D9D9D9'}`,
+                    backgroundColor: '#FAFAFA',
+                  }}
+                >
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                    <div style={{ flex: 1 }}>
+                      <Space wrap style={{ marginBottom: 4 }}>
+                        <Tag color={dimensionColors[suggestion.dimension] || 'default'}>
+                          {suggestion.dimension}
+                        </Tag>
+                        <Text strong>{suggestion.rule_name}</Text>
+                        <Tag color={severityColors[suggestion.severity] || 'default'} style={{ fontWeight: 600 }}>
+                          {suggestion.severity}
+                        </Tag>
+                      </Space>
+                      <div style={{ marginBottom: 4 }}>
+                        <Text>{suggestion.description}</Text>
+                      </div>
+                      <Space wrap size="middle" style={{ marginBottom: 4 }}>
+                        {suggestion.comparison_type && (
+                          <Text type="secondary">
+                            Type: <Text code>{suggestion.comparison_type}</Text>
+                          </Text>
+                        )}
+                        {suggestion.comparison_value && (
+                          <Text type="secondary">
+                            Value: <Text code>{suggestion.comparison_value}</Text>
+                          </Text>
+                        )}
+                        <Text type="secondary">
+                          Threshold: {suggestion.threshold_percentage}%
+                        </Text>
+                      </Space>
+                      <div style={{ marginBottom: 4 }}>
+                        <Tooltip title="AI Confidence">
+                          <Progress
+                            percent={Math.round(suggestion.confidence * 100)}
+                            size="small"
+                            style={{ maxWidth: 150, display: 'inline-flex' }}
+                            strokeColor={
+                              suggestion.confidence >= 0.8
+                                ? '#52C41A'
+                                : suggestion.confidence >= 0.6
+                                  ? '#1677FF'
+                                  : '#FAAD14'
+                            }
+                          />
+                        </Tooltip>
+                      </div>
+                      <Text type="secondary" italic style={{ fontSize: 12 }}>
+                        {suggestion.rationale}
+                      </Text>
+                    </div>
+                    <Space style={{ marginLeft: 16, flexShrink: 0 }}>
+                      <Button
+                        type="primary"
+                        size="small"
+                        icon={<CheckOutlined />}
+                        style={{ backgroundColor: '#52C41A', borderColor: '#52C41A' }}
+                        onClick={() => handleAcceptRuleSuggestion(suggestion, index)}
+                        loading={acceptingRuleIndex === index}
+                      >
+                        Accept
+                      </Button>
+                      <Button
+                        size="small"
+                        icon={<CloseOutlined />}
+                        onClick={() => handleDismissRuleSuggestion(index)}
+                      >
+                        Dismiss
+                      </Button>
+                    </Space>
+                  </div>
+                </Card>
+              );
+            })}
+            <Divider style={{ margin: '12px 0' }} />
+          </div>
+        )}
         <Table
           columns={[
             {

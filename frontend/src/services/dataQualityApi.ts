@@ -146,6 +146,39 @@ export interface ListRulesParams {
   page_size?: number;
 }
 
+// --- AI Rule Suggestion types ---
+
+export interface AiRuleSuggestion {
+  dimension: string;
+  rule_name: string;
+  description: string;
+  comparison_type: string | null;
+  comparison_value: string | null;
+  threshold_percentage: number;
+  severity: string;
+  rationale: string;
+  confidence: number;
+}
+
+export interface AiSuggestRulesResponse {
+  element_id: string;
+  element_name: string;
+  suggestions: AiRuleSuggestion[];
+  provider: string;
+  model: string;
+}
+
+export interface AcceptRuleSuggestionRequest {
+  element_id: string;
+  dimension_code: string;
+  rule_name: string;
+  description: string;
+  comparison_type: string | null;
+  comparison_value: string | null;
+  threshold_percentage: number;
+  severity: string;
+}
+
 // --- API functions ---
 
 export const dataQualityApi = {
@@ -187,5 +220,13 @@ export const dataQualityApi = {
 
   getRecentAssessments(limit?: number): Promise<AxiosResponse<QualityAssessment[]>> {
     return api.get('/data-quality/assessments/recent', { params: { limit: limit || 10 } });
+  },
+
+  suggestQualityRules(elementId: string): Promise<AxiosResponse<AiSuggestRulesResponse>> {
+    return api.post('/ai/suggest-quality-rules', { element_id: elementId });
+  },
+
+  acceptRuleSuggestion(data: AcceptRuleSuggestionRequest): Promise<AxiosResponse<QualityRule>> {
+    return api.post('/data-quality/rules/from-suggestion', data);
   },
 };

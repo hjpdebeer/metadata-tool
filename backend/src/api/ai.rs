@@ -1097,3 +1097,230 @@ pub async fn submit_feedback(
         message: "feedback recorded successfully".to_string(),
     }))
 }
+
+// ---------------------------------------------------------------------------
+// suggest_quality_rules — POST /api/v1/ai/suggest-quality-rules
+// ---------------------------------------------------------------------------
+
+/// Ask AI to suggest quality rules for a data element across the 6 quality dimensions.
+/// Returns suggestions directly (not stored in ai_suggestions) for the user to accept/reject.
+#[utoipa::path(
+    post,
+    path = "/api/v1/ai/suggest-quality-rules",
+    request_body = AiSuggestRulesRequest,
+    responses(
+        (status = 200, description = "AI-suggested quality rules", body = AiSuggestRulesResponse),
+        (status = 404, description = "Data element not found"),
+        (status = 502, description = "AI service error")
+    ),
+    security(("bearer_auth" = [])),
+    tag = "ai"
+)]
+pub async fn suggest_quality_rules(
+    State(state): State<AppState>,
+    Extension(claims): Extension<Claims>,
+    Json(body): Json<AiSuggestRulesRequest>,
+) -> AppResult<Json<AiSuggestRulesResponse>> {
+    // Fetch the data element
+    let row = sqlx::query_as::<_, crate::domain::data_dictionary::DataElement>(
+        r#"
+        SELECT
+            element_id, element_name, element_code, description,
+            business_definition, business_rules, data_type,
+            max_length, numeric_precision, numeric_scale,
+            format_pattern, allowed_values, default_value,
+            is_nullable, is_cde, cde_rationale, cde_designated_at,
+            glossary_term_id, domain_id, classification_id,
+            status_id, owner_user_id,
+            steward_user_id, approver_user_id, organisational_unit,
+            review_frequency_id, next_review_date, approved_at,
+            is_pii, version_number, is_current_version,
+            previous_version_id,
+            created_by, updated_by,
+            created_at, updated_at
+        FROM data_elements
+        WHERE element_id = $1 AND deleted_at IS NULL
+        "#,
+    )
+    .bind(body.element_id)
+    .fetch_optional(&state.pool)
+    .await?
+    .ok_or_else(|| AppError::NotFound(format!("data element not found: {}", body.element_id)))?;
+
+    // Build prompt for quality rule suggestions
+    let element_name = &row.element_name;
+    let data_type = row.data_type.as_deref().unwrap_or("unknown");
+    let description = &row.description;
+    let business_definition = row.business_definition.as_deref().unwrap_or("not specified");
+
+    // Sanitize inputs for prompt injection safety (SEC-013)
+    let safe_name = crate::ai::sanitize_for_prompt(element_name);
+    let safe_type = crate::ai::sanitize_for_prompt(data_type);
+    let safe_desc = crate::ai::sanitize_for_prompt(description);
+    let safe_biz_def = crate::ai::sanitize_for_prompt(business_definition);
+
+    let prompt = format!(
+        r#"You are a data quality expert for financial institutions. Given the following data element, suggest quality rules for each applicable quality dimension.
+
+Data element:
+- Name: {safe_name}
+- Data Type: {safe_type}
+- Description: {safe_desc}
+- Business Definition: {safe_biz_def}
+
+Quality Dimensions:
+1. COMPLETENESS — data values are present where expected
+2. UNIQUENESS — no unintended duplicates
+3. VALIDITY — values conform to defined rules/formats
+4. ACCURACY — values correctly represent real-world truth
+5. TIMELINESS — data is available when needed
+6. CONSISTENCY — same data in different places agrees
+
+For each applicable dimension, suggest a quality rule. Not all dimensions apply to every element. Only suggest rules that make practical sense.
+
+Return ONLY a JSON array. Each rule must have:
+- dimension: one of COMPLETENESS, UNIQUENESS, VALIDITY, ACCURACY, TIMELINESS, CONSISTENCY
+- rule_name: short descriptive name
+- description: what the rule checks
+- comparison_type: one of NOT_NULL, UNIQUE, GREATER_THAN, LESS_THAN, BETWEEN, EQUAL, NOT_EQUAL, REGEX, IN_LIST, CUSTOM_SQL (or null if not applicable)
+- comparison_value: the value to compare against (or null)
+- threshold_percentage: pass rate threshold (0-100)
+- severity: CRITICAL, HIGH, MEDIUM, or LOW
+- rationale: why this rule, citing standards where applicable
+- confidence: 0.0-1.0
+
+Example:
+[
+  {{
+    "dimension": "COMPLETENESS",
+    "rule_name": "Interest Income Not Null",
+    "description": "Interest Income value must be present",
+    "comparison_type": "NOT_NULL",
+    "comparison_value": null,
+    "threshold_percentage": 100.0,
+    "severity": "CRITICAL",
+    "rationale": "Per BCBS 239, all financial metrics must have complete data",
+    "confidence": 0.95
+  }}
+]"#,
+    );
+
+    // Verify at least one AI provider is configured
+    if state.config.ai.anthropic_api_key.is_none() && state.config.ai.openai_api_key.is_none() {
+        return Err(AppError::AiService(
+            "no AI provider configured — set ANTHROPIC_API_KEY or OPENAI_API_KEY".into(),
+        ));
+    }
+
+    // Call AI (Claude primary, OpenAI fallback)
+    let (text, model, provider) = if state.config.ai.anthropic_api_key.is_some() {
+        match crate::ai::call_claude_public(&state.config.ai, &prompt).await {
+            Ok((text, model)) => (text, model, "CLAUDE".to_string()),
+            Err(e) => {
+                tracing::warn!(error = %e, "Claude API failed for quality rules, attempting OpenAI fallback");
+                if state.config.ai.openai_api_key.is_some() {
+                    let (text, model) =
+                        crate::ai::call_openai_public(&state.config.ai, &prompt).await?;
+                    (text, model, "OPENAI".to_string())
+                } else {
+                    return Err(e);
+                }
+            }
+        }
+    } else {
+        let (text, model) = crate::ai::call_openai_public(&state.config.ai, &prompt).await?;
+        (text, model, "OPENAI".to_string())
+    };
+
+    // Parse the AI response
+    let suggestions = parse_rule_suggestions(&text)?;
+
+    tracing::info!(
+        element_id = %body.element_id,
+        user_id = %claims.sub,
+        provider = %provider,
+        suggestion_count = suggestions.len(),
+        "AI quality rule suggestions generated"
+    );
+
+    Ok(Json(AiSuggestRulesResponse {
+        element_id: body.element_id,
+        element_name: row.element_name.clone(),
+        suggestions,
+        provider,
+        model,
+    }))
+}
+
+/// Parse AI response text into a Vec<AiRuleSuggestion>.
+/// Similar to parse_suggestions but for the quality rules schema.
+fn parse_rule_suggestions(text: &str) -> Result<Vec<AiRuleSuggestion>, AppError> {
+    let trimmed = text.trim();
+    let json_str = if trimmed.starts_with("```") {
+        let without_opening = trimmed
+            .strip_prefix("```json")
+            .or_else(|| trimmed.strip_prefix("```"))
+            .unwrap_or(trimmed);
+        without_opening
+            .strip_suffix("```")
+            .unwrap_or(without_opening)
+            .trim()
+    } else {
+        trimmed
+    };
+
+    let json_to_parse = if json_str.starts_with('[') {
+        json_str.to_string()
+    } else if let Some(start) = json_str.find('[') {
+        if let Some(end) = json_str.rfind(']') {
+            json_str[start..=end].to_string()
+        } else {
+            return Err(AppError::AiService(
+                "AI response does not contain a valid JSON array".into(),
+            ));
+        }
+    } else {
+        return Err(AppError::AiService(
+            "AI response does not contain a JSON array".into(),
+        ));
+    };
+
+    let suggestions: Vec<AiRuleSuggestion> = serde_json::from_str(&json_to_parse)
+        .map_err(|e| AppError::AiService(format!("failed to parse AI rule suggestions: {e}")))?;
+
+    // Validate and clean each suggestion
+    let valid_dimensions = [
+        "COMPLETENESS",
+        "UNIQUENESS",
+        "VALIDITY",
+        "ACCURACY",
+        "TIMELINESS",
+        "CONSISTENCY",
+    ];
+    let valid_severities = ["LOW", "MEDIUM", "HIGH", "CRITICAL"];
+
+    let suggestions = suggestions
+        .into_iter()
+        .filter_map(|mut s| {
+            // Validate dimension
+            if !valid_dimensions.contains(&s.dimension.as_str()) {
+                tracing::warn!(dimension = %s.dimension, "dropping rule suggestion with invalid dimension");
+                return None;
+            }
+            // Validate severity
+            if !valid_severities.contains(&s.severity.as_str()) {
+                s.severity = "MEDIUM".to_string();
+            }
+            // Clamp confidence and threshold
+            s.confidence = s.confidence.clamp(0.0, 1.0);
+            s.threshold_percentage = s.threshold_percentage.clamp(0.0, 100.0);
+            // Drop suggestions with empty names
+            if s.rule_name.trim().is_empty() {
+                return None;
+            }
+            Some(s)
+        })
+        .collect();
+
+    Ok(suggestions)
+}

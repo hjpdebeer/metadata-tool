@@ -87,7 +87,7 @@ pub struct EnrichmentResult {
 /// Sanitize user input before embedding in AI prompts to mitigate prompt injection.
 /// Strips common injection patterns (case-insensitive) while preserving legitimate content.
 /// Limits output to 5000 chars to prevent prompt stuffing.
-fn sanitize_for_prompt(input: &str) -> String {
+pub fn sanitize_for_prompt(input: &str) -> String {
     use regex::RegexBuilder;
 
     // Compile patterns once per call. In a hot path these could be `OnceLock`,
@@ -634,6 +634,26 @@ pub async fn enrich_entity(
     Err(AppError::AiService(
         "no AI provider available for enrichment".into(),
     ))
+}
+
+// ---------------------------------------------------------------------------
+// Public wrappers for AI client calls (used by suggest-quality-rules)
+// ---------------------------------------------------------------------------
+
+/// Public wrapper around the Claude API client for use in other modules.
+pub async fn call_claude_public(
+    config: &AiConfig,
+    prompt: &str,
+) -> Result<(String, String), AppError> {
+    call_claude(config, prompt).await
+}
+
+/// Public wrapper around the OpenAI API client for use in other modules.
+pub async fn call_openai_public(
+    config: &AiConfig,
+    prompt: &str,
+) -> Result<(String, String), AppError> {
+    call_openai(config, prompt).await
 }
 
 // ---------------------------------------------------------------------------

@@ -662,3 +662,165 @@ pub async fn get_element_scores(
 
     Ok(Json(scores))
 }
+
+// ---------------------------------------------------------------------------
+// accept_rule_suggestion — POST /api/v1/data-quality/rules/from-suggestion
+// ---------------------------------------------------------------------------
+
+/// Accept an AI-suggested quality rule by creating a real quality_rules row.
+/// Looks up dimension_id from dimension_code and rule_type_id from comparison_type.
+/// The new rule inherits DRAFT status and gets an associated workflow instance.
+/// Requires authentication.
+#[utoipa::path(
+    post,
+    path = "/api/v1/data-quality/rules/from-suggestion",
+    request_body = crate::domain::ai::AcceptRuleSuggestionRequest,
+    responses(
+        (status = 201, description = "Quality rule created from AI suggestion", body = QualityRule),
+        (status = 422, description = "Validation error")
+    ),
+    security(("bearer_auth" = [])),
+    tag = "data_quality"
+)]
+pub async fn accept_rule_suggestion(
+    State(state): State<AppState>,
+    Extension(claims): Extension<Claims>,
+    Json(body): Json<crate::domain::ai::AcceptRuleSuggestionRequest>,
+) -> AppResult<(StatusCode, Json<QualityRule>)> {
+    // Validate required fields
+    let rule_name = body.rule_name.trim().to_string();
+    if rule_name.is_empty() {
+        return Err(AppError::Validation("rule_name is required".into()));
+    }
+    let description = body.description.trim().to_string();
+    if description.is_empty() {
+        return Err(AppError::Validation("description is required".into()));
+    }
+
+    // Validate severity
+    let severity = body.severity.clone();
+    if !["LOW", "MEDIUM", "HIGH", "CRITICAL"].contains(&severity.as_str()) {
+        return Err(AppError::Validation(
+            "severity must be LOW, MEDIUM, HIGH, or CRITICAL".into(),
+        ));
+    }
+
+    // Look up dimension_id from dimension_code
+    let dimension_id = sqlx::query_scalar::<_, Uuid>(
+        "SELECT dimension_id FROM quality_dimensions WHERE dimension_code = $1",
+    )
+    .bind(&body.dimension_code)
+    .fetch_optional(&state.pool)
+    .await?
+    .ok_or_else(|| {
+        AppError::Validation(format!(
+            "unknown quality dimension code: {}",
+            body.dimension_code
+        ))
+    })?;
+
+    // Look up a default rule_type_id from comparison_type
+    // Map the comparison_type to a type_code in quality_rule_types
+    let type_code = match body.comparison_type.as_deref() {
+        Some("NOT_NULL") => "COMPLETENESS_CHECK",
+        Some("UNIQUE") => "UNIQUENESS_CHECK",
+        Some("GREATER_THAN") | Some("LESS_THAN") | Some("BETWEEN") => "RANGE_CHECK",
+        Some("EQUAL") | Some("NOT_EQUAL") | Some("IN_LIST") => "VALUE_CHECK",
+        Some("REGEX") => "FORMAT_CHECK",
+        Some("CUSTOM_SQL") => "CUSTOM_SQL",
+        _ => "CUSTOM_SQL", // Default fallback
+    };
+
+    let rule_type_id = sqlx::query_scalar::<_, Uuid>(
+        "SELECT rule_type_id FROM quality_rule_types WHERE type_code = $1",
+    )
+    .bind(type_code)
+    .fetch_optional(&state.pool)
+    .await?
+    .unwrap_or_else(|| {
+        // If the mapped type_code doesn't exist, this will be handled below
+        Uuid::nil()
+    });
+
+    // If we couldn't find the rule type, fall back to the first available
+    let rule_type_id = if rule_type_id.is_nil() {
+        sqlx::query_scalar::<_, Uuid>(
+            "SELECT rule_type_id FROM quality_rule_types ORDER BY type_code LIMIT 1",
+        )
+        .fetch_one(&state.pool)
+        .await?
+    } else {
+        rule_type_id
+    };
+
+    // Generate a rule_code from the rule_name
+    let rule_code = rule_name
+        .to_uppercase()
+        .replace(|c: char| !c.is_alphanumeric() && c != '_', "_")
+        .chars()
+        .take(64)
+        .collect::<String>();
+
+    // Build rule_definition JSON from comparison_type and comparison_value
+    let rule_definition = serde_json::json!({
+        "comparison_type": body.comparison_type,
+        "comparison_value": body.comparison_value,
+    });
+
+    // Look up DRAFT status_id
+    let draft_status_id = sqlx::query_scalar::<_, Uuid>(
+        "SELECT status_id FROM entity_statuses WHERE status_code = 'DRAFT'",
+    )
+    .fetch_one(&state.pool)
+    .await?;
+
+    // Insert the new quality rule
+    let rule = sqlx::query_as::<_, QualityRule>(
+        r#"
+        INSERT INTO quality_rules (
+            rule_name, rule_code, description,
+            dimension_id, rule_type_id, element_id, column_id,
+            rule_definition, threshold_percentage, severity,
+            is_active, status_id, created_by
+        )
+        VALUES ($1, $2, $3, $4, $5, $6, NULL, $7, $8, $9, TRUE, $10, $11)
+        RETURNING
+            rule_id, rule_name, rule_code, description,
+            dimension_id, rule_type_id, element_id, column_id,
+            rule_definition, threshold_percentage, severity,
+            is_active, status_id, owner_user_id,
+            created_by, updated_by, created_at, updated_at
+        "#,
+    )
+    .bind(&rule_name)
+    .bind(&rule_code)
+    .bind(&description)
+    .bind(dimension_id)
+    .bind(rule_type_id)
+    .bind(body.element_id)
+    .bind(&rule_definition)
+    .bind(body.threshold_percentage)
+    .bind(&severity)
+    .bind(draft_status_id)
+    .bind(claims.sub)
+    .fetch_one(&state.pool)
+    .await?;
+
+    // Initiate the workflow instance for this new quality rule
+    workflow::service::initiate_workflow(
+        &state.pool,
+        workflow::ENTITY_QUALITY_RULE,
+        rule.rule_id,
+        claims.sub,
+    )
+    .await?;
+
+    tracing::info!(
+        rule_id = %rule.rule_id,
+        element_id = %body.element_id,
+        user_id = %claims.sub,
+        "Quality rule created from AI suggestion"
+    );
+
+    Ok((StatusCode::CREATED, Json(rule)))
+}

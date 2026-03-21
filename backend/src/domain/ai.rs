@@ -99,3 +99,59 @@ pub struct FeedbackResponse {
     pub suggestion_id: Uuid,
     pub message: String,
 }
+
+// ---------------------------------------------------------------------------
+// AI Quality Rule Suggestions (suggest-quality-rules endpoint)
+// ---------------------------------------------------------------------------
+
+/// Request body for POST /api/v1/ai/suggest-quality-rules
+#[derive(Debug, Clone, Deserialize, ToSchema)]
+pub struct AiSuggestRulesRequest {
+    pub element_id: Uuid,
+}
+
+/// A single AI-suggested quality rule
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+pub struct AiRuleSuggestion {
+    /// Quality dimension: COMPLETENESS, UNIQUENESS, VALIDITY, ACCURACY, TIMELINESS, CONSISTENCY
+    pub dimension: String,
+    /// Short descriptive rule name
+    pub rule_name: String,
+    /// What the rule checks
+    pub description: String,
+    /// Comparison type: NOT_NULL, UNIQUE, GREATER_THAN, LESS_THAN, BETWEEN, EQUAL, NOT_EQUAL, REGEX, IN_LIST, CUSTOM_SQL
+    pub comparison_type: Option<String>,
+    /// The value to compare against
+    pub comparison_value: Option<String>,
+    /// Pass rate threshold (0-100)
+    pub threshold_percentage: f64,
+    /// Severity: CRITICAL, HIGH, MEDIUM, LOW
+    pub severity: String,
+    /// Why this rule, citing standards where applicable
+    pub rationale: String,
+    /// AI confidence 0.0-1.0
+    pub confidence: f64,
+}
+
+/// Response from POST /api/v1/ai/suggest-quality-rules
+#[derive(Debug, Clone, Serialize, ToSchema)]
+pub struct AiSuggestRulesResponse {
+    pub element_id: Uuid,
+    pub element_name: String,
+    pub suggestions: Vec<AiRuleSuggestion>,
+    pub provider: String,
+    pub model: String,
+}
+
+/// Request body for POST /api/v1/data-quality/rules/from-suggestion
+#[derive(Debug, Clone, Deserialize, ToSchema)]
+pub struct AcceptRuleSuggestionRequest {
+    pub element_id: Uuid,
+    pub dimension_code: String,
+    pub rule_name: String,
+    pub description: String,
+    pub comparison_type: Option<String>,
+    pub comparison_value: Option<String>,
+    pub threshold_percentage: f64,
+    pub severity: String,
+}

@@ -158,6 +158,9 @@ use metadata_tool::db::{self, AppState};
         api::ai::accept_suggestion,
         api::ai::reject_suggestion,
         api::ai::submit_feedback,
+        api::ai::suggest_quality_rules,
+        // Data Quality — accept AI suggestion
+        api::data_quality::accept_rule_suggestion,
         // Admin
         api::admin::list_settings,
         api::admin::update_setting,
@@ -204,6 +207,10 @@ use metadata_tool::db::{self, AppState};
             metadata_tool::domain::ai::RejectSuggestionRequest,
             metadata_tool::domain::ai::FeedbackRequest,
             metadata_tool::domain::ai::FeedbackResponse,
+            metadata_tool::domain::ai::AiSuggestRulesRequest,
+            metadata_tool::domain::ai::AiRuleSuggestion,
+            metadata_tool::domain::ai::AiSuggestRulesResponse,
+            metadata_tool::domain::ai::AcceptRuleSuggestionRequest,
             metadata_tool::settings::SystemSettingResponse,
             metadata_tool::settings::UpdateSettingRequest,
             metadata_tool::settings::UpdateSettingResponse,
@@ -488,10 +495,13 @@ async fn main() -> anyhow::Result<()> {
         .route("/api/v1/notifications/{notification_id}/read", post(api::notifications::mark_read))
         // AI
         .route("/api/v1/ai/enrich", post(api::ai::enrich))
+        .route("/api/v1/ai/suggest-quality-rules", post(api::ai::suggest_quality_rules))
         .route("/api/v1/ai/suggestions/{entity_type}/{entity_id}", get(api::ai::list_suggestions))
         .route("/api/v1/ai/suggestions/{suggestion_id}/accept", post(api::ai::accept_suggestion))
         .route("/api/v1/ai/suggestions/{suggestion_id}/reject", post(api::ai::reject_suggestion))
         .route("/api/v1/ai/suggestions/{suggestion_id}/feedback", post(api::ai::submit_feedback))
+        // Data Quality — accept AI-suggested rule
+        .route("/api/v1/data-quality/rules/from-suggestion", post(api::data_quality::accept_rule_suggestion))
         // Admin — settings
         .route("/api/v1/admin/settings", get(api::admin::list_settings))
         .route("/api/v1/admin/settings/{key}", put(api::admin::update_setting))

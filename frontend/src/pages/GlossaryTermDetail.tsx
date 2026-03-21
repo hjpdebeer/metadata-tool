@@ -1176,8 +1176,8 @@ const GlossaryTermDetail: React.FC = () => {
         />
       )}
 
-      {/* --- Amendment Context Banners --- */}
-      {detail.previous_version_id && (
+      {/* --- Amendment Context Banners (only shown while amendment is in progress, not after acceptance) --- */}
+      {detail.previous_version_id && !['ACCEPTED', 'DEPRECATED', 'SUPERSEDED', 'REJECTED'].includes(status) && (
         <Alert
           message={`Amendment of v${(term.version_number || 2) - 1}`}
           description={
@@ -1194,12 +1194,14 @@ const GlossaryTermDetail: React.FC = () => {
         />
       )}
 
-      {/* --- AI Enrichment Panel --- */}
-      <AiEnrichmentPanel
-        entityType="glossary_term"
-        entityId={id!}
-        onSuggestionApplied={fetchDetail}
-      />
+      {/* --- AI Enrichment Panel (only shown for mutable states) --- */}
+      {!['ACCEPTED', 'DEPRECATED', 'SUPERSEDED', 'REJECTED'].includes(status) && (
+        <AiEnrichmentPanel
+          entityType="glossary_term"
+          entityId={id!}
+          onSuggestionApplied={fetchDetail}
+        />
+      )}
 
       {/* --- Ownership Assignment (shown in DRAFT/REVISED status) --- */}
       {showOwnershipSection && (

@@ -68,6 +68,10 @@ pub struct QualityRule {
     pub updated_by: Option<Uuid>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
+    // Resolved lookup names (from JOINs in detail query)
+    pub dimension_name: Option<String>,
+    pub rule_type_name: Option<String>,
+    pub element_name: Option<String>,
 }
 
 // ---------------------------------------------------------------------------

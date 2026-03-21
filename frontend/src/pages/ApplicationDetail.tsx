@@ -980,8 +980,8 @@ const ApplicationDetail: React.FC = () => {
         />
       )}
 
-      {/* --- Amendment Context Banner --- */}
-      {detail.previous_version_id && (
+      {/* --- Amendment Context Banner (only shown while amendment is in progress) --- */}
+      {detail.previous_version_id && !['ACCEPTED', 'DEPRECATED', 'SUPERSEDED', 'REJECTED'].includes(status) && (
         <Alert
           message={`Amendment of v${(detail.version_number || 2) - 1}`}
           description={
@@ -1028,12 +1028,14 @@ const ApplicationDetail: React.FC = () => {
         </Col>
       </Row>
 
-      {/* --- AI Enrichment Panel --- */}
-      <AiEnrichmentPanel
-        entityType="application"
-        entityId={id!}
-        onSuggestionApplied={() => fetchApplication()}
-      />
+      {/* --- AI Enrichment Panel (only shown for mutable states) --- */}
+      {!['ACCEPTED', 'DEPRECATED', 'SUPERSEDED', 'REJECTED'].includes(status) && (
+        <AiEnrichmentPanel
+          entityType="application"
+          entityId={id!}
+          onSuggestionApplied={() => fetchApplication()}
+        />
+      )}
 
       {/* --- Ownership Assignment (shown in DRAFT/REVISED status) --- */}
       {showOwnershipSection && (
@@ -1178,18 +1180,20 @@ const ApplicationDetail: React.FC = () => {
         title="Linked Data Elements"
         style={{ marginBottom: 24 }}
         extra={
-          <Button
-            type="primary"
-            size="small"
-            icon={<LinkOutlined />}
-            onClick={() => {
-              linkForm.resetFields();
-              fetchAvailableElements();
-              setLinkModalOpen(true);
-            }}
-          >
-            Link Data Element
-          </Button>
+          !['ACCEPTED', 'DEPRECATED', 'SUPERSEDED', 'REJECTED'].includes(status) ? (
+            <Button
+              type="primary"
+              size="small"
+              icon={<LinkOutlined />}
+              onClick={() => {
+                linkForm.resetFields();
+                fetchAvailableElements();
+                setLinkModalOpen(true);
+              }}
+            >
+              Link Data Element
+            </Button>
+          ) : null
         }
       >
         <Table

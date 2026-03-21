@@ -732,7 +732,19 @@ pub async fn discard_amendment(
         .execute(&state.pool)
         .await?;
 
-    // Delete the amendment element itself
+    // Delete child quality rules
+    sqlx::query("DELETE FROM quality_rules WHERE element_id = $1")
+        .bind(element_id)
+        .execute(&state.pool)
+        .await?;
+
+    // Delete AI suggestions
+    sqlx::query("DELETE FROM ai_suggestions WHERE entity_id = $1")
+        .bind(element_id)
+        .execute(&state.pool)
+        .await?;
+
+    // Delete the element itself
     sqlx::query("DELETE FROM data_elements WHERE element_id = $1")
         .bind(element_id)
         .execute(&state.pool)

@@ -227,13 +227,19 @@ pub async fn get_rule(
     let rule = sqlx::query_as::<_, QualityRule>(
         r#"
         SELECT
-            rule_id, rule_name, rule_code, description,
-            dimension_id, rule_type_id, element_id, column_id,
-            rule_definition, threshold_percentage::FLOAT8 AS threshold_percentage, severity,
-            is_active, owner_user_id, deleted_at,
-            created_by, updated_by, created_at, updated_at
-        FROM quality_rules
-        WHERE rule_id = $1 AND deleted_at IS NULL
+            qr.rule_id, qr.rule_name, qr.rule_code, qr.description,
+            qr.dimension_id, qr.rule_type_id, qr.element_id, qr.column_id,
+            qr.rule_definition, qr.threshold_percentage::FLOAT8 AS threshold_percentage, qr.severity,
+            qr.is_active, qr.owner_user_id, qr.deleted_at,
+            qr.created_by, qr.updated_by, qr.created_at, qr.updated_at,
+            qd.dimension_name,
+            qrt.type_name AS rule_type_name,
+            de.element_name
+        FROM quality_rules qr
+        LEFT JOIN quality_dimensions qd ON qd.dimension_id = qr.dimension_id
+        LEFT JOIN quality_rule_types qrt ON qrt.rule_type_id = qr.rule_type_id
+        LEFT JOIN data_elements de ON de.element_id = qr.element_id
+        WHERE qr.rule_id = $1 AND qr.deleted_at IS NULL
         "#,
     )
     .bind(rule_id)
@@ -303,7 +309,10 @@ pub async fn create_rule(
             dimension_id, rule_type_id, element_id, column_id,
             rule_definition, threshold_percentage::FLOAT8 AS threshold_percentage, severity,
             is_active, owner_user_id, deleted_at,
-            created_by, updated_by, created_at, updated_at
+            created_by, updated_by, created_at, updated_at,
+            NULL::VARCHAR AS dimension_name,
+            NULL::VARCHAR AS rule_type_name,
+            NULL::VARCHAR AS element_name
         "#,
     )
     .bind(&rule_name)
@@ -394,7 +403,10 @@ pub async fn update_rule(
             dimension_id, rule_type_id, element_id, column_id,
             rule_definition, threshold_percentage::FLOAT8 AS threshold_percentage, severity,
             is_active, owner_user_id, deleted_at,
-            created_by, updated_by, created_at, updated_at
+            created_by, updated_by, created_at, updated_at,
+            NULL::VARCHAR AS dimension_name,
+            NULL::VARCHAR AS rule_type_name,
+            NULL::VARCHAR AS element_name
         "#,
     )
     .bind(body.rule_name.as_deref())
@@ -520,7 +532,10 @@ pub async fn create_assessment(
             dimension_id, rule_type_id, element_id, column_id,
             rule_definition, threshold_percentage::FLOAT8 AS threshold_percentage, severity,
             is_active, owner_user_id, deleted_at,
-            created_by, updated_by, created_at, updated_at
+            created_by, updated_by, created_at, updated_at,
+            NULL::VARCHAR AS dimension_name,
+            NULL::VARCHAR AS rule_type_name,
+            NULL::VARCHAR AS element_name
         FROM quality_rules
         WHERE rule_id = $1 AND deleted_at IS NULL
         "#,
@@ -751,7 +766,10 @@ pub async fn accept_rule_suggestion(
             dimension_id, rule_type_id, element_id, column_id,
             rule_definition, threshold_percentage::FLOAT8 AS threshold_percentage, severity,
             is_active, owner_user_id, deleted_at,
-            created_by, updated_by, created_at, updated_at
+            created_by, updated_by, created_at, updated_at,
+            NULL::VARCHAR AS dimension_name,
+            NULL::VARCHAR AS rule_type_name,
+            NULL::VARCHAR AS element_name
         "#,
     )
     .bind(&rule_name)       // $1

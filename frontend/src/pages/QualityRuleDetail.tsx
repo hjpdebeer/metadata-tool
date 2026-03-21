@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useNavigate, useParams, Link } from 'react-router-dom';
 import {
   Breadcrumb,
   Button,
@@ -23,6 +23,7 @@ import {
   ArrowLeftOutlined,
   EditOutlined,
   ExperimentOutlined,
+  LinkOutlined,
 } from '@ant-design/icons';
 import { dataQualityApi } from '../services/dataQualityApi';
 import type { QualityAssessment, QualityRule } from '../services/dataQualityApi';
@@ -52,6 +53,7 @@ const QualityRuleDetail: React.FC = () => {
   const [assessmentModalOpen, setAssessmentModalOpen] = useState(false);
   const [assessmentLoading, setAssessmentLoading] = useState(false);
   const [assessmentForm] = Form.useForm();
+  const [elementStatus, setElementStatus] = useState<string | null>(null);
 
   const fetchRule = useCallback(async () => {
     if (!id) return;
@@ -81,6 +83,18 @@ const QualityRuleDetail: React.FC = () => {
     fetchRule();
     fetchAssessments();
   }, [fetchRule, fetchAssessments]);
+
+  // Fetch parent element status to determine if edit is allowed
+  useEffect(() => {
+    if (rule?.element_id) {
+      import('../services/dataDictionaryApi').then(({ dataDictionaryApi }) => {
+        dataDictionaryApi.getElement(rule.element_id!).then((res) => {
+          const sc = (res.data as Record<string, unknown>).status_code as string || null;
+          setElementStatus(sc);
+        }).catch(() => {});
+      });
+    }
+  }, [rule?.element_id]);
 
   const handleRecordAssessment = async () => {
     if (!id) return;
@@ -131,31 +145,22 @@ const QualityRuleDetail: React.FC = () => {
     return null;
   }
 
+  const isMutableElement = elementStatus && !['ACCEPTED', 'DEPRECATED', 'SUPERSEDED', 'REJECTED'].includes(elementStatus);
+
   const renderActionButtons = () => {
     const buttons: React.ReactNode[] = [];
 
-    buttons.push(
-      <Button
-        key="assess"
-        icon={<ExperimentOutlined />}
-        onClick={() => {
-          assessmentForm.resetFields();
-          setAssessmentModalOpen(true);
-        }}
-      >
-        Record Assessment
-      </Button>,
-    );
-
-    buttons.push(
-      <Button
-        key="edit"
-        icon={<EditOutlined />}
-        onClick={() => navigate(`/data-quality/rules/${id}/edit`)}
-      >
-        Edit
-      </Button>,
-    );
+    if (isMutableElement) {
+      buttons.push(
+        <Button
+          key="edit"
+          icon={<EditOutlined />}
+          onClick={() => navigate(`/data-quality/rules/${id}/edit`)}
+        >
+          Edit
+        </Button>,
+      );
+    }
 
     return buttons;
   };
@@ -330,7 +335,7 @@ const QualityRuleDetail: React.FC = () => {
       </Row>
 
       <Card title="Rule Details" style={{ marginBottom: 24 }}>
-        <Descriptions column={{ xs: 1, sm: 1, md: 2 }} bordered size="small">
+        <Descriptions column={1} bordered size="small" labelStyle={{ width: 180 }}>
           <Descriptions.Item label="Rule Name">{rule.rule_name}</Descriptions.Item>
           <Descriptions.Item label="Rule Code">
             <Text code>{rule.rule_code}</Text>
@@ -341,10 +346,12 @@ const QualityRuleDetail: React.FC = () => {
           <Descriptions.Item label="Dimension">{rule.dimension_name || '-'}</Descriptions.Item>
           <Descriptions.Item label="Rule Type">{rule.rule_type_name || '-'}</Descriptions.Item>
           <Descriptions.Item label="Data Element">
-            {rule.element_name ? (
-              <a onClick={() => navigate(`/data-dictionary/${rule.element_id}`)}>
-                {rule.element_name}
-              </a>
+            {rule.element_name && rule.element_id ? (
+              <Link to={`/data-dictionary/${rule.element_id}`}>
+                <Tag color="purple" style={{ cursor: 'pointer' }}>
+                  <LinkOutlined /> {rule.element_name}
+                </Tag>
+              </Link>
             ) : (
               '-'
             )}
@@ -355,9 +362,7 @@ const QualityRuleDetail: React.FC = () => {
             </Tag>
           </Descriptions.Item>
           <Descriptions.Item label="Threshold">
-            <Text strong style={{ fontSize: 16 }}>
-              {rule.threshold_percentage}%
-            </Text>
+            {rule.threshold_percentage}%
           </Descriptions.Item>
           <Descriptions.Item label="Active">
             {rule.is_active ? (

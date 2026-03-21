@@ -69,11 +69,16 @@ const AppLayout: React.FC = () => {
       icon: <DatabaseOutlined />,
       label: 'Data Dictionary',
       children: [
-        { key: '/data-dictionary', icon: <DatabaseOutlined />, label: 'All Elements' },
+        { key: '/data-dictionary', icon: <DatabaseOutlined />, label: 'All Data Elements' },
         {
           key: '/data-dictionary/cde',
           icon: <WarningOutlined />,
           label: 'Critical Data Elements',
+        },
+        {
+          key: '/data-quality/rules',
+          icon: <CheckSquareOutlined />,
+          label: 'Quality Rules',
         },
         {
           key: '/data-dictionary/technical',
@@ -190,6 +195,7 @@ const AppLayout: React.FC = () => {
     const path = location.pathname;
     if (path === '/data-dictionary/cde') return '/data-dictionary/cde';
     if (path === '/data-dictionary/technical') return '/data-dictionary/technical';
+    if (path.startsWith('/data-quality/rules')) return '/data-quality/rules';
     if (path.startsWith('/data-dictionary')) return '/data-dictionary';
     if (path.startsWith('/data-quality')) return '/data-quality';
     if (path.startsWith('/lineage')) return '/lineage';
@@ -202,8 +208,7 @@ const AppLayout: React.FC = () => {
   // Open sub-menus when on matching routes
   const getOpenKeys = () => {
     const keys: string[] = [];
-    if (location.pathname.startsWith('/data-dictionary')) keys.push('data-dictionary-group');
-    // data-quality is now a single link, no sub-menu to open
+    if (location.pathname.startsWith('/data-dictionary') || location.pathname.startsWith('/data-quality/rules')) keys.push('data-dictionary-group');
     // Admin is a single item now, no sub-menu to open
     return keys;
   };
@@ -261,7 +266,7 @@ const AppLayout: React.FC = () => {
         collapsible
         collapsed={collapsed}
         trigger={null}
-        width={240}
+        width={260}
         style={{
           borderRight: '1px solid #E5E7EB',
           overflow: 'auto',
@@ -301,7 +306,7 @@ const AppLayout: React.FC = () => {
           style={{ borderRight: 0, marginTop: 8 }}
         />
       </Sider>
-      <Layout style={{ marginLeft: collapsed ? 80 : 240, transition: 'margin-left 0.2s' }}>
+      <Layout style={{ marginLeft: collapsed ? 80 : 260, transition: 'margin-left 0.2s' }}>
         <Header
           style={{
             padding: '0 24px',

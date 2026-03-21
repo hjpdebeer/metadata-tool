@@ -228,12 +228,6 @@ const DataDictionaryPage: React.FC = () => {
           Data Dictionary
         </Title>
         <Space>
-          <Button onClick={() => navigate('/data-dictionary/cde')}>
-            View CDEs
-          </Button>
-          <Button onClick={() => navigate('/data-dictionary/technical')}>
-            Technical Metadata
-          </Button>
           <Button
             icon={<UploadOutlined />}
             onClick={() => setBulkUploadOpen(true)}

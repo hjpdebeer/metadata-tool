@@ -723,8 +723,8 @@ const DataElementDetail: React.FC = () => {
         />
       )}
 
-      {/* --- Amendment Context Banner --- */}
-      {element.previous_version_id && (
+      {/* --- Amendment Context Banner (only shown while amendment is in progress) --- */}
+      {element.previous_version_id && !['ACCEPTED', 'DEPRECATED', 'SUPERSEDED', 'REJECTED'].includes(status) && (
         <Alert
           message={`Amendment of v${(element.version_number || 2) - 1}`}
           description={
@@ -770,12 +770,14 @@ const DataElementDetail: React.FC = () => {
         </Col>
       </Row>
 
-      {/* --- AI Enrichment Panel --- */}
-      <AiEnrichmentPanel
-        entityType="data_element"
-        entityId={id!}
-        onSuggestionApplied={fetchElement}
-      />
+      {/* --- AI Enrichment Panel (only shown for mutable states) --- */}
+      {!['ACCEPTED', 'DEPRECATED', 'SUPERSEDED', 'REJECTED'].includes(status) && (
+        <AiEnrichmentPanel
+          entityType="data_element"
+          entityId={id!}
+          onSuggestionApplied={fetchElement}
+        />
+      )}
 
       {/* --- Ownership Assignment (shown in DRAFT/REVISED status) --- */}
       {showOwnershipSection && (
@@ -1048,24 +1050,26 @@ const DataElementDetail: React.FC = () => {
           </Space>
         }
         extra={
-          <Space>
-            <Button
-              size="small"
-              icon={<RobotOutlined />}
-              onClick={handleSuggestQualityRules}
-              loading={aiRulesLoading}
-            >
-              Suggest Quality Rules
-            </Button>
-            <Button
-              type="primary"
-              size="small"
-              icon={<PlusOutlined />}
-              onClick={() => navigate(`/data-quality/rules/new?element_id=${id}`)}
-            >
-              Create Quality Rule
-            </Button>
-          </Space>
+          !['ACCEPTED', 'DEPRECATED', 'SUPERSEDED', 'REJECTED'].includes(status) ? (
+            <Space>
+              <Button
+                size="small"
+                icon={<RobotOutlined />}
+                onClick={handleSuggestQualityRules}
+                loading={aiRulesLoading}
+              >
+                Suggest Quality Rules
+              </Button>
+              <Button
+                type="primary"
+                size="small"
+                icon={<PlusOutlined />}
+                onClick={() => navigate(`/data-quality/rules/new?element_id=${id}`)}
+              >
+                Create Quality Rule
+              </Button>
+            </Space>
+          ) : null
         }
         style={{ marginBottom: 24 }}
       >

@@ -247,6 +247,17 @@ pub struct GlossaryTermDetail {
     pub linked_processes: Vec<GlossaryLinkedProcess>,
     pub aliases: Vec<GlossaryAliasItem>,
     pub child_terms: Vec<ChildTermRef>,
+    pub linked_data_elements: Vec<LinkedDataElementRef>,
+}
+
+/// Data element linked to a glossary term (from data_elements.glossary_term_id FK)
+#[derive(Debug, Clone, Serialize, FromRow, ToSchema)]
+pub struct LinkedDataElementRef {
+    pub element_id: Uuid,
+    pub element_name: String,
+    pub element_code: Option<String>,
+    pub data_type: Option<String>,
+    pub is_cde: bool,
 }
 
 /// Organisational unit for ownership assignment dropdown
@@ -283,6 +294,7 @@ impl GlossaryTermDetail {
         linked_processes: Vec<GlossaryLinkedProcess>,
         aliases: Vec<GlossaryAliasItem>,
         child_terms: Vec<ChildTermRef>,
+        linked_data_elements: Vec<LinkedDataElementRef>,
     ) -> Self {
         Self {
             term_id: row.term_id,
@@ -351,6 +363,7 @@ impl GlossaryTermDetail {
             linked_processes,
             aliases,
             child_terms,
+            linked_data_elements,
         }
     }
 }

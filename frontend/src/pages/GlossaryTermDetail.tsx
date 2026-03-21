@@ -15,6 +15,7 @@ import {
   Select,
   Space,
   Spin,
+  Table,
   Tag,
   Timeline,
   Tooltip,
@@ -276,8 +277,7 @@ const GlossaryTermDetail: React.FC = () => {
     if (!id) return;
     try {
       await glossaryApi.discardAmendment(id);
-      message.success('Amendment discarded.');
-      // Navigate to the original term
+      message.success(detail?.previous_version_id ? 'Amendment discarded.' : 'Draft deleted.');
       if (detail?.previous_version_id) {
         navigate(`/glossary/${detail.previous_version_id}`);
       } else {
@@ -286,7 +286,7 @@ const GlossaryTermDetail: React.FC = () => {
     } catch (err: unknown) {
       const apiMsg = (err as { response?: { data?: { error?: { message?: string } } } })
         ?.response?.data?.error?.message;
-      message.error(apiMsg || 'Failed to discard amendment.');
+      message.error(apiMsg || 'Failed to delete draft.');
     }
   };
 
@@ -394,8 +394,8 @@ const GlossaryTermDetail: React.FC = () => {
           Submit for Review
         </Button>,
       );
-      // Discard button: only for amendments (has previous_version_id), only for creator or admin
-      if (detail?.previous_version_id && (currentUserId === detail?.created_by || user?.roles?.includes('ADMIN') || user?.roles?.includes('admin'))) {
+      // Delete/Discard button: any draft, only for creator or admin
+      if (currentUserId === detail?.created_by || user?.roles?.includes('ADMIN') || user?.roles?.includes('admin')) {
         buttons.push(
           <Button
             key="discard"
@@ -403,7 +403,7 @@ const GlossaryTermDetail: React.FC = () => {
             icon={<DeleteOutlined />}
             onClick={handleDiscardAmendment}
           >
-            Discard Amendment
+            {detail?.previous_version_id ? 'Discard Amendment' : 'Delete Draft'}
           </Button>,
         );
       }
@@ -1042,6 +1042,66 @@ const GlossaryTermDetail: React.FC = () => {
               )}
             </Descriptions.Item>
           </Descriptions>
+        </div>
+      ),
+    },
+    {
+      key: 'data_elements',
+      label: (
+        <Text strong>
+          Linked Data Elements
+          {(detail.linked_data_elements?.length || 0) > 0 && (
+            <Tag color="blue" style={{ marginLeft: 8, fontSize: 11 }}>
+              {detail.linked_data_elements.length}
+            </Tag>
+          )}
+        </Text>
+      ),
+      children: (
+        <div>
+          {(detail.linked_data_elements?.length || 0) > 0 ? (
+            <Table
+              size="small"
+              dataSource={detail.linked_data_elements}
+              rowKey="element_id"
+              pagination={false}
+              columns={[
+                {
+                  title: 'Element Name',
+                  dataIndex: 'element_name',
+                  key: 'element_name',
+                  render: (name: string, record: { element_id: string }) => (
+                    <Link to={`/data-dictionary/${record.element_id}`}>
+                      <Tag color="purple" style={{ cursor: 'pointer' }}>
+                        <LinkOutlined /> {name}
+                      </Tag>
+                    </Link>
+                  ),
+                },
+                {
+                  title: 'Element Code',
+                  dataIndex: 'element_code',
+                  key: 'element_code',
+                  render: (code: string | null) => code ? <Text code style={{ fontSize: 12 }}>{code}</Text> : '-',
+                },
+                {
+                  title: 'Data Type',
+                  dataIndex: 'data_type',
+                  key: 'data_type',
+                  render: (type: string | null) => type || '-',
+                },
+                {
+                  title: 'CDE',
+                  dataIndex: 'is_cde',
+                  key: 'is_cde',
+                  width: 60,
+                  render: (val: boolean) => val ? <Tag color="red">CDE</Tag> : null,
+                },
+              ]}
+            />
+          ) : (
+            <EmptyValue text="No data elements linked to this term" />
+          )}
         </div>
       ),
     },

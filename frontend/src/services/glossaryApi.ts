@@ -239,6 +239,7 @@ export interface GlossaryTermDetailView {
   linked_processes: { process_id: string; process_name: string; usage_context: string | null }[];
   aliases: { alias_id: string; alias_name: string; alias_type: string | null }[];
   child_terms: { term_id: string; term_name: string }[];
+  linked_data_elements: { element_id: string; element_name: string; element_code: string | null; data_type: string | null; is_cde: boolean }[];
 }
 
 export interface CreateGlossaryTermRequest {

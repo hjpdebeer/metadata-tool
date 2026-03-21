@@ -8,6 +8,7 @@ import {
   Col,
   Form,
   Input,
+  InputNumber,
   Row,
   Select,
   Space,
@@ -44,13 +45,6 @@ const DATA_TYPES = [
   'TEXT',
   'JSON',
   'UUID',
-];
-
-const SENSITIVITY_LEVELS = [
-  { value: 'PUBLIC', label: 'Public' },
-  { value: 'INTERNAL', label: 'Internal' },
-  { value: 'CONFIDENTIAL', label: 'Confidential' },
-  { value: 'RESTRICTED', label: 'Restricted' },
 ];
 
 const DataElementForm: React.FC = () => {
@@ -108,6 +102,9 @@ const DataElementForm: React.FC = () => {
         business_definition: response.data.business_definition || undefined,
         business_rules: response.data.business_rules || undefined,
         data_type: response.data.data_type,
+        max_length: response.data.max_length ?? undefined,
+        numeric_precision: response.data.numeric_precision ?? undefined,
+        numeric_scale: response.data.numeric_scale ?? undefined,
         format_pattern: response.data.format_pattern || undefined,
         allowed_values: response.data.allowed_values
           ? typeof response.data.allowed_values === 'string'
@@ -120,7 +117,6 @@ const DataElementForm: React.FC = () => {
         glossary_term_id: response.data.glossary_term_id || undefined,
         domain_id: response.data.domain_id || undefined,
         classification_id: response.data.classification_id || undefined,
-        sensitivity_level: response.data.sensitivity_level || undefined,
         owner_user_id: response.data.owner_user_id || undefined,
         steward_user_id: response.data.steward_user_id || undefined,
         approver_user_id: response.data.approver_user_id || undefined,
@@ -142,14 +138,12 @@ const DataElementForm: React.FC = () => {
     }
   }, [isEditing, fetchReferenceData, fetchExistingElement]);
 
-  const handleCreateSubmit = async (values: { element_name: string; element_code: string; description: string; data_type: string }) => {
+  const handleCreateSubmit = async (values: { element_name: string; description: string }) => {
     setSubmitting(true);
     try {
       const cleanData: CreateDataElementRequest = {
         element_name: values.element_name.trim(),
-        element_code: values.element_code.trim(),
         description: values.description.trim(),
-        data_type: values.data_type,
       };
 
       const response = await dataDictionaryApi.createElement(cleanData);
@@ -185,10 +179,11 @@ const DataElementForm: React.FC = () => {
 
       // Build diff of changed fields
       const allFields = [
-        'element_name', 'element_code', 'description',
+        'element_name', 'description',
         'business_definition', 'business_rules', 'data_type',
+        'max_length', 'numeric_precision', 'numeric_scale',
         'format_pattern', 'allowed_values', 'default_value',
-        'glossary_term_id', 'domain_id', 'classification_id', 'sensitivity_level',
+        'glossary_term_id', 'domain_id', 'classification_id',
         'owner_user_id', 'steward_user_id', 'approver_user_id',
         'organisational_unit', 'review_frequency_id',
       ] as const;
@@ -254,7 +249,7 @@ const DataElementForm: React.FC = () => {
         <Card>
           <Alert
             message="AI-Assisted Creation"
-            description="Enter the element name, code, description, and data type. After creation, AI will automatically suggest values for business definition, business rules, format pattern, classification, sensitivity level, and domain based on financial services standards. You'll review and accept each suggestion."
+            description="Enter the element name and description. After creation, AI will automatically suggest values for business definition, business rules, format pattern, classification, and domain based on financial services standards. You'll review and accept each suggestion."
             type="info"
             showIcon
             icon={<RobotOutlined />}
@@ -280,22 +275,6 @@ const DataElementForm: React.FC = () => {
             </Form.Item>
 
             <Form.Item
-              name="element_code"
-              label="Element Code"
-              rules={[
-                { required: true, message: 'Element code is required' },
-                { max: 256, message: 'Element code cannot exceed 256 characters' },
-                {
-                  pattern: /^[a-z][a-z0-9]*(_[a-z0-9]+)*$/,
-                  message: 'Element code must be snake_case (e.g., customer_account_balance)',
-                },
-              ]}
-              tooltip="Must be snake_case (e.g., customer_account_balance)"
-            >
-              <Input placeholder="e.g., customer_account_balance" size="large" />
-            </Form.Item>
-
-            <Form.Item
               name="description"
               label="Description"
               rules={[
@@ -306,19 +285,6 @@ const DataElementForm: React.FC = () => {
               <TextArea
                 rows={4}
                 placeholder="Provide a clear, concise description of this data element. The AI will use this to suggest additional metadata."
-                size="large"
-              />
-            </Form.Item>
-
-            <Form.Item
-              name="data_type"
-              label="Data Type"
-              rules={[{ required: true, message: 'Data type is required' }]}
-            >
-              <Select
-                placeholder="Select data type"
-                options={DATA_TYPES.map((t) => ({ value: t, label: t }))}
-                showSearch
                 size="large"
               />
             </Form.Item>
@@ -428,19 +394,8 @@ const DataElementForm: React.FC = () => {
               </Form.Item>
             </Col>
             <Col xs={24} md={12}>
-              <Form.Item
-                name="element_code"
-                label="Element Code"
-                rules={[
-                  { required: true, message: 'Element code is required' },
-                  { max: 256, message: 'Element code cannot exceed 256 characters' },
-                  {
-                    pattern: /^[a-z][a-z0-9]*(_[a-z0-9]+)*$/,
-                    message: 'Element code must be snake_case',
-                  },
-                ]}
-              >
-                <Input placeholder="e.g., customer_account_balance" />
+              <Form.Item name="element_code" label="Element Code">
+                <Input disabled placeholder="Auto-generated" />
               </Form.Item>
             </Col>
           </Row>
@@ -483,15 +438,48 @@ const DataElementForm: React.FC = () => {
               <Form.Item
                 name="data_type"
                 label="Data Type"
-                rules={[{ required: true, message: 'Data type is required' }]}
+                tooltip="Logical data type — precision and scale are defined at the technical column level"
               >
                 <Select
-                  placeholder="Select data type"
+                  placeholder="Select or AI-suggested"
                   options={dataTypeOptions}
                   showSearch
+                  allowClear
                 />
               </Form.Item>
             </Col>
+            <Form.Item noStyle shouldUpdate={(prev, cur) => prev.data_type !== cur.data_type}>
+              {({ getFieldValue }) => {
+                const dt = (getFieldValue('data_type') || '').toUpperCase();
+                const showLength = ['VARCHAR', 'CHAR', 'TEXT'].includes(dt);
+                const showPrecision = ['DECIMAL', 'NUMERIC'].includes(dt);
+                return (
+                  <>
+                    {showLength && (
+                      <Col xs={24} md={8}>
+                        <Form.Item name="max_length" label="Max Length">
+                          <InputNumber min={1} style={{ width: '100%' }} placeholder="e.g., 256" />
+                        </Form.Item>
+                      </Col>
+                    )}
+                    {showPrecision && (
+                      <>
+                        <Col xs={24} md={4}>
+                          <Form.Item name="numeric_precision" label="Precision">
+                            <InputNumber min={1} style={{ width: '100%' }} placeholder="e.g., 18" />
+                          </Form.Item>
+                        </Col>
+                        <Col xs={24} md={4}>
+                          <Form.Item name="numeric_scale" label="Scale">
+                            <InputNumber min={0} style={{ width: '100%' }} placeholder="e.g., 2" />
+                          </Form.Item>
+                        </Col>
+                      </>
+                    )}
+                  </>
+                );
+              }}
+            </Form.Item>
             <Col xs={24} md={8}>
               <Form.Item name="format_pattern" label="Format Pattern">
                 <Input placeholder="e.g., YYYY-MM-DD, ###.##" />
@@ -543,15 +531,6 @@ const DataElementForm: React.FC = () => {
                   allowClear
                   showSearch
                   optionFilterProp="label"
-                />
-              </Form.Item>
-            </Col>
-            <Col xs={24} md={8}>
-              <Form.Item name="sensitivity_level" label="Sensitivity Level">
-                <Select
-                  placeholder="Select sensitivity level"
-                  options={SENSITIVITY_LEVELS}
-                  allowClear
                 />
               </Form.Item>
             </Col>

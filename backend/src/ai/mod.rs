@@ -149,7 +149,7 @@ fn build_prompt(
 
     match entity_type {
         "glossary_term" => build_glossary_term_prompt(entity_data, &existing_list, lookups),
-        _ => build_generic_prompt(entity_type, entity_data, &existing_list),
+        _ => build_generic_prompt(entity_type, entity_data, &existing_list, lookups),
     }
 }
 
@@ -243,12 +243,29 @@ RULES:
     )
 }
 
-/// Generic prompt for non-glossary entity types (data_element, etc.)
+/// Generic prompt for non-glossary entity types (data_element, application, etc.)
 fn build_generic_prompt(
     entity_type: &str,
     entity_data: &serde_json::Value,
     existing_list: &str,
+    lookups: &serde_json::Value,
 ) -> String {
+    // Build the lookup section if lookups are provided
+    let lookup_section = if lookups.is_object() && !lookups.as_object().map_or(true, |m| m.is_empty()) {
+        let mut lines = String::from(
+            "\n\nLOOKUP FIELDS — For these fields, you MUST return the UUID \"id\" value from the provided list, NOT a display name.\nPick the single best match from each list. If none fits well, omit the field.\n\n"
+        );
+        if let Some(obj) = lookups.as_object() {
+            for (field_name, values) in obj {
+                lines.push_str(&format!("- {field_name}: pick the best matching UUID from this list:\n{}\n\n",
+                    serde_json::to_string_pretty(values).unwrap_or_default()));
+            }
+        }
+        lines
+    } else {
+        String::new()
+    };
+
     format!(
         r#"You are a metadata governance expert for financial institutions. Given the following {entity_type}, suggest improvements for empty or incomplete fields based on industry standards (DAMA DMBOK, BCBS 239, ISO 8000).
 
@@ -258,14 +275,23 @@ Current field values:
 
 Fields that already have values: {existing_list}
 
-IMPORTANT: Only suggest values for TEXT fields shown above. NEVER suggest values for:
-- Any field ending in _id (domain_id, category_id, owner_user_id, steward_user_id, classification_id, glossary_term_id, etc.)
+IMPORTANT: Suggest values for TEXT fields and LOOKUP fields shown below. NEVER suggest values for:
+- Any field ending in _id that is NOT listed in LOOKUP FIELDS below
 - Any field ending in _at (timestamps)
-- System fields like status_id, created_by, updated_by, version_number, is_current_version, is_cbt, is_nullable
+- System fields like status_id, created_by, updated_by, version_number, is_current_version, is_cbt, is_cba, is_nullable, is_pii
+- Ownership fields (owner_user_id, steward_user_id, approver_user_id, organisational_unit)
+- golden_source, golden_source_app_id
 
-For each empty or improvable text field, provide:
-1. field_name: the exact field name from the entity
-2. suggested_value: your suggestion (must be a non-null string)
+DATA TYPE RULES: When suggesting data_type, use ONLY the clean type name without precision or length.
+Valid values: VARCHAR, CHAR, TEXT, INTEGER, BIGINT, SMALLINT, DECIMAL, NUMERIC, FLOAT, DOUBLE, BOOLEAN, DATE, TIMESTAMP, TIMESTAMPTZ, UUID, JSON, JSONB, BLOB, CLOB.
+Do NOT include precision in data_type (e.g. suggest "DECIMAL" not "DECIMAL(18,2)").
+Instead, suggest precision in SEPARATE fields:
+- For VARCHAR/CHAR/TEXT: suggest "max_length" as a number (e.g. "256")
+- For DECIMAL/NUMERIC: suggest "numeric_precision" and "numeric_scale" as numbers (e.g. "18" and "2")
+{lookup_section}
+For each empty or improvable field, provide:
+1. field_name: the exact field name (for lookup fields, use the short name WITHOUT _id suffix, e.g. "domain" not "domain_id")
+2. suggested_value: your suggestion (for lookup fields, use the UUID "id" from the list; for text fields, use plain text; must be a non-null string)
 3. confidence: 0.0-1.0 how confident you are
 4. rationale: why this suggestion, citing standards where applicable (must be a non-null string)
 
@@ -274,7 +300,7 @@ Return ONLY a JSON array of suggestions. Only suggest for fields that are empty,
 Example response format:
 [
   {{
-    "field_name": "business_context",
+    "field_name": "business_definition",
     "suggested_value": "Used in regulatory reporting...",
     "confidence": 0.85,
     "rationale": "Per BCBS 239 Principle 1..."
@@ -285,6 +311,7 @@ Return an empty array [] if no suggestions are needed."#,
         entity_type = entity_type,
         entity_json = serde_json::to_string_pretty(entity_data).unwrap_or_default(),
         existing_list = existing_list,
+        lookup_section = lookup_section,
     )
 }
 

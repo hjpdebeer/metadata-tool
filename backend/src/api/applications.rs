@@ -930,17 +930,17 @@ pub async fn amend_application(
 // discard_amendment — DELETE /api/v1/applications/:app_id/discard
 // ---------------------------------------------------------------------------
 
-/// Discard a draft application amendment. Only the creator or admin can discard,
-/// and only in DRAFT status. Hard deletes the amendment (never-submitted drafts
-/// have no governance value).
+/// Discard a draft application. Only the creator or admin can discard,
+/// and only in DRAFT status. Hard deletes the application (never-submitted drafts
+/// have no governance value). Works for both new drafts and amendments.
 #[utoipa::path(
     delete,
     path = "/api/v1/applications/{app_id}/discard",
-    params(("app_id" = Uuid, Path, description = "Amendment application ID to discard")),
+    params(("app_id" = Uuid, Path, description = "Application ID to discard")),
     responses(
-        (status = 204, description = "Amendment discarded"),
+        (status = 204, description = "Draft discarded"),
         (status = 403, description = "Only the creator can discard"),
-        (status = 422, description = "Application is not a draft amendment")
+        (status = 422, description = "Application is not in DRAFT status")
     ),
     security(("bearer_auth" = [])),
     tag = "applications"
@@ -958,14 +958,6 @@ pub async fn discard_amendment(
     .fetch_optional(&state.pool)
     .await?
     .ok_or_else(|| AppError::NotFound(format!("application not found: {app_id}")))?;
-
-    // Must be an amendment (has previous_version_id)
-    if row.previous_version_id.is_none() {
-        return Err(AppError::Validation(
-            "only amendments can be discarded — use the workflow to manage original applications"
-                .into(),
-        ));
-    }
 
     // Must be in DRAFT status
     let status_code = sqlx::query_scalar::<_, String>(

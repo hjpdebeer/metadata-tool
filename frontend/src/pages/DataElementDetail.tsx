@@ -51,13 +51,6 @@ import { statusColors, statusLabels } from '../constants/statusConfig';
 
 const { Title, Text } = Typography;
 
-const sensitivityColors: Record<string, string> = {
-  PUBLIC: 'green',
-  INTERNAL: 'blue',
-  CONFIDENTIAL: 'orange',
-  RESTRICTED: 'red',
-};
-
 const DataElementDetail: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
@@ -181,7 +174,7 @@ const DataElementDetail: React.FC = () => {
     if (!id) return;
     try {
       await dataDictionaryApi.discardAmendment(id);
-      message.success('Amendment discarded.');
+      message.success(element?.previous_version_id ? 'Amendment discarded.' : 'Draft deleted.');
       if (element?.previous_version_id) {
         navigate(`/data-dictionary/${element.previous_version_id}`);
       } else {
@@ -190,7 +183,7 @@ const DataElementDetail: React.FC = () => {
     } catch (err: unknown) {
       const apiMsg = (err as { response?: { data?: { error?: { message?: string } } } })
         ?.response?.data?.error?.message;
-      message.error(apiMsg || 'Failed to discard amendment.');
+      message.error(apiMsg || 'Failed to delete draft.');
     }
   };
 
@@ -330,8 +323,8 @@ const DataElementDetail: React.FC = () => {
           Submit for Review
         </Button>,
       );
-      // Discard button: only for amendments (has previous_version_id), only for creator or admin
-      if (element?.previous_version_id && (currentUserId === element?.created_by || isAdmin)) {
+      // Discard/Delete button: any draft, only for creator or admin
+      if (currentUserId === element?.created_by || isAdmin) {
         buttons.push(
           <Button
             key="discard"
@@ -339,7 +332,7 @@ const DataElementDetail: React.FC = () => {
             icon={<DeleteOutlined />}
             onClick={handleDiscardAmendment}
           >
-            Discard Amendment
+            {element?.previous_version_id ? 'Discard Amendment' : 'Delete Draft'}
           </Button>,
         );
       }
@@ -793,7 +786,15 @@ const DataElementDetail: React.FC = () => {
           <Descriptions.Item label="Business Rules" span={2}>
             {element.business_rules || '-'}
           </Descriptions.Item>
-          <Descriptions.Item label="Data Type">{element.data_type}</Descriptions.Item>
+          <Descriptions.Item label="Data Type">
+            {element.data_type}
+            {element.data_type && ['DECIMAL', 'NUMERIC'].includes(element.data_type.toUpperCase()) && element.numeric_precision != null && (
+              `(${element.numeric_precision}${element.numeric_scale != null ? `,${element.numeric_scale}` : ''})`
+            )}
+            {element.data_type && ['VARCHAR', 'CHAR', 'TEXT'].includes(element.data_type.toUpperCase()) && element.max_length != null && (
+              `(${element.max_length})`
+            )}
+          </Descriptions.Item>
           <Descriptions.Item label="Format Pattern">
             {element.format_pattern || '-'}
           </Descriptions.Item>
@@ -818,10 +819,12 @@ const DataElementDetail: React.FC = () => {
             {element.is_pii ? <Tag color="volcano">Yes</Tag> : 'No'}
           </Descriptions.Item>
           <Descriptions.Item label="Glossary Term">
-            {element.glossary_term_name ? (
-              <a onClick={() => navigate(`/glossary/${element.glossary_term_id}`)}>
-                {element.glossary_term_name}
-              </a>
+            {element.glossary_term_name && element.glossary_term_id ? (
+              <Link to={`/glossary/${element.glossary_term_id}`}>
+                <Tag color="blue" style={{ cursor: 'pointer' }}>
+                  <LinkOutlined /> {element.glossary_term_name}
+                </Tag>
+              </Link>
             ) : (
               '-'
             )}
@@ -831,15 +834,6 @@ const DataElementDetail: React.FC = () => {
           </Descriptions.Item>
           <Descriptions.Item label="Classification">
             {element.classification_name || '-'}
-          </Descriptions.Item>
-          <Descriptions.Item label="Sensitivity Level">
-            {element.sensitivity_level ? (
-              <Tag color={sensitivityColors[element.sensitivity_level] || 'default'}>
-                {element.sensitivity_level}
-              </Tag>
-            ) : (
-              '-'
-            )}
           </Descriptions.Item>
           <Descriptions.Item label="Status">
             <Tag color={statusColors[status] || 'default'}>

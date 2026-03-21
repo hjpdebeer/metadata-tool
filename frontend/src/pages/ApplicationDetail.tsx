@@ -304,7 +304,7 @@ const ApplicationDetail: React.FC = () => {
     if (!id) return;
     try {
       await applicationsApi.discardAmendment(id);
-      message.success('Amendment discarded.');
+      message.success(application?.previous_version_id ? 'Amendment discarded.' : 'Draft deleted.');
       // Navigate to the original application
       if (application?.previous_version_id) {
         navigate(`/applications/${application.previous_version_id}`);
@@ -314,7 +314,7 @@ const ApplicationDetail: React.FC = () => {
     } catch (err: unknown) {
       const apiMsg = (err as { response?: { data?: { error?: { message?: string } } } })
         ?.response?.data?.error?.message;
-      message.error(apiMsg || 'Failed to discard amendment.');
+      message.error(apiMsg || 'Failed to delete draft.');
     }
   };
 
@@ -393,8 +393,8 @@ const ApplicationDetail: React.FC = () => {
           Submit for Review
         </Button>,
       );
-      // Discard button: only for amendments (has previous_version_id), only for creator or admin
-      if (detail?.previous_version_id && (currentUserId === detail?.created_by || isAdmin)) {
+      // Delete/Discard button: any draft, only for creator or admin
+      if (currentUserId === detail?.created_by || isAdmin) {
         buttons.push(
           <Button
             key="discard"
@@ -402,7 +402,7 @@ const ApplicationDetail: React.FC = () => {
             icon={<DeleteOutlined />}
             onClick={handleDiscardAmendment}
           >
-            Discard Amendment
+            {detail?.previous_version_id ? 'Discard Amendment' : 'Delete Draft'}
           </Button>,
         );
       }

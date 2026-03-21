@@ -11,7 +11,10 @@ export interface DataElement {
   description: string;
   business_definition: string | null;
   business_rules: string | null;
-  data_type: string;
+  data_type: string | null;
+  max_length: number | null;
+  numeric_precision: number | null;
+  numeric_scale: number | null;
   format_pattern: string | null;
   allowed_values: string | null;
   default_value: string | null;
@@ -22,7 +25,6 @@ export interface DataElement {
   glossary_term_id: string | null;
   domain_id: string | null;
   classification_id: string | null;
-  sensitivity_level: string | null;
   status_id: string;
   owner_user_id: string | null;
   steward_user_id: string | null;
@@ -110,6 +112,7 @@ export interface TechnicalTable {
   description: string | null;
   row_count: number | null;
   size_bytes: number | null;
+  is_pii: boolean;
 }
 
 export interface TechnicalColumn {
@@ -117,9 +120,10 @@ export interface TechnicalColumn {
   table_id: string;
   column_name: string;
   ordinal_position: number;
-  data_type: string;
+  data_type: string | null;
   max_length: number | null;
   numeric_precision: number | null;
+  numeric_scale: number | null;
   is_nullable: boolean;
   is_primary_key: boolean;
   is_foreign_key: boolean;
@@ -131,11 +135,13 @@ export interface TechnicalColumn {
 
 export interface CreateDataElementRequest {
   element_name: string;
-  element_code: string;
   description: string;
   business_definition?: string;
   business_rules?: string;
-  data_type: string;
+  data_type?: string;
+  max_length?: number;
+  numeric_precision?: number;
+  numeric_scale?: number;
   format_pattern?: string;
   allowed_values?: string;
   default_value?: string;
@@ -143,7 +149,6 @@ export interface CreateDataElementRequest {
   glossary_term_id?: string;
   domain_id?: string;
   classification_id?: string;
-  sensitivity_level?: string;
 }
 
 export interface UpdateDataElementRequest {
@@ -153,6 +158,9 @@ export interface UpdateDataElementRequest {
   business_definition?: string;
   business_rules?: string;
   data_type?: string;
+  max_length?: number;
+  numeric_precision?: number;
+  numeric_scale?: number;
   format_pattern?: string;
   allowed_values?: string;
   default_value?: string;
@@ -160,7 +168,6 @@ export interface UpdateDataElementRequest {
   glossary_term_id?: string;
   domain_id?: string;
   classification_id?: string;
-  sensitivity_level?: string;
   owner_user_id?: string;
   steward_user_id?: string;
   approver_user_id?: string;

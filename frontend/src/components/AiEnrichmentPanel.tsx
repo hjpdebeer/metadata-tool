@@ -32,9 +32,16 @@ import { glossaryApi } from '../services/glossaryApi';
 
 const { Text, Paragraph } = Typography;
 
-// Lookup fields where AI returns UUIDs (Section 15.6).
-// We resolve these to display names for the user.
-const LOOKUP_FIELDS = ['domain', 'category', 'data_classification', 'term_type', 'unit_of_measure'];
+// Lookup fields where AI returns UUIDs (Section 15.6) or fixed enum values.
+// These show a dropdown in the modify modal instead of a text input.
+const LOOKUP_FIELDS = ['domain', 'category', 'data_classification', 'term_type', 'unit_of_measure', 'data_type'];
+
+// Static options for non-UUID dropdown fields
+const DATA_TYPE_OPTIONS = [
+  'VARCHAR', 'CHAR', 'TEXT', 'INTEGER', 'BIGINT', 'SMALLINT',
+  'DECIMAL', 'NUMERIC', 'FLOAT', 'DOUBLE', 'BOOLEAN',
+  'DATE', 'TIMESTAMP', 'TIMESTAMPTZ', 'UUID', 'JSON', 'JSONB', 'BLOB', 'CLOB',
+].map((t) => ({ value: t, label: t }));
 
 interface AiEnrichmentPanelProps {
   entityType: string; // "glossary_term", "data_element", or "application"
@@ -137,6 +144,19 @@ const AiEnrichmentPanel: React.FC<AiEnrichmentPanelProps> = ({
           units.value.data.forEach((u) => { map[u.unit_id] = u.unit_name; });
           opts['unit_of_measure'] = units.value.data.map((u) => ({ value: u.unit_id, label: u.unit_name }));
         }
+      } else if (entityType === 'data_element') {
+        const [domains, classifications] = await Promise.allSettled([
+          glossaryApi.listDomains(),
+          glossaryApi.listClassifications(),
+        ]);
+        if (domains.status === 'fulfilled') {
+          domains.value.data.forEach((d) => { map[d.domain_id] = d.domain_name; });
+          opts['domain'] = domains.value.data.map((d) => ({ value: d.domain_id, label: d.domain_name }));
+        }
+        if (classifications.status === 'fulfilled') {
+          classifications.value.data.forEach((c) => { map[c.classification_id] = c.classification_name; });
+          opts['data_classification'] = classifications.value.data.map((c) => ({ value: c.classification_id, label: c.classification_name }));
+        }
       } else if (entityType === 'application') {
         const [classifications] = await Promise.allSettled([
           glossaryApi.listClassifications(),
@@ -149,6 +169,9 @@ const AiEnrichmentPanel: React.FC<AiEnrichmentPanelProps> = ({
     } catch {
       // Non-critical
     }
+
+    // Add static data_type options (not a UUID lookup, but a fixed enum dropdown)
+    opts['data_type'] = DATA_TYPE_OPTIONS;
 
     setLookupNames(map);
     setLookupOptions(opts);

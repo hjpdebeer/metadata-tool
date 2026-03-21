@@ -187,11 +187,16 @@ async fn fetch_entity_data(
                 SELECT
                     element_id, element_name, element_code, description,
                     business_definition, business_rules, data_type,
+                    max_length, numeric_precision, numeric_scale,
                     format_pattern, allowed_values, default_value,
                     is_nullable, is_cde, cde_rationale, cde_designated_at,
                     glossary_term_id, domain_id, classification_id,
-                    sensitivity_level, status_id, owner_user_id,
-                    steward_user_id, created_by, updated_by,
+                    status_id, owner_user_id,
+                    steward_user_id, approver_user_id, organisational_unit,
+                    review_frequency_id, next_review_date, approved_at,
+                    is_pii, version_number, is_current_version,
+                    previous_version_id,
+                    created_by, updated_by,
                     created_at, updated_at
                 FROM data_elements
                 WHERE element_id = $1 AND deleted_at IS NULL
@@ -212,7 +217,6 @@ async fn fetch_entity_data(
                 "data_type": row.data_type,
                 "format_pattern": row.format_pattern,
                 "default_value": row.default_value,
-                "sensitivity_level": row.sensitivity_level,
             });
 
             let mut existing = Vec::new();
@@ -231,8 +235,12 @@ async fn fetch_entity_data(
             if row.format_pattern.is_some() {
                 existing.push("format_pattern".to_string());
             }
-            if row.sensitivity_level.is_some() {
-                existing.push("sensitivity_level".to_string());
+            // Track existing lookup field values so AI skips them
+            if row.domain_id.is_some() {
+                existing.push("domain".to_string());
+            }
+            if row.classification_id.is_some() {
+                existing.push("data_classification".to_string());
             }
 
             Ok((json, existing))
@@ -487,13 +495,44 @@ async fn apply_suggestion_to_entity(
                     sqlx::query("UPDATE data_elements SET format_pattern = $1, updated_by = $2, updated_at = CURRENT_TIMESTAMP WHERE element_id = $3 AND deleted_at IS NULL")
                         .bind(value).bind(user_id).bind(entity_id).execute(pool).await?;
                 }
-                "sensitivity_level" => {
-                    sqlx::query("UPDATE data_elements SET sensitivity_level = $1, updated_by = $2, updated_at = CURRENT_TIMESTAMP WHERE element_id = $3 AND deleted_at IS NULL")
-                        .bind(value).bind(user_id).bind(entity_id).execute(pool).await?;
-                }
                 "default_value" => {
                     sqlx::query("UPDATE data_elements SET default_value = $1, updated_by = $2, updated_at = CURRENT_TIMESTAMP WHERE element_id = $3 AND deleted_at IS NULL")
                         .bind(value).bind(user_id).bind(entity_id).execute(pool).await?;
+                }
+                "data_type" => {
+                    sqlx::query("UPDATE data_elements SET data_type = $1, updated_by = $2, updated_at = CURRENT_TIMESTAMP WHERE element_id = $3 AND deleted_at IS NULL")
+                        .bind(value).bind(user_id).bind(entity_id).execute(pool).await?;
+                }
+                "max_length" => {
+                    if let Ok(val) = value.parse::<i32>() {
+                        sqlx::query("UPDATE data_elements SET max_length = $1, updated_by = $2, updated_at = CURRENT_TIMESTAMP WHERE element_id = $3 AND deleted_at IS NULL")
+                            .bind(val).bind(user_id).bind(entity_id).execute(pool).await?;
+                    }
+                }
+                "numeric_precision" => {
+                    if let Ok(val) = value.parse::<i32>() {
+                        sqlx::query("UPDATE data_elements SET numeric_precision = $1, updated_by = $2, updated_at = CURRENT_TIMESTAMP WHERE element_id = $3 AND deleted_at IS NULL")
+                            .bind(val).bind(user_id).bind(entity_id).execute(pool).await?;
+                    }
+                }
+                "numeric_scale" => {
+                    if let Ok(val) = value.parse::<i32>() {
+                        sqlx::query("UPDATE data_elements SET numeric_scale = $1, updated_by = $2, updated_at = CURRENT_TIMESTAMP WHERE element_id = $3 AND deleted_at IS NULL")
+                            .bind(val).bind(user_id).bind(entity_id).execute(pool).await?;
+                    }
+                }
+                // Lookup columns: UUID-first resolution (CODING_STANDARDS Section 15.6)
+                "domain" => {
+                    if let Ok(uuid) = Uuid::parse_str(value) {
+                        sqlx::query("UPDATE data_elements SET domain_id = $1, updated_by = $2, updated_at = CURRENT_TIMESTAMP WHERE element_id = $3 AND deleted_at IS NULL")
+                            .bind(uuid).bind(user_id).bind(entity_id).execute(pool).await?;
+                    }
+                }
+                "data_classification" => {
+                    if let Ok(uuid) = Uuid::parse_str(value) {
+                        sqlx::query("UPDATE data_elements SET classification_id = $1, updated_by = $2, updated_at = CURRENT_TIMESTAMP WHERE element_id = $3 AND deleted_at IS NULL")
+                            .bind(uuid).bind(user_id).bind(entity_id).execute(pool).await?;
+                    }
                 }
                 _ => {
                     return Err(AppError::Validation(format!(
@@ -598,6 +637,23 @@ pub async fn enrich(
     // Fetch lookup tables for the AI prompt (CODING_STANDARDS Section 15.6)
     let lookups = match body.entity_type.as_str() {
         "glossary_term" => fetch_glossary_lookups(&state.pool).await?,
+        "data_element" => {
+            // Embed domains and data_classifications for the lookup-in-prompt pattern (Section 15.6)
+            let domains = sqlx::query_as::<_, IdName>(
+                "SELECT domain_id AS id, domain_name AS name FROM glossary_domains ORDER BY domain_name",
+            )
+            .fetch_all(&state.pool)
+            .await?;
+            let classifications = sqlx::query_as::<_, IdName>(
+                "SELECT classification_id AS id, classification_name AS name FROM data_classifications ORDER BY display_order ASC",
+            )
+            .fetch_all(&state.pool)
+            .await?;
+            serde_json::json!({
+                "domain": domains.iter().map(|r| serde_json::json!({"id": r.id, "name": r.name})).collect::<Vec<_>>(),
+                "data_classification": classifications.iter().map(|r| serde_json::json!({"id": r.id, "name": r.name})).collect::<Vec<_>>(),
+            })
+        }
         "application" => {
             // Embed data_classifications for the lookup-in-prompt pattern (Section 15.6)
             let classifications = sqlx::query_as::<_, IdName>(

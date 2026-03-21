@@ -25,7 +25,6 @@ import {
   CloseCircleOutlined,
   DatabaseOutlined,
   FolderOutlined,
-  KeyOutlined,
   LinkOutlined,
   TableOutlined,
 } from '@ant-design/icons';
@@ -54,7 +53,7 @@ const TechnicalMetadataPage: React.FC = () => {
   const [tablesMap, setTablesMap] = useState<Record<string, TechnicalTable[]>>({});
   const [columns, setColumns] = useState<TechnicalColumn[]>([]);
   const [selectedTable, setSelectedTable] = useState<TechnicalTable | null>(null);
-  const [selectedSchema, setSelectedSchema] = useState<string | null>(null);
+  const [, setSelectedSchema] = useState<string | null>(null);
   const [selectedSystem, setSelectedSystem] = useState<SourceSystem | null>(null);
   const [loadingSystems, setLoadingSystems] = useState(false);
   const [loadingColumns, setLoadingColumns] = useState(false);

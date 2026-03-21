@@ -357,6 +357,22 @@ pub async fn get_term(
     .fetch_all(&state.pool)
     .await?;
 
+    // Fetch linked data elements (elements where glossary_term_id = this term or its previous version)
+    let linked_data_elements = sqlx::query_as::<_, LinkedDataElementRef>(
+        r#"
+        SELECT element_id, element_name, element_code, data_type, is_cde
+        FROM data_elements
+        WHERE (glossary_term_id = $1 OR glossary_term_id = $2)
+          AND deleted_at IS NULL
+          AND is_current_version = TRUE
+        ORDER BY element_name
+        "#,
+    )
+    .bind(term_id)
+    .bind(row.previous_version_id)
+    .fetch_all(&state.pool)
+    .await?;
+
     // Construct the flat response (ADR-0006 Pattern 1)
     Ok(Json(GlossaryTermDetail::from_row_and_junctions(
         row,
@@ -366,6 +382,7 @@ pub async fn get_term(
         linked_processes,
         aliases,
         child_terms,
+        linked_data_elements,
     )))
 }
 
@@ -837,16 +854,17 @@ pub async fn amend_term(
 // discard_amendment — DELETE /api/v1/glossary/terms/:term_id/discard
 // ---------------------------------------------------------------------------
 
-/// Discard a draft amendment. Only the creator can discard, and only in DRAFT status.
-/// Soft-deletes the amendment and cancels its workflow instance.
+/// Discard a draft glossary term. Only the creator or admin can discard,
+/// and only in DRAFT status. Hard deletes the term (never-submitted drafts
+/// have no governance value). Works for both new drafts and amendments.
 #[utoipa::path(
     delete,
     path = "/api/v1/glossary/terms/{term_id}/discard",
-    params(("term_id" = Uuid, Path, description = "Amendment term ID to discard")),
+    params(("term_id" = Uuid, Path, description = "Term ID to discard")),
     responses(
-        (status = 204, description = "Amendment discarded"),
+        (status = 204, description = "Draft discarded"),
         (status = 403, description = "Only the creator can discard"),
-        (status = 422, description = "Term is not a draft amendment")
+        (status = 422, description = "Term is not in DRAFT status")
     ),
     security(("bearer_auth" = [])),
     tag = "glossary"
@@ -865,13 +883,6 @@ pub async fn discard_amendment(
     .fetch_optional(&state.pool)
     .await?
     .ok_or_else(|| AppError::NotFound(format!("glossary term not found: {term_id}")))?;
-
-    // Must be an amendment (has previous_version_id)
-    if row.previous_version_id.is_none() {
-        return Err(AppError::Validation(
-            "only amendments can be discarded — use the workflow to manage original terms".into(),
-        ));
-    }
 
     // Must be in DRAFT status
     let status_code = sqlx::query_scalar::<_, String>(

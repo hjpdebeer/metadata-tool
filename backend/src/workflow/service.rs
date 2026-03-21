@@ -713,20 +713,6 @@ async fn create_task_for_entity_role(
                 .await?
                 .flatten()
         }
-        ("quality_rules", "steward_user_id") => {
-            sqlx::query_scalar("SELECT steward_user_id FROM quality_rules WHERE rule_id = $1 AND deleted_at IS NULL")
-                .bind(instance.entity_id)
-                .fetch_optional(pool)
-                .await?
-                .flatten()
-        }
-        ("quality_rules", "owner_user_id") => {
-            sqlx::query_scalar("SELECT owner_user_id FROM quality_rules WHERE rule_id = $1 AND deleted_at IS NULL")
-                .bind(instance.entity_id)
-                .fetch_optional(pool)
-                .await?
-                .flatten()
-        }
         _ => None,
     };
 
@@ -966,35 +952,7 @@ async fn update_entity_status(
                 .execute(pool)
                 .await?;
             }
-        }
-        "quality_rules" => {
-            if state_code == super::STATE_ACCEPTED {
-                sqlx::query(
-                    "UPDATE quality_rules
-                     SET status_id = $1,
-                         approved_at = CURRENT_TIMESTAMP,
-                         is_current_version = TRUE,
-                         next_review_date = CURRENT_DATE + (
-                             SELECT COALESCE(grf.months_interval, 12) * INTERVAL '1 month'
-                             FROM glossary_review_frequencies grf
-                             WHERE grf.frequency_id = quality_rules.review_frequency_id
-                         ),
-                         updated_at = CURRENT_TIMESTAMP
-                     WHERE rule_id = $2",
-                )
-                .bind(status_id)
-                .bind(instance.entity_id)
-                .execute(pool)
-                .await?;
-            } else {
-                sqlx::query(
-                    "UPDATE quality_rules SET status_id = $1, updated_at = CURRENT_TIMESTAMP WHERE rule_id = $2",
-                )
-                .bind(status_id)
-                .bind(instance.entity_id)
-                .execute(pool)
-                .await?;
-            }
+
         }
         "applications" => {
             if state_code == super::STATE_ACCEPTED {
@@ -1257,39 +1215,6 @@ async fn validate_ownership_before_submit(
         let mut missing = Vec::new();
         if row.owner_user_id.is_none() {
             missing.push("Data Owner");
-        }
-        if row.steward_user_id.is_none() {
-            missing.push("Data Steward");
-        }
-        if row.approver_user_id.is_none() {
-            missing.push("Approver");
-        }
-
-        if !missing.is_empty() {
-            return Err(AppError::Validation(format!(
-                "cannot submit for review — the following ownership fields must be assigned: {}",
-                missing.join(", ")
-            )));
-        }
-    } else if entity_type.as_str() == "quality_rules" {
-        #[derive(sqlx::FromRow)]
-        struct QrOwnershipCheck {
-            owner_user_id: Option<Uuid>,
-            steward_user_id: Option<Uuid>,
-            approver_user_id: Option<Uuid>,
-        }
-
-        let row = sqlx::query_as::<_, QrOwnershipCheck>(
-            "SELECT owner_user_id, steward_user_id, approver_user_id FROM quality_rules WHERE rule_id = $1 AND deleted_at IS NULL",
-        )
-        .bind(instance.entity_id)
-        .fetch_optional(pool)
-        .await?
-        .ok_or_else(|| AppError::NotFound("entity not found for ownership check".into()))?;
-
-        let mut missing = Vec::new();
-        if row.owner_user_id.is_none() {
-            missing.push("Rule Owner");
         }
         if row.steward_user_id.is_none() {
             missing.push("Data Steward");

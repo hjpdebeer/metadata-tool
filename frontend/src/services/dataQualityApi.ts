@@ -40,12 +40,10 @@ export interface QualityRule {
   threshold_percentage: number;
   severity: string;
   is_active: boolean;
-  status_id: string;
   owner_user_id: string | null;
   created_by: string;
   created_at: string;
   updated_at: string;
-  workflow_instance_id: string | null;
   // Resolved lookup names (from JOINs in detail query)
   dimension_name: string;
   rule_type_name: string;
@@ -63,8 +61,6 @@ export interface QualityRuleListItem {
   element_name: string | null;
   severity: string;
   is_active: boolean;
-  status_code: string;
-  status_name: string | null;
   owner_name: string | null;
   threshold_percentage: number;
   created_at: string;
@@ -141,7 +137,6 @@ export interface ListRulesParams {
   element_id?: string;
   severity?: string;
   is_active?: boolean;
-  status?: string;
   page?: number;
   page_size?: number;
 }

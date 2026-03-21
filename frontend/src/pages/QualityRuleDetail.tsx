@@ -6,7 +6,6 @@ import {
   Card,
   Col,
   Descriptions,
-  Divider,
   Form,
   Input,
   InputNumber,
@@ -17,46 +16,18 @@ import {
   Statistic,
   Table,
   Tag,
-  Timeline,
   Typography,
   message,
 } from 'antd';
 import {
   ArrowLeftOutlined,
-  CheckOutlined,
-  CloseOutlined,
   EditOutlined,
   ExperimentOutlined,
-  SendOutlined,
-  UndoOutlined,
 } from '@ant-design/icons';
 import { dataQualityApi } from '../services/dataQualityApi';
-import { workflowApi } from '../services/glossaryApi';
 import type { QualityAssessment, QualityRule } from '../services/dataQualityApi';
-import type { WorkflowInstanceView } from '../services/glossaryApi';
-import { useAuth } from '../hooks/useAuth';
 
 const { Title, Text } = Typography;
-
-const statusColors: Record<string, string> = {
-  DRAFT: 'default',
-  PROPOSED: 'processing',
-  UNDER_REVIEW: 'warning',
-  REVISED: 'orange',
-  ACCEPTED: 'success',
-  REJECTED: 'error',
-  DEPRECATED: 'default',
-};
-
-const statusLabels: Record<string, string> = {
-  DRAFT: 'Draft',
-  PROPOSED: 'Proposed',
-  UNDER_REVIEW: 'Under Review',
-  REVISED: 'Revised',
-  ACCEPTED: 'Accepted',
-  REJECTED: 'Rejected',
-  DEPRECATED: 'Deprecated',
-};
 
 const severityColors: Record<string, string> = {
   LOW: '#52C41A',
@@ -74,21 +45,13 @@ const getScoreColor = (score: number): string => {
 const QualityRuleDetail: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const { user } = useAuth();
 
   const [rule, setRule] = useState<QualityRule | null>(null);
   const [assessments, setAssessments] = useState<QualityAssessment[]>([]);
-  const [workflowInstance, setWorkflowInstance] = useState<WorkflowInstanceView | null>(null);
   const [loading, setLoading] = useState(true);
-  const [actionLoading, setActionLoading] = useState(false);
-  const [transitionModalOpen, setTransitionModalOpen] = useState(false);
-  const [transitionAction, setTransitionAction] = useState('');
-  const [transitionComments, setTransitionComments] = useState('');
   const [assessmentModalOpen, setAssessmentModalOpen] = useState(false);
   const [assessmentLoading, setAssessmentLoading] = useState(false);
   const [assessmentForm] = Form.useForm();
-
-  const isSteward = user?.roles?.includes('data_steward') || user?.roles?.includes('admin');
 
   const fetchRule = useCallback(async () => {
     if (!id) return;
@@ -96,16 +59,6 @@ const QualityRuleDetail: React.FC = () => {
     try {
       const response = await dataQualityApi.getRule(id);
       setRule(response.data);
-
-      // Fetch workflow instance if one exists
-      if (response.data.workflow_instance_id) {
-        try {
-          const wfResponse = await workflowApi.getInstance(response.data.workflow_instance_id);
-          setWorkflowInstance(wfResponse.data);
-        } catch {
-          // Workflow instance may not exist yet or endpoint may not be implemented
-        }
-      }
     } catch {
       message.error('Failed to load rule details.');
       navigate('/data-quality/rules');
@@ -128,36 +81,6 @@ const QualityRuleDetail: React.FC = () => {
     fetchRule();
     fetchAssessments();
   }, [fetchRule, fetchAssessments]);
-
-  const handleWorkflowAction = (action: string) => {
-    if (!rule?.workflow_instance_id) {
-      message.error('No active workflow for this rule.');
-      return;
-    }
-    setTransitionAction(action);
-    setTransitionComments('');
-    setTransitionModalOpen(true);
-  };
-
-  const submitTransition = async () => {
-    if (!rule?.workflow_instance_id) return;
-
-    setActionLoading(true);
-    try {
-      await workflowApi.transitionWorkflow(
-        rule.workflow_instance_id,
-        transitionAction,
-        transitionComments || undefined,
-      );
-      message.success(`Workflow action "${transitionAction}" completed successfully.`);
-      setTransitionModalOpen(false);
-      fetchRule();
-    } catch {
-      message.error(`Failed to perform action "${transitionAction}".`);
-    } finally {
-      setActionLoading(false);
-    }
-  };
 
   const handleRecordAssessment = async () => {
     if (!id) return;
@@ -208,66 +131,8 @@ const QualityRuleDetail: React.FC = () => {
     return null;
   }
 
-  // Derive status from workflow instance if available
-  const statusCode = workflowInstance?.current_state_name?.toUpperCase().replace(/\s+/g, '_') || 'DRAFT';
-
   const renderActionButtons = () => {
     const buttons: React.ReactNode[] = [];
-
-    if (statusCode === 'DRAFT') {
-      buttons.push(
-        <Button
-          key="submit"
-          type="primary"
-          icon={<SendOutlined />}
-          onClick={() => handleWorkflowAction('SUBMIT')}
-        >
-          Submit for Review
-        </Button>,
-      );
-    }
-
-    if (statusCode === 'UNDER_REVIEW' && isSteward) {
-      buttons.push(
-        <Button
-          key="approve"
-          type="primary"
-          icon={<CheckOutlined />}
-          style={{ backgroundColor: '#52C41A', borderColor: '#52C41A' }}
-          onClick={() => handleWorkflowAction('APPROVE')}
-        >
-          Approve
-        </Button>,
-        <Button
-          key="reject"
-          danger
-          icon={<CloseOutlined />}
-          onClick={() => handleWorkflowAction('REJECT')}
-        >
-          Reject
-        </Button>,
-        <Button
-          key="revise"
-          icon={<UndoOutlined />}
-          onClick={() => handleWorkflowAction('REVISE')}
-        >
-          Request Revision
-        </Button>,
-      );
-    }
-
-    if (statusCode === 'REVISED') {
-      buttons.push(
-        <Button
-          key="resubmit"
-          type="primary"
-          icon={<SendOutlined />}
-          onClick={() => handleWorkflowAction('SUBMIT')}
-        >
-          Resubmit
-        </Button>,
-      );
-    }
 
     buttons.push(
       <Button
@@ -287,7 +152,6 @@ const QualityRuleDetail: React.FC = () => {
         key="edit"
         icon={<EditOutlined />}
         onClick={() => navigate(`/data-quality/rules/${id}/edit`)}
-        disabled={statusCode === 'ACCEPTED' || statusCode === 'DEPRECATED'}
       >
         Edit
       </Button>,
@@ -417,12 +281,6 @@ const QualityRuleDetail: React.FC = () => {
             {rule.rule_name}
           </Title>
           <Tag
-            color={statusColors[statusCode] || 'default'}
-            style={{ fontSize: 14, padding: '2px 12px' }}
-          >
-            {statusLabels[statusCode] || statusCode}
-          </Tag>
-          <Tag
             color={severityColors[rule.severity] || 'default'}
             style={{ fontSize: 14, padding: '2px 12px', fontWeight: 600 }}
           >
@@ -549,91 +407,6 @@ const QualityRuleDetail: React.FC = () => {
           locale={{ emptyText: 'No assessments recorded yet.' }}
         />
       </Card>
-
-      {workflowInstance && (
-        <Card title="Workflow" style={{ marginBottom: 24 }}>
-          <Descriptions column={{ xs: 1, sm: 2 }} size="small" style={{ marginBottom: 16 }}>
-            <Descriptions.Item label="Current State">
-              <Tag color={statusColors[workflowInstance.current_state_name?.toUpperCase()] || 'processing'}>
-                {workflowInstance.current_state_name}
-              </Tag>
-            </Descriptions.Item>
-            <Descriptions.Item label="Initiated By">
-              {workflowInstance.initiated_by_name}
-            </Descriptions.Item>
-            <Descriptions.Item label="Initiated At">
-              {formatDate(workflowInstance.initiated_at)}
-            </Descriptions.Item>
-            {workflowInstance.completed_at && (
-              <Descriptions.Item label="Completed At">
-                {formatDate(workflowInstance.completed_at)}
-              </Descriptions.Item>
-            )}
-          </Descriptions>
-
-          {workflowInstance.history && workflowInstance.history.length > 0 && (
-            <>
-              <Divider orientation="left" plain>
-                <Text strong>History</Text>
-              </Divider>
-              <Timeline
-                items={workflowInstance.history.map((entry) => ({
-                  color:
-                    entry.action === 'APPROVE'
-                      ? 'green'
-                      : entry.action === 'REJECT'
-                        ? 'red'
-                        : 'blue',
-                  children: (
-                    <div>
-                      <Text strong>{entry.action}</Text>
-                      {entry.from_state_name && entry.to_state_name && (
-                        <Text type="secondary">
-                          {' '}
-                          ({entry.from_state_name} → {entry.to_state_name})
-                        </Text>
-                      )}
-                      <br />
-                      <Text type="secondary" style={{ fontSize: 12 }}>
-                        {entry.performed_by_name || 'System'} - {formatDate(entry.performed_at)}
-                      </Text>
-                      {entry.comments && (
-                        <>
-                          <br />
-                          <Text italic style={{ fontSize: 13 }}>
-                            {entry.comments}
-                          </Text>
-                        </>
-                      )}
-                    </div>
-                  ),
-                }))}
-              />
-            </>
-          )}
-        </Card>
-      )}
-
-      <Modal
-        title={`Workflow Action: ${transitionAction}`}
-        open={transitionModalOpen}
-        onOk={submitTransition}
-        onCancel={() => setTransitionModalOpen(false)}
-        confirmLoading={actionLoading}
-        okText="Confirm"
-      >
-        <div style={{ marginBottom: 12 }}>
-          <Text>
-            You are about to <strong>{transitionAction.toLowerCase()}</strong> this rule.
-          </Text>
-        </div>
-        <Input.TextArea
-          rows={3}
-          placeholder="Add comments (optional)"
-          value={transitionComments}
-          onChange={(e) => setTransitionComments(e.target.value)}
-        />
-      </Modal>
 
       <Modal
         title="Record Assessment"

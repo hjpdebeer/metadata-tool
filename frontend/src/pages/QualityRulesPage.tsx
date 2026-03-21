@@ -12,31 +12,6 @@ import type {
 
 const { Title, Text } = Typography;
 
-const statusColors: Record<string, string> = {
-  DRAFT: 'default',
-  PROPOSED: 'processing',
-  UNDER_REVIEW: 'warning',
-  REVISED: 'orange',
-  ACCEPTED: 'success',
-  REJECTED: 'error',
-  DEPRECATED: 'default',
-};
-
-const statusLabels: Record<string, string> = {
-  DRAFT: 'Draft',
-  PROPOSED: 'Proposed',
-  UNDER_REVIEW: 'Under Review',
-  REVISED: 'Revised',
-  ACCEPTED: 'Accepted',
-  REJECTED: 'Rejected',
-  DEPRECATED: 'Deprecated',
-};
-
-const statusOptions = Object.entries(statusLabels).map(([value, label]) => ({
-  value,
-  label,
-}));
-
 const severityColors: Record<string, string> = {
   LOW: '#52C41A',
   MEDIUM: '#1890FF',
@@ -67,9 +42,6 @@ const QualityRulesPage: React.FC = () => {
   const [selectedSeverity, setSelectedSeverity] = useState<string | undefined>(
     searchParams.get('severity') || undefined,
   );
-  const [selectedStatus, setSelectedStatus] = useState<string | undefined>(
-    searchParams.get('status') || undefined,
-  );
   const [activeOnly, setActiveOnly] = useState(searchParams.get('active') === 'true');
   const [currentPage, setCurrentPage] = useState(
     Number(searchParams.get('page')) || 1,
@@ -87,7 +59,6 @@ const QualityRulesPage: React.FC = () => {
         query: searchQuery || undefined,
         dimension_id: selectedDimension,
         severity: selectedSeverity,
-        status: selectedStatus,
         is_active: activeOnly || undefined,
       };
 
@@ -108,7 +79,7 @@ const QualityRulesPage: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  }, [currentPage, pageSize, searchQuery, selectedDimension, selectedSeverity, selectedStatus, activeOnly]);
+  }, [currentPage, pageSize, searchQuery, selectedDimension, selectedSeverity, activeOnly]);
 
   const fetchDimensions = useCallback(async () => {
     try {
@@ -133,12 +104,11 @@ const QualityRulesPage: React.FC = () => {
     if (searchQuery) params.query = searchQuery;
     if (selectedDimension) params.dimension_id = selectedDimension;
     if (selectedSeverity) params.severity = selectedSeverity;
-    if (selectedStatus) params.status = selectedStatus;
     if (activeOnly) params.active = 'true';
     if (currentPage > 1) params.page = String(currentPage);
     if (pageSize !== 20) params.page_size = String(pageSize);
     setSearchParams(params, { replace: true });
-  }, [searchQuery, selectedDimension, selectedSeverity, selectedStatus, activeOnly, currentPage, pageSize, setSearchParams]);
+  }, [searchQuery, selectedDimension, selectedSeverity, activeOnly, currentPage, pageSize, setSearchParams]);
 
   const handleSearch = (value: string) => {
     setSearchQuery(value);
@@ -152,11 +122,6 @@ const QualityRulesPage: React.FC = () => {
 
   const handleSeverityChange = (value: string | undefined) => {
     setSelectedSeverity(value || undefined);
-    setCurrentPage(1);
-  };
-
-  const handleStatusChange = (value: string | undefined) => {
-    setSelectedStatus(value || undefined);
     setCurrentPage(1);
   };
 
@@ -229,17 +194,6 @@ const QualityRulesPage: React.FC = () => {
         ) : (
           <Tag color="default">Inactive</Tag>
         ),
-    },
-    {
-      title: 'Status',
-      dataIndex: 'status_code',
-      key: 'status_code',
-      width: 140,
-      render: (status: string) => (
-        <Tag color={statusColors[status] || 'default'}>
-          {statusLabels[status] || status}
-        </Tag>
-      ),
     },
     {
       title: 'Owner',
@@ -318,14 +272,6 @@ const QualityRulesPage: React.FC = () => {
             value={selectedSeverity}
             onChange={handleSeverityChange}
             options={severityOptions}
-            allowClear
-          />
-          <Select
-            placeholder="Filter by status"
-            style={{ width: 180 }}
-            value={selectedStatus}
-            onChange={handleStatusChange}
-            options={statusOptions}
             allowClear
           />
           <Space>

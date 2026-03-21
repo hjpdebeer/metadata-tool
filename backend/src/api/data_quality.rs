@@ -9,7 +9,6 @@ use crate::db::AppState;
 use crate::domain::data_quality::*;
 use crate::domain::glossary::PaginatedResponse;
 use crate::error::{AppError, AppResult};
-use crate::workflow;
 
 // ---------------------------------------------------------------------------
 // list_dimensions — GET /api/v1/data-quality/dimensions
@@ -134,7 +133,6 @@ pub async fn list_rules(
         r#"
         SELECT COUNT(*)
         FROM quality_rules qr
-        JOIN entity_statuses es ON es.status_id = qr.status_id
         WHERE qr.deleted_at IS NULL
           AND ($1::TEXT IS NULL OR qr.rule_name ILIKE '%' || $1 || '%'
                OR qr.description ILIKE '%' || $1 || '%')
@@ -142,7 +140,6 @@ pub async fn list_rules(
           AND ($3::UUID IS NULL OR qr.element_id = $3)
           AND ($4::TEXT IS NULL OR qr.severity = $4)
           AND ($5::BOOL IS NULL OR qr.is_active = $5)
-          AND ($6::TEXT IS NULL OR es.status_code = $6)
         "#,
     )
     .bind(params.query.as_deref())
@@ -150,7 +147,6 @@ pub async fn list_rules(
     .bind(params.element_id)
     .bind(params.severity.as_deref())
     .bind(params.is_active)
-    .bind(params.status.as_deref())
     .fetch_one(&state.pool)
     .await?;
 
@@ -168,16 +164,13 @@ pub async fn list_rules(
             de.element_name               AS element_name,
             qr.severity,
             qr.is_active,
-            es.status_code                AS status_code,
-            es.status_name                AS status_name,
             uo.display_name               AS owner_name,
-            qr.threshold_percentage,
+            qr.threshold_percentage::FLOAT8 AS threshold_percentage,
             qr.created_at,
             qr.updated_at
         FROM quality_rules qr
         JOIN quality_dimensions qd ON qd.dimension_id = qr.dimension_id
         JOIN quality_rule_types qrt ON qrt.rule_type_id = qr.rule_type_id
-        JOIN entity_statuses es ON es.status_id = qr.status_id
         LEFT JOIN data_elements de ON de.element_id = qr.element_id
         LEFT JOIN users uo ON uo.user_id = qr.owner_user_id
         WHERE qr.deleted_at IS NULL
@@ -187,10 +180,9 @@ pub async fn list_rules(
           AND ($3::UUID IS NULL OR qr.element_id = $3)
           AND ($4::TEXT IS NULL OR qr.severity = $4)
           AND ($5::BOOL IS NULL OR qr.is_active = $5)
-          AND ($6::TEXT IS NULL OR es.status_code = $6)
         ORDER BY qr.rule_name ASC
-        LIMIT $7
-        OFFSET $8
+        LIMIT $6
+        OFFSET $7
         "#,
     )
     .bind(params.query.as_deref())
@@ -198,7 +190,6 @@ pub async fn list_rules(
     .bind(params.element_id)
     .bind(params.severity.as_deref())
     .bind(params.is_active)
-    .bind(params.status.as_deref())
     .bind(page_size)
     .bind(offset)
     .fetch_all(&state.pool)
@@ -238,8 +229,8 @@ pub async fn get_rule(
         SELECT
             rule_id, rule_name, rule_code, description,
             dimension_id, rule_type_id, element_id, column_id,
-            rule_definition, threshold_percentage, severity,
-            is_active, status_id, owner_user_id,
+            rule_definition, threshold_percentage::FLOAT8 AS threshold_percentage, severity,
+            is_active, owner_user_id, deleted_at,
             created_by, updated_by, created_at, updated_at
         FROM quality_rules
         WHERE rule_id = $1 AND deleted_at IS NULL
@@ -297,28 +288,21 @@ pub async fn create_rule(
         ));
     }
 
-    // Look up DRAFT status_id from entity_statuses
-    let draft_status_id = sqlx::query_scalar::<_, Uuid>(
-        "SELECT status_id FROM entity_statuses WHERE status_code = 'DRAFT'",
-    )
-    .fetch_one(&state.pool)
-    .await?;
-
-    // Insert the new quality rule
+    // Insert the new quality rule (no status_id — rules inherit parent element's workflow)
     let rule = sqlx::query_as::<_, QualityRule>(
         r#"
         INSERT INTO quality_rules (
             rule_name, rule_code, description,
             dimension_id, rule_type_id, element_id, column_id,
             rule_definition, threshold_percentage, severity,
-            is_active, status_id, created_by
+            is_active, created_by
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, TRUE, $11, $12)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, TRUE, $11)
         RETURNING
             rule_id, rule_name, rule_code, description,
             dimension_id, rule_type_id, element_id, column_id,
-            rule_definition, threshold_percentage, severity,
-            is_active, status_id, owner_user_id,
+            rule_definition, threshold_percentage::FLOAT8 AS threshold_percentage, severity,
+            is_active, owner_user_id, deleted_at,
             created_by, updated_by, created_at, updated_at
         "#,
     )
@@ -332,18 +316,8 @@ pub async fn create_rule(
     .bind(&body.rule_definition)
     .bind(body.threshold_percentage)
     .bind(&severity)
-    .bind(draft_status_id)
     .bind(claims.sub)
     .fetch_one(&state.pool)
-    .await?;
-
-    // Initiate the workflow instance for this new quality rule
-    workflow::service::initiate_workflow(
-        &state.pool,
-        workflow::ENTITY_QUALITY_RULE,
-        rule.rule_id,
-        claims.sub,
-    )
     .await?;
 
     Ok((StatusCode::CREATED, Json(rule)))
@@ -418,8 +392,8 @@ pub async fn update_rule(
         RETURNING
             rule_id, rule_name, rule_code, description,
             dimension_id, rule_type_id, element_id, column_id,
-            rule_definition, threshold_percentage, severity,
-            is_active, status_id, owner_user_id,
+            rule_definition, threshold_percentage::FLOAT8 AS threshold_percentage, severity,
+            is_active, owner_user_id, deleted_at,
             created_by, updated_by, created_at, updated_at
         "#,
     )
@@ -544,8 +518,8 @@ pub async fn create_assessment(
         SELECT
             rule_id, rule_name, rule_code, description,
             dimension_id, rule_type_id, element_id, column_id,
-            rule_definition, threshold_percentage, severity,
-            is_active, status_id, owner_user_id,
+            rule_definition, threshold_percentage::FLOAT8 AS threshold_percentage, severity,
+            is_active, owner_user_id, deleted_at,
             created_by, updated_by, created_at, updated_at
         FROM quality_rules
         WHERE rule_id = $1 AND deleted_at IS NULL
@@ -721,14 +695,15 @@ pub async fn accept_rule_suggestion(
 
     // Look up a default rule_type_id from comparison_type
     // Map the comparison_type to a type_code in quality_rule_types
+    // Map comparison_type to existing quality_rule_types type_codes
     let type_code = match body.comparison_type.as_deref() {
-        Some("NOT_NULL") => "COMPLETENESS_CHECK",
-        Some("UNIQUE") => "UNIQUENESS_CHECK",
-        Some("GREATER_THAN") | Some("LESS_THAN") | Some("BETWEEN") => "RANGE_CHECK",
-        Some("EQUAL") | Some("NOT_EQUAL") | Some("IN_LIST") => "VALUE_CHECK",
-        Some("REGEX") => "FORMAT_CHECK",
+        Some("NOT_NULL") => "NOT_NULL",
+        Some("UNIQUE") => "UNIQUE",
+        Some("GREATER_THAN") | Some("LESS_THAN") | Some("BETWEEN") => "RANGE",
+        Some("EQUAL") | Some("NOT_EQUAL") | Some("IN_LIST") => "REFERENTIAL",
+        Some("REGEX") => "PATTERN",
         Some("CUSTOM_SQL") => "CUSTOM_SQL",
-        _ => "CUSTOM_SQL", // Default fallback
+        _ => "CUSTOM_SQL",
     };
 
     let rule_type_id = sqlx::query_scalar::<_, Uuid>(
@@ -753,13 +728,7 @@ pub async fn accept_rule_suggestion(
         rule_type_id
     };
 
-    // Generate a rule_code from the rule_name
-    let rule_code = rule_name
-        .to_uppercase()
-        .replace(|c: char| !c.is_alphanumeric() && c != '_', "_")
-        .chars()
-        .take(64)
-        .collect::<String>();
+    // rule_code is auto-generated by DB trigger (QR-{DIMENSION}-{SEQ})
 
     // Build rule_definition JSON from comparison_type and comparison_value
     let rule_definition = serde_json::json!({
@@ -767,54 +736,41 @@ pub async fn accept_rule_suggestion(
         "comparison_value": body.comparison_value,
     });
 
-    // Look up DRAFT status_id
-    let draft_status_id = sqlx::query_scalar::<_, Uuid>(
-        "SELECT status_id FROM entity_statuses WHERE status_code = 'DRAFT'",
-    )
-    .fetch_one(&state.pool)
-    .await?;
-
-    // Insert the new quality rule
+    // Insert the new quality rule (no status_id — rules inherit parent element's workflow)
     let rule = sqlx::query_as::<_, QualityRule>(
         r#"
         INSERT INTO quality_rules (
-            rule_name, rule_code, description,
+            rule_name, description,
             dimension_id, rule_type_id, element_id, column_id,
             rule_definition, threshold_percentage, severity,
-            is_active, status_id, created_by
+            is_active, created_by,
+            rule_expression, comparison_type, comparison_value, scope
         )
-        VALUES ($1, $2, $3, $4, $5, $6, NULL, $7, $8, $9, TRUE, $10, $11)
-        RETURNING
-            rule_id, rule_name, rule_code, description,
+        VALUES ($1, $2, $3, $4, $5, NULL, $6, $7, $8, TRUE, $9, $10, $11, $12, 'RECORD')
+        RETURNING rule_id, rule_name, rule_code, description,
             dimension_id, rule_type_id, element_id, column_id,
-            rule_definition, threshold_percentage, severity,
-            is_active, status_id, owner_user_id,
+            rule_definition, threshold_percentage::FLOAT8 AS threshold_percentage, severity,
+            is_active, owner_user_id, deleted_at,
             created_by, updated_by, created_at, updated_at
         "#,
     )
-    .bind(&rule_name)
-    .bind(&rule_code)
-    .bind(&description)
-    .bind(dimension_id)
-    .bind(rule_type_id)
-    .bind(body.element_id)
-    .bind(&rule_definition)
-    .bind(body.threshold_percentage)
-    .bind(&severity)
-    .bind(draft_status_id)
-    .bind(claims.sub)
+    .bind(&rule_name)       // $1
+    .bind(&description)     // $2
+    .bind(dimension_id)     // $3
+    .bind(rule_type_id)     // $4
+    .bind(body.element_id)  // $5
+    .bind(&rule_definition) // $6
+    .bind(body.threshold_percentage) // $7
+    .bind(&severity)        // $8
+    .bind(claims.sub)       // $9
+    .bind(&description)     // $10 rule_expression
+    .bind(body.comparison_type.as_deref()) // $11
+    .bind(body.comparison_value.as_deref()) // $12
     .fetch_one(&state.pool)
     .await?;
 
-    // Initiate the workflow instance for this new quality rule
-    workflow::service::initiate_workflow(
-        &state.pool,
-        workflow::ENTITY_QUALITY_RULE,
-        rule.rule_id,
-        claims.sub,
-    )
-    .await?;
-
+    // Quality rules inherit the element's workflow — no separate workflow instance.
+    // When the element is approved, its rules are approved with it.
     tracing::info!(
         rule_id = %rule.rule_id,
         element_id = %body.element_id,

@@ -1285,8 +1285,33 @@ fn parse_rule_suggestions(text: &str) -> Result<Vec<AiRuleSuggestion>, AppError>
         ));
     };
 
-    let suggestions: Vec<AiRuleSuggestion> = serde_json::from_str(&json_to_parse)
+    // Parse as raw JSON first, then convert — handles AI returning numbers where strings expected
+    let raw_values: Vec<serde_json::Value> = serde_json::from_str(&json_to_parse)
         .map_err(|e| AppError::AiService(format!("failed to parse AI rule suggestions: {e}")))?;
+
+    let suggestions: Vec<AiRuleSuggestion> = raw_values
+        .into_iter()
+        .filter_map(|v| {
+            let obj = v.as_object()?;
+            Some(AiRuleSuggestion {
+                dimension: obj.get("dimension")?.as_str()?.to_string(),
+                rule_name: obj.get("rule_name")?.as_str()?.to_string(),
+                description: obj.get("description")?.as_str()?.to_string(),
+                comparison_type: obj.get("comparison_type").and_then(|v| {
+                    if v.is_null() { None } else { Some(v.as_str().unwrap_or("").to_string()) }
+                }).filter(|s| !s.is_empty()),
+                comparison_value: obj.get("comparison_value").and_then(|v| {
+                    if v.is_null() { None }
+                    else if v.is_string() { Some(v.as_str().unwrap().to_string()) }
+                    else { Some(v.to_string()) } // handles numbers, booleans
+                }),
+                threshold_percentage: obj.get("threshold_percentage").and_then(|v| v.as_f64()).unwrap_or(100.0),
+                severity: obj.get("severity").and_then(|v| v.as_str()).unwrap_or("MEDIUM").to_string(),
+                rationale: obj.get("rationale").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+                confidence: obj.get("confidence").and_then(|v| v.as_f64()).unwrap_or(0.5),
+            })
+        })
+        .collect();
 
     // Validate and clean each suggestion
     let valid_dimensions = [

@@ -1246,17 +1246,6 @@ const DataElementDetail: React.FC = () => {
                 );
               },
             },
-            {
-              title: 'Status',
-              dataIndex: 'status_code',
-              key: 'status_code',
-              width: 120,
-              render: (statusCode: string) => (
-                <Tag color={statusColors[statusCode] || 'default'}>
-                  {statusLabels[statusCode] || statusCode}
-                </Tag>
-              ),
-            },
           ]}
           dataSource={qualityRules}
           rowKey="rule_id"

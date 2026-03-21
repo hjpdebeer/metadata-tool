@@ -138,6 +138,7 @@ export interface CreateAssessmentRequest {
 export interface ListRulesParams {
   query?: string;
   dimension_id?: string;
+  element_id?: string;
   severity?: string;
   is_active?: boolean;
   status?: string;

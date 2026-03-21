@@ -82,15 +82,7 @@ const AppLayout: React.FC = () => {
         },
       ],
     },
-    {
-      key: 'data-quality-group',
-      icon: <SafetyCertificateOutlined />,
-      label: 'Data Quality',
-      children: [
-        { key: '/data-quality', icon: <SafetyCertificateOutlined />, label: 'Overview' },
-        { key: '/data-quality/rules', icon: <CheckSquareOutlined />, label: 'Quality Rules' },
-      ],
-    },
+    { key: '/data-quality', icon: <SafetyCertificateOutlined />, label: 'Data Quality Dashboard' },
     { key: '/lineage', icon: <ApartmentOutlined />, label: 'Data Lineage' },
     { key: '/applications', icon: <AppstoreOutlined />, label: 'Applications' },
     { key: '/processes', icon: <PartitionOutlined />, label: 'Business Processes' },
@@ -199,7 +191,6 @@ const AppLayout: React.FC = () => {
     if (path === '/data-dictionary/cde') return '/data-dictionary/cde';
     if (path === '/data-dictionary/technical') return '/data-dictionary/technical';
     if (path.startsWith('/data-dictionary')) return '/data-dictionary';
-    if (path.startsWith('/data-quality/rules')) return '/data-quality/rules';
     if (path.startsWith('/data-quality')) return '/data-quality';
     if (path.startsWith('/lineage')) return '/lineage';
     if (path.startsWith('/applications')) return '/applications';
@@ -212,7 +203,7 @@ const AppLayout: React.FC = () => {
   const getOpenKeys = () => {
     const keys: string[] = [];
     if (location.pathname.startsWith('/data-dictionary')) keys.push('data-dictionary-group');
-    if (location.pathname.startsWith('/data-quality')) keys.push('data-quality-group');
+    // data-quality is now a single link, no sub-menu to open
     // Admin is a single item now, no sub-menu to open
     return keys;
   };

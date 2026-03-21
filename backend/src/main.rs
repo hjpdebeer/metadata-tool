@@ -76,6 +76,8 @@ use metadata_tool::db::{self, AppState};
         api::ingestion::ingest_technical,
         api::ingestion::ingest_elements,
         api::ingestion::link_columns,
+        // Data Quality — score ingestion
+        api::ingestion::ingest_scores,
         api::data_quality::list_dimensions,
         api::data_quality::list_rule_types,
         api::data_quality::list_rules,
@@ -237,6 +239,11 @@ use metadata_tool::db::{self, AppState};
             api::ingestion::ColumnElementLink,
             api::ingestion::LinkColumnsResponse,
             api::ingestion::LinkColumnsSummary,
+            // Quality score ingestion
+            api::ingestion::IngestScoresRequest,
+            api::ingestion::ProfilingRun,
+            api::ingestion::ScoreEntry,
+            api::ingestion::IngestScoresResponse,
             // API key management
             api::admin::CreateApiKeyRequest,
             api::admin::CreateApiKeyResponse,
@@ -411,6 +418,11 @@ async fn main() -> anyhow::Result<()> {
         )
         .route("/api/v1/data-dictionary/ingest/link-columns",
             post(api::ingestion::link_columns)
+        )
+        // Data Quality — score ingestion
+        .route("/api/v1/data-quality/ingest/scores",
+            post(api::ingestion::ingest_scores)
+                .layer(DefaultBodyLimit::max(50 * 1024 * 1024))
         )
         // Data Quality
         .route("/api/v1/data-quality/dimensions", get(api::data_quality::list_dimensions))

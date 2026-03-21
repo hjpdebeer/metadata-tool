@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { useNavigate, useParams, Link } from 'react-router-dom';
 import {
   Alert,
+  Badge,
   Breadcrumb,
   Button,
   Card,
@@ -32,6 +33,7 @@ import {
   EditOutlined,
   KeyOutlined,
   LinkOutlined,
+  PlusOutlined,
   SafetyCertificateOutlined,
   SendOutlined,
   UndoOutlined,
@@ -41,9 +43,11 @@ import {
 import { dataDictionaryApi } from '../services/dataDictionaryApi';
 import { glossaryApi, workflowApi } from '../services/glossaryApi';
 import { usersApi } from '../services/usersApi';
+import { dataQualityApi } from '../services/dataQualityApi';
 import type { DataElementFullView, TechnicalColumn } from '../services/dataDictionaryApi';
 import type { OrganisationalUnit, WorkflowInstanceView } from '../services/glossaryApi';
 import type { UserListItem } from '../services/usersApi';
+import type { QualityRuleListItem } from '../services/dataQualityApi';
 import { useAuth } from '../hooks/useAuth';
 import AiEnrichmentPanel from '../components/AiEnrichmentPanel';
 
@@ -112,11 +116,35 @@ const DataElementDetail: React.FC = () => {
     }
   }, [id]);
 
+  // Quality rules for this element
+  const [qualityRules, setQualityRules] = useState<QualityRuleListItem[]>([]);
+  const [qualityRulesLoading, setQualityRulesLoading] = useState(false);
+
+  const fetchQualityRules = useCallback(async () => {
+    if (!id) return;
+    setQualityRulesLoading(true);
+    try {
+      const response = await dataQualityApi.listRules({ element_id: id, page_size: 100 });
+      const data = response.data;
+      if (Array.isArray(data)) {
+        setQualityRules(data);
+      } else {
+        const paginated = data as unknown as { data: QualityRuleListItem[]; total_count: number };
+        setQualityRules(paginated.data);
+      }
+    } catch {
+      // Non-critical — element page still works without quality rules
+    } finally {
+      setQualityRulesLoading(false);
+    }
+  }, [id]);
+
   useEffect(() => {
     fetchElement(true);
     fetchLookups();
     fetchWorkflowInstance();
-  }, [fetchElement, fetchLookups, fetchWorkflowInstance]);
+    fetchQualityRules();
+  }, [fetchElement, fetchLookups, fetchWorkflowInstance, fetchQualityRules]);
 
   // Sync ownership state from detail response — uses resolved names so UUIDs never display
   useEffect(() => {
@@ -921,6 +949,98 @@ const DataElementDetail: React.FC = () => {
           />
         </Card>
       )}
+
+      {/* --- Quality Rules --- */}
+      <Card
+        title={
+          <Space>
+            <SafetyCertificateOutlined />
+            <span>Quality Rules</span>
+            <Badge count={qualityRules.length} showZero style={{ backgroundColor: qualityRules.length > 0 ? '#1B3A5C' : '#D9D9D9' }} />
+          </Space>
+        }
+        extra={
+          <Button
+            type="primary"
+            size="small"
+            icon={<PlusOutlined />}
+            onClick={() => navigate(`/data-quality/rules/new?element_id=${id}`)}
+          >
+            Create Quality Rule
+          </Button>
+        }
+        style={{ marginBottom: 24 }}
+      >
+        <Table
+          columns={[
+            {
+              title: 'Rule Name',
+              dataIndex: 'rule_name',
+              key: 'rule_name',
+              render: (name: string, record: QualityRuleListItem) => (
+                <a onClick={() => navigate(`/data-quality/rules/${record.rule_id}`)}>{name}</a>
+              ),
+            },
+            {
+              title: 'Dimension',
+              dataIndex: 'dimension_name',
+              key: 'dimension_name',
+              width: 140,
+              render: (name: string) => <Tag color="blue">{name}</Tag>,
+            },
+            {
+              title: 'Rule Type',
+              dataIndex: 'rule_type_name',
+              key: 'rule_type_name',
+              width: 160,
+            },
+            {
+              title: 'Threshold',
+              dataIndex: 'threshold_percentage',
+              key: 'threshold_percentage',
+              width: 100,
+              align: 'center' as const,
+              render: (val: number) => val != null ? `${val}%` : '-',
+            },
+            {
+              title: 'Severity',
+              dataIndex: 'severity',
+              key: 'severity',
+              width: 110,
+              render: (severity: string) => {
+                const colors: Record<string, string> = {
+                  LOW: '#52C41A',
+                  MEDIUM: '#1890FF',
+                  HIGH: '#FA8C16',
+                  CRITICAL: '#FF4D4F',
+                };
+                return (
+                  <Tag color={colors[severity] || 'default'} style={{ fontWeight: 600 }}>
+                    {severity}
+                  </Tag>
+                );
+              },
+            },
+            {
+              title: 'Status',
+              dataIndex: 'status_code',
+              key: 'status_code',
+              width: 120,
+              render: (statusCode: string) => (
+                <Tag color={statusColors[statusCode] || 'default'}>
+                  {statusLabels[statusCode] || statusCode}
+                </Tag>
+              ),
+            },
+          ]}
+          dataSource={qualityRules}
+          rowKey="rule_id"
+          loading={qualityRulesLoading}
+          pagination={false}
+          size="small"
+          locale={{ emptyText: 'No quality rules defined for this element.' }}
+        />
+      </Card>
 
       {/* --- Workflow Section --- */}
       {workflowInstance && (

@@ -251,7 +251,7 @@ fn build_generic_prompt(
     lookups: &serde_json::Value,
 ) -> String {
     // Build the lookup section if lookups are provided
-    let lookup_section = if lookups.is_object() && !lookups.as_object().map_or(true, |m| m.is_empty()) {
+    let lookup_section = if lookups.is_object() && lookups.as_object().is_some_and(|m| !m.is_empty()) {
         let mut lines = String::from(
             "\n\nLOOKUP FIELDS — For these fields, you MUST return the UUID \"id\" value from the provided list, NOT a display name.\nPick the single best match from each list. If none fits well, omit the field.\n\n"
         );

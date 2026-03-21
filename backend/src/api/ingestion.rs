@@ -1469,3 +1469,410 @@ pub async fn link_columns(
         duration_ms,
     }))
 }
+
+// ===========================================================================
+// FEATURE 3: Quality Score Ingestion
+// ===========================================================================
+
+// ---------------------------------------------------------------------------
+// Request types
+// ---------------------------------------------------------------------------
+
+/// Top-level request body for the quality score ingestion endpoint.
+#[derive(Debug, Clone, Deserialize, ToSchema)]
+pub struct IngestScoresRequest {
+    pub profiling_run: ProfilingRun,
+}
+
+/// A profiling run containing quality scores from an external tool.
+#[derive(Debug, Clone, Deserialize, ToSchema)]
+pub struct ProfilingRun {
+    /// Unique identifier for this profiling run (from the external tool).
+    pub run_id: String,
+    /// Source system code (for reference/filtering).
+    pub source_system_code: Option<String>,
+    /// ISO 8601 timestamp when the profiling run was executed.
+    pub run_timestamp: Option<String>,
+    /// Name of the profiling tool (e.g. "Great Expectations", "dbt", "Ataccama").
+    pub tool_name: Option<String>,
+    /// Quality score entries from this run.
+    pub scores: Vec<ScoreEntry>,
+}
+
+/// A single quality score entry from a profiling run.
+#[derive(Debug, Clone, Deserialize, ToSchema)]
+pub struct ScoreEntry {
+    /// Resolve to rule_id via quality_rules.rule_code.
+    pub rule_code: Option<String>,
+    /// Resolve to element_id via data_elements.element_code (alternative to rule_code).
+    pub element_code: Option<String>,
+    /// Resolve to dimension_id via quality_dimensions.dimension_code (used with element_code).
+    pub dimension_code: Option<String>,
+    pub records_evaluated: Option<i64>,
+    pub records_passed: Option<i64>,
+    pub records_failed: Option<i64>,
+    /// Pass rate as a decimal (0.0 to 100.0). Calculated from records if not provided.
+    pub pass_rate: Option<f64>,
+    /// PASS, FAIL, WARNING. Auto-determined from pass_rate vs threshold if not provided.
+    pub status: Option<String>,
+    /// Free-text details or error messages from the profiling tool.
+    pub details: Option<String>,
+}
+
+// ---------------------------------------------------------------------------
+// Response types
+// ---------------------------------------------------------------------------
+
+/// Response returned after a quality score ingestion operation.
+#[derive(Debug, Clone, Serialize, ToSchema)]
+pub struct IngestScoresResponse {
+    /// "completed"
+    pub status: String,
+    pub scores_created: i64,
+    pub scores_failed: i64,
+    pub errors: Vec<IngestError>,
+    pub duration_ms: i64,
+}
+
+// ---------------------------------------------------------------------------
+// Internal row types
+// ---------------------------------------------------------------------------
+
+/// Row returned when resolving a quality rule by rule_code.
+#[derive(sqlx::FromRow)]
+struct ResolvedRule {
+    rule_id: Uuid,
+    element_id: Option<Uuid>,
+    dimension_id: Uuid,
+    threshold_percentage: Option<f64>,
+}
+
+// ---------------------------------------------------------------------------
+// Handler
+// ---------------------------------------------------------------------------
+
+/// Ingest quality scores from an external profiling tool.
+///
+/// Accepts a profiling run payload containing score entries. Each entry is
+/// resolved by `rule_code` (to a quality rule) or by `element_code` +
+/// `dimension_code` (to an element/dimension pair). Pass rates are calculated
+/// from record counts if not provided, and status is auto-determined from
+/// the rule's threshold when available.
+#[utoipa::path(
+    post,
+    path = "/api/v1/data-quality/ingest/scores",
+    request_body = IngestScoresRequest,
+    responses(
+        (status = 200, description = "Ingestion completed", body = IngestScoresResponse),
+        (status = 422, description = "Validation error")
+    ),
+    security(("bearer_auth" = [])),
+    tag = "data_quality"
+)]
+pub async fn ingest_scores(
+    State(state): State<AppState>,
+    Extension(_claims): Extension<Claims>,
+    Json(body): Json<IngestScoresRequest>,
+) -> AppResult<Json<IngestScoresResponse>> {
+    let started = Instant::now();
+
+    // -----------------------------------------------------------------------
+    // 1. Validate request body
+    // -----------------------------------------------------------------------
+    let run = &body.profiling_run;
+    let run_id = run.run_id.trim().to_string();
+    if run_id.is_empty() {
+        return Err(AppError::Validation(
+            "profiling_run.run_id is required".into(),
+        ));
+    }
+    if run.scores.is_empty() {
+        return Err(AppError::Validation(
+            "profiling_run.scores must contain at least one entry".into(),
+        ));
+    }
+
+    let source_system_code = run.source_system_code.as_deref().map(|s| s.trim());
+    let tool_name = run.tool_name.as_deref().map(|s| s.trim());
+
+    // Parse run_timestamp or default to now
+    let profiled_at: DateTime<Utc> = if let Some(ts) = &run.run_timestamp {
+        ts.parse::<DateTime<Utc>>().unwrap_or_else(|_| Utc::now())
+    } else {
+        Utc::now()
+    };
+
+    let mut errors: Vec<IngestError> = Vec::new();
+    let mut scores_created: i64 = 0;
+    let mut scores_failed: i64 = 0;
+
+    // -----------------------------------------------------------------------
+    // 2. Process each score entry
+    // -----------------------------------------------------------------------
+    for (idx, entry) in run.scores.iter().enumerate() {
+        let path = format!("scores[{idx}]");
+
+        // --- Resolve rule_code to rule details ---
+        let resolved_rule: Option<ResolvedRule> = if let Some(code) = &entry.rule_code {
+            let code = code.trim();
+            if code.is_empty() {
+                None
+            } else {
+                match sqlx::query_as::<_, ResolvedRule>(
+                    r#"
+                    SELECT rule_id, element_id, dimension_id,
+                           threshold_percentage::FLOAT8 AS threshold_percentage
+                    FROM quality_rules
+                    WHERE rule_code = $1 AND deleted_at IS NULL AND is_current_version = TRUE
+                    "#,
+                )
+                .bind(code)
+                .fetch_optional(&state.pool)
+                .await
+                {
+                    Ok(Some(row)) => Some(row),
+                    Ok(None) => {
+                        errors.push(IngestError {
+                            path: path.clone(),
+                            message: format!("rule_code '{code}' not found"),
+                        });
+                        scores_failed += 1;
+                        continue;
+                    }
+                    Err(e) => {
+                        errors.push(IngestError {
+                            path: path.clone(),
+                            message: format!("failed to resolve rule_code '{code}': {e}"),
+                        });
+                        scores_failed += 1;
+                        continue;
+                    }
+                }
+            }
+        } else {
+            None
+        };
+
+        // Determine rule_id, element_id, dimension_id
+        let rule_id: Option<Uuid> = resolved_rule.as_ref().map(|r| r.rule_id);
+        let threshold: Option<f64> = resolved_rule.as_ref().and_then(|r| r.threshold_percentage);
+
+        // Element ID: from rule or from element_code
+        let element_id: Option<Uuid> = if let Some(ref rule) = resolved_rule {
+            rule.element_id
+        } else if let Some(code) = &entry.element_code {
+            let code = code.trim();
+            if code.is_empty() {
+                None
+            } else {
+                match sqlx::query_scalar::<_, Uuid>(
+                    "SELECT element_id FROM data_elements WHERE element_code = $1 AND deleted_at IS NULL AND is_current_version = TRUE",
+                )
+                .bind(code)
+                .fetch_optional(&state.pool)
+                .await
+                {
+                    Ok(id) => {
+                        if id.is_none() {
+                            errors.push(IngestError {
+                                path: path.clone(),
+                                message: format!("element_code '{code}' not found"),
+                            });
+                            scores_failed += 1;
+                            continue;
+                        }
+                        id
+                    }
+                    Err(e) => {
+                        errors.push(IngestError {
+                            path: path.clone(),
+                            message: format!("failed to resolve element_code '{code}': {e}"),
+                        });
+                        scores_failed += 1;
+                        continue;
+                    }
+                }
+            }
+        } else {
+            None
+        };
+
+        // Dimension ID: from rule or from dimension_code
+        let dimension_id: Option<Uuid> = if let Some(ref rule) = resolved_rule {
+            Some(rule.dimension_id)
+        } else if let Some(code) = &entry.dimension_code {
+            let code = code.trim();
+            if code.is_empty() {
+                None
+            } else {
+                match sqlx::query_scalar::<_, Uuid>(
+                    "SELECT dimension_id FROM quality_dimensions WHERE dimension_code = $1",
+                )
+                .bind(code)
+                .fetch_optional(&state.pool)
+                .await
+                {
+                    Ok(id) => {
+                        if id.is_none() {
+                            errors.push(IngestError {
+                                path: path.clone(),
+                                message: format!("dimension_code '{code}' not found"),
+                            });
+                            scores_failed += 1;
+                            continue;
+                        }
+                        id
+                    }
+                    Err(e) => {
+                        errors.push(IngestError {
+                            path: path.clone(),
+                            message: format!("failed to resolve dimension_code '{code}': {e}"),
+                        });
+                        scores_failed += 1;
+                        continue;
+                    }
+                }
+            }
+        } else {
+            None
+        };
+
+        // Must have at least one of rule_id or element_id
+        if rule_id.is_none() && element_id.is_none() {
+            errors.push(IngestError {
+                path: path.clone(),
+                message: "score entry must resolve to either a rule (rule_code) or an element (element_code)".into(),
+            });
+            scores_failed += 1;
+            continue;
+        }
+
+        // --- Calculate pass_rate ---
+        let pass_rate: Option<f64> = if let Some(rate) = entry.pass_rate {
+            Some(rate)
+        } else if let (Some(evaluated), Some(passed)) =
+            (entry.records_evaluated, entry.records_passed)
+        {
+            if evaluated > 0 {
+                Some((passed as f64 / evaluated as f64) * 100.0)
+            } else {
+                Some(100.0)
+            }
+        } else {
+            None
+        };
+
+        // --- Determine status ---
+        let status = if let Some(s) = &entry.status {
+            let s = s.trim().to_uppercase();
+            match s.as_str() {
+                "PASS" | "FAIL" | "WARNING" | "ERROR" | "SKIPPED" => s,
+                _ => {
+                    errors.push(IngestError {
+                        path: path.clone(),
+                        message: format!(
+                            "invalid status '{s}' — must be PASS, FAIL, WARNING, ERROR, or SKIPPED"
+                        ),
+                    });
+                    scores_failed += 1;
+                    continue;
+                }
+            }
+        } else if let Some(rate) = pass_rate {
+            let thresh = threshold.unwrap_or(100.0);
+            if rate >= thresh {
+                "PASS".to_string()
+            } else {
+                "FAIL".to_string()
+            }
+        } else {
+            "PASS".to_string()
+        };
+
+        // overall_score defaults to pass_rate for compatibility
+        let overall_score = pass_rate.unwrap_or(0.0);
+
+        // --- INSERT into quality_scores ---
+        match sqlx::query(
+            r#"
+            INSERT INTO quality_scores (
+                rule_id, element_id, dimension_id, table_id,
+                profiling_run_id, source_system_code,
+                records_evaluated, records_passed, records_failed,
+                pass_rate, overall_score, status, details,
+                tool_name, profiled_at, period_start, period_end
+            )
+            VALUES ($1, $2, $3, NULL, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $14, $14)
+            "#,
+        )
+        .bind(rule_id)
+        .bind(element_id)
+        .bind(dimension_id)
+        .bind(&run_id)
+        .bind(source_system_code)
+        .bind(entry.records_evaluated)
+        .bind(entry.records_passed)
+        .bind(entry.records_failed)
+        .bind(pass_rate)
+        .bind(overall_score)
+        .bind(&status)
+        .bind(entry.details.as_deref())
+        .bind(tool_name)
+        .bind(profiled_at)
+        .execute(&state.pool)
+        .await
+        {
+            Ok(_) => {
+                scores_created += 1;
+            }
+            Err(e) => {
+                errors.push(IngestError {
+                    path,
+                    message: format!("failed to insert score: {e}"),
+                });
+                scores_failed += 1;
+            }
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // 3. Log to ingestion_log
+    // -----------------------------------------------------------------------
+    let duration_ms = started.elapsed().as_millis() as i64;
+
+    let summary_json = serde_json::json!({
+        "scores_created": scores_created,
+        "scores_failed": scores_failed,
+        "run_id": run_id,
+    });
+    let errors_json = serde_json::to_value(&errors).unwrap_or_default();
+
+    let _log_result = sqlx::query(
+        r#"
+        INSERT INTO ingestion_log (ingestion_type, source_system_code, summary, errors, duration_ms)
+        VALUES ($1, $2, $3, $4, $5)
+        "#,
+    )
+    .bind("quality_scores")
+    .bind(source_system_code)
+    .bind(&summary_json)
+    .bind(&errors_json)
+    .bind(duration_ms as i32)
+    .execute(&state.pool)
+    .await;
+
+    if let Err(e) = &_log_result {
+        tracing::warn!(error = %e, "failed to insert ingestion_log record");
+    }
+
+    // -----------------------------------------------------------------------
+    // 4. Return response
+    // -----------------------------------------------------------------------
+    Ok(Json(IngestScoresResponse {
+        status: "completed".into(),
+        scores_created,
+        scores_failed,
+        errors,
+        duration_ms,
+    }))
+}

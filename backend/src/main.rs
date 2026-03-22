@@ -281,6 +281,55 @@ impl utoipa::Modify for SecurityAddon {
     }
 }
 
+// ---------------------------------------------------------------------------
+// Security headers middleware (TLS 1.3 + OWASP recommended headers)
+// ---------------------------------------------------------------------------
+
+async fn security_headers(
+    request: axum::extract::Request,
+    next: axum::middleware::Next,
+) -> axum::response::Response {
+    let mut response = next.run(request).await;
+    let headers = response.headers_mut();
+
+    // HSTS — enforce HTTPS for 1 year, including subdomains
+    headers.insert(
+        axum::http::header::STRICT_TRANSPORT_SECURITY,
+        "max-age=31536000; includeSubDomains; preload"
+            .parse()
+            .unwrap(),
+    );
+    // Prevent MIME-type sniffing
+    headers.insert(
+        axum::http::header::X_CONTENT_TYPE_OPTIONS,
+        "nosniff".parse().unwrap(),
+    );
+    // Deny framing (clickjacking protection)
+    headers.insert(
+        axum::http::header::X_FRAME_OPTIONS,
+        "DENY".parse().unwrap(),
+    );
+    // Control referrer information
+    headers.insert(
+        axum::http::header::REFERRER_POLICY,
+        "strict-origin-when-cross-origin".parse().unwrap(),
+    );
+    // Restrict permissions (camera, microphone, geolocation, etc.)
+    headers.insert(
+        axum::http::HeaderName::from_static("permissions-policy"),
+        "camera=(), microphone=(), geolocation=(), payment=()"
+            .parse()
+            .unwrap(),
+    );
+    // Prevent caching of API responses containing sensitive data
+    headers.insert(
+        axum::http::header::CACHE_CONTROL,
+        "no-store".parse().unwrap(),
+    );
+
+    response
+}
+
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     // Load .env file if present
@@ -536,7 +585,10 @@ async fn main() -> anyhow::Result<()> {
         app.merge(swagger_router)
     };
 
-    let app = app.layer(TraceLayer::new_for_http()).layer(cors);
+    let app = app
+        .layer(axum::middleware::from_fn(security_headers))
+        .layer(TraceLayer::new_for_http())
+        .layer(cors);
 
     tracing::info!("Starting server on {addr}");
     #[cfg(debug_assertions)]

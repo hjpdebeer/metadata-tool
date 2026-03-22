@@ -5,7 +5,10 @@ import {
   Menu,
   Typography,
   Avatar,
+  Descriptions,
+  Divider,
   Dropdown,
+  Modal,
   Space,
   Badge,
   Tag,
@@ -13,6 +16,7 @@ import {
   List,
   Button,
   Empty,
+  message,
 } from 'antd';
 import {
   BookOutlined,
@@ -29,6 +33,9 @@ import {
   LogoutOutlined,
   MenuFoldOutlined,
   MenuUnfoldOutlined,
+  MailOutlined,
+  TeamOutlined,
+  ClockCircleOutlined,
   WarningOutlined,
 } from '@ant-design/icons';
 import { useAuth } from '../hooks/useAuth';
@@ -37,15 +44,33 @@ import {
   type InAppNotification,
 } from '../services/notificationsApi';
 import { workflowApi } from '../services/glossaryApi';
+import { usersApi, type UserWithRoles } from '../services/usersApi';
 
 const { Header, Sider, Content } = Layout;
 
 const roleColors: Record<string, string> = {
-  admin: '#1B3A5C',
-  data_steward: '#2E7D32',
-  data_owner: '#1565C0',
-  analyst: '#6A1B9A',
-  viewer: '#757575',
+  ADMIN: '#1B3A5C',
+  DATA_STEWARD: '#2E7D32',
+  DATA_OWNER: '#1565C0',
+  DATA_PRODUCER: '#7B1FA2',
+  DATA_CONSUMER: '#757575',
+  APP_BUSINESS_OWNER: '#E65100',
+  APP_TECHNICAL_OWNER: '#00838F',
+  BUSINESS_PROCESS_OWNER: '#AD1457',
+  VIEWER: '#9E9E9E',
+};
+
+const getInitials = (name: string): string => {
+  const parts = name.trim().split(/\s+/);
+  if (parts.length >= 2) return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+  return name.substring(0, 2).toUpperCase();
+};
+
+const getAvatarColor = (name: string): string => {
+  const colors = ['#1B3A5C', '#2E7D32', '#1565C0', '#7B1FA2', '#E65100', '#00838F', '#AD1457'];
+  let hash = 0;
+  for (let i = 0; i < name.length; i++) hash = name.charCodeAt(i) + ((hash << 5) - hash);
+  return colors[Math.abs(hash) % colors.length];
 };
 
 const AppLayout: React.FC = () => {
@@ -55,6 +80,9 @@ const AppLayout: React.FC = () => {
   const [pendingTaskCount, setPendingTaskCount] = useState(0);
   const [notifications, setNotifications] = useState<InAppNotification[]>([]);
   const [notifLoading, setNotifLoading] = useState(false);
+  const [profileModalOpen, setProfileModalOpen] = useState(false);
+  const [profileData, setProfileData] = useState<UserWithRoles | null>(null);
+  const [profileLoading, setProfileLoading] = useState(false);
   const navigate = useNavigate();
   const location = useLocation();
   const { user, logout } = useAuth();
@@ -213,15 +241,32 @@ const AppLayout: React.FC = () => {
     return keys;
   };
 
+  const handleOpenProfile = async () => {
+    setProfileModalOpen(true);
+    setProfileLoading(true);
+    try {
+      const response = await usersApi.getMyProfile();
+      setProfileData(response.data);
+    } catch {
+      message.error('Failed to load profile');
+      setProfileModalOpen(false);
+    } finally {
+      setProfileLoading(false);
+    }
+  };
+
   const handleMenuClick = ({ key }: { key: string }) => {
     if (key === 'logout') {
       logout();
       navigate('/login', { replace: true });
     } else if (key === 'profile') {
-      // Profile page not yet implemented
-    } else if (key === 'settings') {
-      // Settings page not yet implemented
+      handleOpenProfile();
     }
+  };
+
+  const formatProfileDate = (dateStr: string | null): string => {
+    if (!dateStr) return 'Never';
+    return new Date(dateStr).toLocaleString();
   };
 
   const userMenu = {
@@ -252,8 +297,7 @@ const AppLayout: React.FC = () => {
         disabled: true,
       },
       { type: 'divider' as const },
-      { key: 'profile', icon: <UserOutlined />, label: 'Profile' },
-      { key: 'settings', icon: <SettingOutlined />, label: 'Settings' },
+      { key: 'profile', icon: <UserOutlined />, label: 'My Profile' },
       { type: 'divider' as const },
       { key: 'logout', icon: <LogoutOutlined />, label: 'Sign Out', danger: true },
     ],
@@ -407,6 +451,86 @@ const AppLayout: React.FC = () => {
           />
         )}
       </Drawer>
+
+      {/* Read-only profile modal */}
+      <Modal
+        title={null}
+        open={profileModalOpen}
+        onCancel={() => {
+          setProfileModalOpen(false);
+          setProfileData(null);
+        }}
+        footer={null}
+        width={580}
+        loading={profileLoading}
+        styles={{ body: { paddingTop: 8 } }}
+      >
+        {profileData && (
+          <div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginBottom: 20 }}>
+              <Avatar
+                size={56}
+                style={{ backgroundColor: getAvatarColor(profileData.display_name), flexShrink: 0 }}
+              >
+                {getInitials(profileData.display_name)}
+              </Avatar>
+              <div style={{ flex: 1 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <Typography.Title level={4} style={{ margin: 0 }}>
+                    {profileData.display_name}
+                  </Typography.Title>
+                  <Tag color={profileData.is_active ? 'success' : 'default'}>
+                    {profileData.is_active ? 'Active' : 'Inactive'}
+                  </Tag>
+                </div>
+                <Space size={16} style={{ marginTop: 4, color: '#6B7280' }}>
+                  <span><MailOutlined style={{ marginRight: 4 }} />{profileData.email}</span>
+                </Space>
+              </div>
+            </div>
+
+            <Descriptions column={2} size="small" bordered style={{ marginBottom: 20 }}>
+              <Descriptions.Item label={<><TeamOutlined style={{ marginRight: 4 }} />Department</>}>
+                {profileData.department || <Typography.Text type="secondary">Not set</Typography.Text>}
+              </Descriptions.Item>
+              <Descriptions.Item label="Job Title">
+                {profileData.job_title || <Typography.Text type="secondary">Not set</Typography.Text>}
+              </Descriptions.Item>
+              <Descriptions.Item label={<><ClockCircleOutlined style={{ marginRight: 4 }} />Last Login</>}>
+                {formatProfileDate(profileData.last_login_at)}
+              </Descriptions.Item>
+              <Descriptions.Item label="Member Since">
+                {new Date(profileData.created_at).toLocaleDateString()}
+              </Descriptions.Item>
+            </Descriptions>
+
+            <Divider orientation="left" orientationMargin={0} style={{ marginBottom: 12, marginTop: 0 }}>
+              Roles
+            </Divider>
+            <div>
+              {profileData.roles.length === 0 ? (
+                <Typography.Text type="secondary">No roles assigned</Typography.Text>
+              ) : (
+                <Space wrap size={[6, 6]}>
+                  {profileData.roles.map((role) => (
+                    <Tag
+                      key={role.role_id}
+                      color={roleColors[role.role_code] || '#1B3A5C'}
+                      style={{ padding: '2px 8px' }}
+                    >
+                      {role.role_name}
+                    </Tag>
+                  ))}
+                </Space>
+              )}
+            </div>
+
+            <div style={{ marginTop: 20, padding: '12px 16px', background: '#F9FAFB', borderRadius: 6, fontSize: 13, color: '#6B7280' }}>
+              To update your profile or roles, please contact your administrator.
+            </div>
+          </div>
+        )}
+      </Modal>
     </Layout>
   );
 };

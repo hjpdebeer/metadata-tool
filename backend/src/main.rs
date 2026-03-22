@@ -28,6 +28,7 @@ use metadata_tool::db::{self, AppState};
         api::auth::login,
         api::auth::callback,
         api::auth::me,
+        api::auth::me_profile,
         api::bulk_upload::download_template,
         api::bulk_upload::bulk_upload,
         api::glossary::list_terms,
@@ -143,6 +144,7 @@ use metadata_tool::db::{self, AppState};
         api::users::update_user,
         api::users::assign_role,
         api::users::remove_role,
+        api::users::confirm_roles,
         api::users::list_roles,
         api::users::lookup_users,
         // Notifications
@@ -364,6 +366,7 @@ async fn main() -> anyhow::Result<()> {
     let protected_routes = Router::new()
         // Auth
         .route("/api/v1/auth/me", get(api::auth::me))
+        .route("/api/v1/auth/me/profile", get(api::auth::me_profile))
         // Business Glossary — bulk upload routes BEFORE {term_id} to avoid path conflicts
         .route("/api/v1/glossary/terms/bulk-upload/template", get(api::bulk_upload::download_template))
         .route("/api/v1/glossary/terms/bulk-upload",
@@ -486,6 +489,7 @@ async fn main() -> anyhow::Result<()> {
         .route("/api/v1/users/{user_id}", get(api::users::get_user).put(api::users::update_user))
         .route("/api/v1/users/{user_id}/roles", post(api::users::assign_role))
         .route("/api/v1/users/{user_id}/roles/{role_id}", delete(api::users::remove_role))
+        .route("/api/v1/users/{user_id}/confirm-roles", post(api::users::confirm_roles))
         .route("/api/v1/roles", get(api::users::list_roles))
         // Notifications
         .route("/api/v1/notifications", get(api::notifications::list_notifications))

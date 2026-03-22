@@ -35,7 +35,7 @@ const TEMPLATE_HEADERS: &[&str] = &[
     "Element Name",        // A  (0)
     "Description",         // B  (1)
     "Data Type",           // C  (2)
-    "Max Length",           // D  (3)
+    "Max Length",          // D  (3)
     "Precision",           // E  (4)
     "Scale",               // F  (5)
     "Business Definition", // G  (6)
@@ -359,10 +359,10 @@ async fn generate_template(pool: &PgPool) -> AppResult<Vec<u8>> {
                 .map_err(xlsx_err)?;
             de_sheet.set_column_width(col, 22).map_err(xlsx_err)?;
         }
-        de_sheet.set_column_width(0, 30).map_err(xlsx_err)?;  // Element Name
-        de_sheet.set_column_width(1, 50).map_err(xlsx_err)?;  // Description
-        de_sheet.set_column_width(6, 40).map_err(xlsx_err)?;  // Business Definition
-        de_sheet.set_column_width(7, 40).map_err(xlsx_err)?;  // Business Rules
+        de_sheet.set_column_width(0, 30).map_err(xlsx_err)?; // Element Name
+        de_sheet.set_column_width(1, 50).map_err(xlsx_err)?; // Description
+        de_sheet.set_column_width(6, 40).map_err(xlsx_err)?; // Business Definition
+        de_sheet.set_column_width(7, 40).map_err(xlsx_err)?; // Business Rules
         de_sheet.set_column_width(13, 30).map_err(xlsx_err)?; // Glossary Term
 
         // Apply data validations from lookup lists
@@ -677,24 +677,24 @@ async fn process_de_row(
     let mut row_errors: Vec<BulkUploadError> = Vec::new();
 
     // --- Extract and trim values (new column order, no Element Code) ---
-    let element_name = cols[0].trim().to_string();          // A (0)
-    let description = cols[1].trim().to_string();            // B (1)
-    let data_type_str = cols[2].trim().to_string();          // C (2)
-    let max_length_str = cols[3].trim().to_string();         // D (3)
-    let precision_str = cols[4].trim().to_string();           // E (4)
-    let scale_str = cols[5].trim().to_string();               // F (5)
-    let business_definition = non_empty(&cols[6]);           // G (6)
-    let business_rules = non_empty(&cols[7]);                // H (7)
-    let format_pattern = non_empty(&cols[8]);                // I (8)
-    let is_nullable_str = cols[9].trim().to_string();        // J (9)
-    let is_pii_str = non_empty(&cols[10]);                   // K (10)
-    let domain_val = cols[11].trim().to_string();             // L (11)
-    let classification_val = cols[12].trim().to_string();     // M (12)
-    let glossary_term_val = cols[13].trim().to_string();      // N (13)
-    let owner_email = cols[14].trim().to_string();            // O (14)
-    let steward_email = cols[15].trim().to_string();          // P (15)
-    let approver_email = cols[16].trim().to_string();         // Q (16)
-    let org_unit_val = cols[17].trim().to_string();           // R (17)
+    let element_name = cols[0].trim().to_string(); // A (0)
+    let description = cols[1].trim().to_string(); // B (1)
+    let data_type_str = cols[2].trim().to_string(); // C (2)
+    let max_length_str = cols[3].trim().to_string(); // D (3)
+    let precision_str = cols[4].trim().to_string(); // E (4)
+    let scale_str = cols[5].trim().to_string(); // F (5)
+    let business_definition = non_empty(&cols[6]); // G (6)
+    let business_rules = non_empty(&cols[7]); // H (7)
+    let format_pattern = non_empty(&cols[8]); // I (8)
+    let is_nullable_str = cols[9].trim().to_string(); // J (9)
+    let is_pii_str = non_empty(&cols[10]); // K (10)
+    let domain_val = cols[11].trim().to_string(); // L (11)
+    let classification_val = cols[12].trim().to_string(); // M (12)
+    let glossary_term_val = cols[13].trim().to_string(); // N (13)
+    let owner_email = cols[14].trim().to_string(); // O (14)
+    let steward_email = cols[15].trim().to_string(); // P (15)
+    let approver_email = cols[16].trim().to_string(); // Q (16)
+    let org_unit_val = cols[17].trim().to_string(); // R (17)
 
     // --- Mandatory field validation ---
     if element_name.is_empty() {

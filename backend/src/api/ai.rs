@@ -1151,7 +1151,10 @@ pub async fn suggest_quality_rules(
     let element_name = &row.element_name;
     let data_type = row.data_type.as_deref().unwrap_or("unknown");
     let description = &row.description;
-    let business_definition = row.business_definition.as_deref().unwrap_or("not specified");
+    let business_definition = row
+        .business_definition
+        .as_deref()
+        .unwrap_or("not specified");
 
     // Sanitize inputs for prompt injection safety (SEC-013)
     let safe_name = crate::ai::sanitize_for_prompt(element_name);
@@ -1297,18 +1300,43 @@ fn parse_rule_suggestions(text: &str) -> Result<Vec<AiRuleSuggestion>, AppError>
                 dimension: obj.get("dimension")?.as_str()?.to_string(),
                 rule_name: obj.get("rule_name")?.as_str()?.to_string(),
                 description: obj.get("description")?.as_str()?.to_string(),
-                comparison_type: obj.get("comparison_type").and_then(|v| {
-                    if v.is_null() { None } else { Some(v.as_str().unwrap_or("").to_string()) }
-                }).filter(|s| !s.is_empty()),
+                comparison_type: obj
+                    .get("comparison_type")
+                    .and_then(|v| {
+                        if v.is_null() {
+                            None
+                        } else {
+                            Some(v.as_str().unwrap_or("").to_string())
+                        }
+                    })
+                    .filter(|s| !s.is_empty()),
                 comparison_value: obj.get("comparison_value").and_then(|v| {
-                    if v.is_null() { None }
-                    else if v.is_string() { Some(v.as_str().unwrap().to_string()) }
-                    else { Some(v.to_string()) } // handles numbers, booleans
+                    if v.is_null() {
+                        None
+                    } else if v.is_string() {
+                        Some(v.as_str().unwrap().to_string())
+                    } else {
+                        Some(v.to_string())
+                    } // handles numbers, booleans
                 }),
-                threshold_percentage: obj.get("threshold_percentage").and_then(|v| v.as_f64()).unwrap_or(100.0),
-                severity: obj.get("severity").and_then(|v| v.as_str()).unwrap_or("MEDIUM").to_string(),
-                rationale: obj.get("rationale").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-                confidence: obj.get("confidence").and_then(|v| v.as_f64()).unwrap_or(0.5),
+                threshold_percentage: obj
+                    .get("threshold_percentage")
+                    .and_then(|v| v.as_f64())
+                    .unwrap_or(100.0),
+                severity: obj
+                    .get("severity")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("MEDIUM")
+                    .to_string(),
+                rationale: obj
+                    .get("rationale")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string(),
+                confidence: obj
+                    .get("confidence")
+                    .and_then(|v| v.as_f64())
+                    .unwrap_or(0.5),
             })
         })
         .collect();

@@ -3,6 +3,12 @@ import api from './api';
 
 // --- Types ---
 
+export interface RoleSummary {
+  role_id: string;
+  role_code: string;
+  role_name: string;
+}
+
 export interface UserListItem {
   user_id: string;
   username: string;
@@ -13,6 +19,8 @@ export interface UserListItem {
   is_active: boolean;
   last_login_at: string | null;
   created_at: string;
+  is_sso_user: boolean;
+  roles: RoleSummary[];
 }
 
 export interface User {
@@ -40,6 +48,7 @@ export interface Role {
 }
 
 export interface UserWithRoles extends User {
+  roles_reviewed: boolean;
   roles: Role[];
 }
 
@@ -54,6 +63,7 @@ export interface ListUsersParams {
   query?: string;
   role_code?: string;
   is_active?: boolean;
+  needs_role_assignment?: boolean;
   page?: number;
   page_size?: number;
 }
@@ -72,6 +82,11 @@ export interface AssignRoleRequest {
 // --- API functions ---
 
 export const usersApi = {
+  /** Fetch the current user's full profile (no admin required). */
+  getMyProfile(): Promise<AxiosResponse<UserWithRoles>> {
+    return api.get('/auth/me/profile');
+  },
+
   listUsers(params?: ListUsersParams): Promise<AxiosResponse<PaginatedUsers>> {
     return api.get('/users', { params });
   },
@@ -95,6 +110,10 @@ export const usersApi = {
 
   removeRole(userId: string, roleId: string): Promise<AxiosResponse<void>> {
     return api.delete(`/users/${userId}/roles/${roleId}`);
+  },
+
+  confirmRoles(userId: string): Promise<AxiosResponse<void>> {
+    return api.post(`/users/${userId}/confirm-roles`);
   },
 
   listRoles(): Promise<AxiosResponse<Role[]>> {

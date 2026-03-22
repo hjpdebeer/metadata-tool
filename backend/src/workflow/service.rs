@@ -952,7 +952,6 @@ async fn update_entity_status(
                 .execute(pool)
                 .await?;
             }
-
         }
         "applications" => {
             if state_code == super::STATE_ACCEPTED {

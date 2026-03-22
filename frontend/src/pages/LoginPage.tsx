@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Card, Form, Input, Button, Typography, Alert, Space } from 'antd';
-import { DatabaseOutlined, LockOutlined, MailOutlined } from '@ant-design/icons';
+import { Card, Form, Input, Button, Typography, Alert, Space, Divider } from 'antd';
+import { DatabaseOutlined, LockOutlined, MailOutlined, WindowsOutlined } from '@ant-design/icons';
 import { useAuth } from '../hooks/useAuth';
 
 const { Title, Text } = Typography;
@@ -28,6 +28,11 @@ const LoginPage: React.FC = () => {
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleSsoLogin = () => {
+    // Full page redirect to backend SSO endpoint (not an AJAX call)
+    window.location.href = '/api/v1/auth/login';
   };
 
   return (
@@ -70,6 +75,26 @@ const LoginPage: React.FC = () => {
             style={{ marginBottom: 20 }}
           />
         )}
+
+        <Button
+          block
+          size="large"
+          icon={<WindowsOutlined />}
+          onClick={handleSsoLogin}
+          style={{
+            height: 44,
+            background: '#2F2F2F',
+            color: '#FFFFFF',
+            border: 'none',
+            fontWeight: 500,
+          }}
+        >
+          Sign in with Microsoft
+        </Button>
+
+        <Divider plain style={{ margin: '20px 0' }}>
+          <Text type="secondary" style={{ fontSize: 12 }}>or sign in with email</Text>
+        </Divider>
 
         <Form
           name="login"
@@ -115,7 +140,7 @@ const LoginPage: React.FC = () => {
             type="secondary"
             style={{ display: 'block', textAlign: 'center', fontSize: 12, marginTop: 12 }}
           >
-            Development mode — pre-filled credentials for convenience
+            Development mode — email login available for convenience
           </Text>
         )}
       </Card>

@@ -29,6 +29,7 @@ import LineageGraphList from './pages/LineageGraphList';
 import LineageGraphCreate from './pages/LineageGraphCreate';
 import LineageGraphView from './pages/LineageGraphView';
 import LoginPage from './pages/LoginPage';
+import SsoCallback from './pages/SsoCallback';
 import AdminPanel from './pages/AdminPanel';
 
 const RequireAdmin: React.FC<{ children: React.ReactNode }> = ({ children }) => {
@@ -104,6 +105,7 @@ const App: React.FC = () => {
                 </PublicRoute>
               }
             />
+            <Route path="/auth/callback" element={<SsoCallback />} />
             <Route
               path="/"
               element={

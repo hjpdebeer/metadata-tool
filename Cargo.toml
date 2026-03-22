@@ -58,12 +58,19 @@ rust_xlsxwriter = "0.79"
 # Encryption
 aes-gcm = "0.10"
 
+# PKCE / hashing / encoding
+sha2 = "0.10"
+base64 = "0.22"
+
 # Multipart file upload
 axum_typed_multipart = "0.14"
 tempfile = "3"
 
 # Random number generation (API key generation)
 rand = "0.9"
+
+# URL encoding
+urlencoding = "2"
 
 # Testing
 axum-test = "16"

@@ -43,12 +43,15 @@ pub async fn list_users(
     State(state): State<AppState>,
     Extension(claims): Extension<Claims>,
     Query(params): Query<SearchUsersParams>,
-) -> AppResult<Json<PaginatedResponse<UserListItem>>> {
+) -> AppResult<Json<PaginatedResponse<UserListItemWithRoles>>> {
     require_admin(&claims)?;
 
     let page = params.page.unwrap_or(1).max(1);
     let page_size = params.page_size.unwrap_or(20).clamp(1, 100);
     let offset = (page - 1) * page_size;
+
+    // Filter for "needs_role_assignment" — users whose roles have not been reviewed by an admin
+    let needs_role = params.needs_role_assignment.unwrap_or(false);
 
     let total_count = sqlx::query_scalar::<_, i64>(
         r#"
@@ -60,11 +63,13 @@ pub async fn list_users(
                OR u.email ILIKE '%' || $1 || '%')
           AND ($2::TEXT IS NULL OR r.role_code = $2)
           AND ($3::BOOLEAN IS NULL OR u.is_active = $3)
+          AND (NOT $4::BOOLEAN OR u.roles_reviewed = FALSE)
         "#,
     )
     .bind(params.query.as_deref())
     .bind(params.role_code.as_deref())
     .bind(params.is_active)
+    .bind(needs_role)
     .fetch_one(&state.pool)
     .await?;
 
@@ -73,7 +78,8 @@ pub async fn list_users(
         SELECT DISTINCT
             u.user_id, u.username, u.email, u.display_name,
             u.department, u.job_title, u.is_active,
-            u.last_login_at, u.created_at
+            u.last_login_at, u.created_at,
+            (u.entra_object_id IS NOT NULL) AS is_sso_user
         FROM users u
         LEFT JOIN user_roles ur ON ur.user_id = u.user_id
         LEFT JOIN roles r ON r.role_id = ur.role_id
@@ -81,6 +87,7 @@ pub async fn list_users(
                OR u.email ILIKE '%' || $1 || '%')
           AND ($2::TEXT IS NULL OR r.role_code = $2)
           AND ($3::BOOLEAN IS NULL OR u.is_active = $3)
+          AND (NOT $6::BOOLEAN OR u.roles_reviewed = FALSE)
         ORDER BY u.display_name ASC
         LIMIT $4
         OFFSET $5
@@ -91,11 +98,63 @@ pub async fn list_users(
     .bind(params.is_active)
     .bind(page_size)
     .bind(offset)
+    .bind(needs_role)
     .fetch_all(&state.pool)
     .await?;
 
+    // Batch-fetch roles for all users on this page
+    let user_ids: Vec<Uuid> = items.iter().map(|u| u.user_id).collect();
+    let role_rows = if user_ids.is_empty() {
+        vec![]
+    } else {
+        sqlx::query_as::<_, UserRoleRow>(
+            r#"
+            SELECT ur.user_id, r.role_id, r.role_code, r.role_name
+            FROM user_roles ur
+            JOIN roles r ON r.role_id = ur.role_id
+            WHERE ur.user_id = ANY($1)
+            ORDER BY r.role_name ASC
+            "#,
+        )
+        .bind(&user_ids)
+        .fetch_all(&state.pool)
+        .await?
+    };
+
+    // Group roles by user_id
+    let mut roles_map: std::collections::HashMap<Uuid, Vec<RoleSummary>> =
+        std::collections::HashMap::new();
+    for row in role_rows {
+        roles_map.entry(row.user_id).or_default().push(RoleSummary {
+            role_id: row.role_id,
+            role_code: row.role_code,
+            role_name: row.role_name,
+        });
+    }
+
+    // Combine into enriched list items
+    let enriched: Vec<UserListItemWithRoles> = items
+        .into_iter()
+        .map(|u| {
+            let roles = roles_map.remove(&u.user_id).unwrap_or_default();
+            UserListItemWithRoles {
+                user_id: u.user_id,
+                username: u.username,
+                email: u.email,
+                display_name: u.display_name,
+                department: u.department,
+                job_title: u.job_title,
+                is_active: u.is_active,
+                last_login_at: u.last_login_at,
+                created_at: u.created_at,
+                is_sso_user: u.is_sso_user,
+                roles,
+            }
+        })
+        .collect();
+
     Ok(Json(PaginatedResponse {
-        data: items,
+        data: enriched,
         total_count,
         page,
         page_size,
@@ -129,7 +188,7 @@ pub async fn get_user(
     let user = sqlx::query_as::<_, User>(
         r#"
         SELECT user_id, username, email, display_name, first_name, last_name,
-               department, job_title, entra_object_id, is_active,
+               department, job_title, entra_object_id, is_active, roles_reviewed,
                last_login_at, created_at, updated_at
         FROM users
         WHERE user_id = $1
@@ -192,7 +251,7 @@ pub async fn update_user(
             updated_at   = CURRENT_TIMESTAMP
         WHERE user_id = $5
         RETURNING user_id, username, email, display_name, first_name, last_name,
-                  department, job_title, entra_object_id, is_active,
+                  department, job_title, entra_object_id, is_active, roles_reviewed,
                   last_login_at, created_at, updated_at
         "#,
     )
@@ -275,9 +334,16 @@ pub async fn assign_role(
         ));
     }
 
-    sqlx::query("INSERT INTO user_roles (user_id, role_id) VALUES ($1, $2)")
+    sqlx::query("INSERT INTO user_roles (user_id, role_id, granted_by) VALUES ($1, $2, $3)")
         .bind(user_id)
         .bind(body.role_id)
+        .bind(claims.sub)
+        .execute(&state.pool)
+        .await?;
+
+    // Mark roles as reviewed by admin
+    sqlx::query("UPDATE users SET roles_reviewed = TRUE, updated_at = CURRENT_TIMESTAMP WHERE user_id = $1")
+        .bind(user_id)
         .execute(&state.pool)
         .await?;
 
@@ -322,7 +388,53 @@ pub async fn remove_role(
         return Err(AppError::NotFound("user-role assignment not found".into()));
     }
 
+    // Mark roles as reviewed by admin
+    sqlx::query("UPDATE users SET roles_reviewed = TRUE, updated_at = CURRENT_TIMESTAMP WHERE user_id = $1")
+        .bind(user_id)
+        .execute(&state.pool)
+        .await?;
+
     Ok(StatusCode::NO_CONTENT)
+}
+
+// ---------------------------------------------------------------------------
+// confirm_roles — POST /api/v1/users/{user_id}/confirm-roles
+// ---------------------------------------------------------------------------
+
+/// Confirm that a user's current roles have been reviewed by an admin.
+/// Use this when the default role is correct and no changes are needed.
+/// Requires ADMIN role.
+#[utoipa::path(
+    post,
+    path = "/api/v1/users/{user_id}/confirm-roles",
+    params(("user_id" = Uuid, Path, description = "User ID")),
+    responses(
+        (status = 200, description = "Roles confirmed"),
+        (status = 404, description = "User not found")
+    ),
+    security(("bearer_auth" = [])),
+    tag = "users"
+)]
+pub async fn confirm_roles(
+    State(state): State<AppState>,
+    Extension(claims): Extension<Claims>,
+    Path(user_id): Path<Uuid>,
+) -> AppResult<StatusCode> {
+    require_admin(&claims)?;
+
+    let rows_affected = sqlx::query(
+        "UPDATE users SET roles_reviewed = TRUE, updated_at = CURRENT_TIMESTAMP WHERE user_id = $1",
+    )
+    .bind(user_id)
+    .execute(&state.pool)
+    .await?
+    .rows_affected();
+
+    if rows_affected == 0 {
+        return Err(AppError::NotFound(format!("user not found: {user_id}")));
+    }
+
+    Ok(StatusCode::OK)
 }
 
 // ---------------------------------------------------------------------------
@@ -375,7 +487,8 @@ pub async fn lookup_users(State(state): State<AppState>) -> AppResult<Json<Vec<U
         r#"
         SELECT user_id, username, email, display_name,
                department, job_title, is_active,
-               last_login_at, created_at
+               last_login_at, created_at,
+               (entra_object_id IS NOT NULL) AS is_sso_user
         FROM users
         WHERE is_active = TRUE AND deleted_at IS NULL
         ORDER BY display_name ASC

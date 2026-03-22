@@ -22,7 +22,6 @@ import {
 import {
   ArrowLeftOutlined,
   EditOutlined,
-  ExperimentOutlined,
   LinkOutlined,
 } from '@ant-design/icons';
 import { dataQualityApi } from '../services/dataQualityApi';
@@ -89,7 +88,7 @@ const QualityRuleDetail: React.FC = () => {
     if (rule?.element_id) {
       import('../services/dataDictionaryApi').then(({ dataDictionaryApi }) => {
         dataDictionaryApi.getElement(rule.element_id!).then((res) => {
-          const sc = (res.data as Record<string, unknown>).status_code as string || null;
+          const sc = (res.data as unknown as Record<string, unknown>).status_code as string || null;
           setElementStatus(sc);
         }).catch(() => {});
       });

@@ -13,6 +13,7 @@ interface AuthContextType {
   isAuthenticated: boolean;
   isLoading: boolean;
   login: (email: string, password: string) => Promise<void>;
+  loginWithToken: (token: string) => Promise<void>;
   logout: () => void;
 }
 
@@ -37,6 +38,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setUser(meResponse.data);
   }, []);
 
+  const loginWithToken = useCallback(async (token: string) => {
+    localStorage.setItem('auth_token', token);
+
+    // Fetch user info to validate the token and populate user state
+    const meResponse = await api.get('/auth/me');
+    setUser(meResponse.data);
+  }, []);
+
   useEffect(() => {
     const token = localStorage.getItem('auth_token');
     if (token) {
@@ -53,7 +62,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }, []);
 
   return (
-    <AuthContext.Provider value={{ user, isAuthenticated: !!user, isLoading, login, logout }}>
+    <AuthContext.Provider value={{ user, isAuthenticated: !!user, isLoading, login, loginWithToken, logout }}>
       {children}
     </AuthContext.Provider>
   );

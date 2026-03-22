@@ -17,6 +17,7 @@ pub struct User {
     pub job_title: Option<String>,
     pub entra_object_id: Option<String>,
     pub is_active: bool,
+    pub roles_reviewed: bool,
     pub last_login_at: Option<DateTime<Utc>>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
@@ -34,6 +35,7 @@ pub struct UserListItem {
     pub is_active: bool,
     pub last_login_at: Option<DateTime<Utc>>,
     pub created_at: DateTime<Utc>,
+    pub is_sso_user: bool,
 }
 
 /// An RBAC role that can be assigned to users (Principle 10). Maps to the `roles` table.
@@ -61,6 +63,7 @@ pub struct UserWithRoles {
     pub job_title: Option<String>,
     pub entra_object_id: Option<String>,
     pub is_active: bool,
+    pub roles_reviewed: bool,
     pub last_login_at: Option<DateTime<Utc>>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
@@ -82,6 +85,7 @@ impl UserWithRoles {
             job_title: user.job_title,
             entra_object_id: user.entra_object_id,
             is_active: user.is_active,
+            roles_reviewed: user.roles_reviewed,
             last_login_at: user.last_login_at,
             created_at: user.created_at,
             updated_at: user.updated_at,
@@ -118,6 +122,8 @@ pub struct SearchUsersParams {
     pub query: Option<String>,
     pub role_code: Option<String>,
     pub is_active: Option<bool>,
+    /// Filter for users that only have the default DATA_CONSUMER role (new SSO users needing role assignment).
+    pub needs_role_assignment: Option<bool>,
     pub page: Option<i64>,
     pub page_size: Option<i64>,
 }
@@ -128,10 +134,45 @@ pub struct AssignRoleRequest {
     pub role_id: Uuid,
 }
 
+/// A user list item enriched with assigned roles for the admin table view.
+#[derive(Debug, Clone, Serialize, ToSchema)]
+pub struct UserListItemWithRoles {
+    // === User columns ===
+    pub user_id: Uuid,
+    pub username: String,
+    pub email: String,
+    pub display_name: String,
+    pub department: Option<String>,
+    pub job_title: Option<String>,
+    pub is_active: bool,
+    pub last_login_at: Option<DateTime<Utc>>,
+    pub created_at: DateTime<Utc>,
+    pub is_sso_user: bool,
+    // === Junction data ===
+    pub roles: Vec<RoleSummary>,
+}
+
+/// Lightweight role info for list views (avoids full Role struct overhead).
+#[derive(Debug, Clone, Serialize, ToSchema)]
+pub struct RoleSummary {
+    pub role_id: Uuid,
+    pub role_code: String,
+    pub role_name: String,
+}
+
+/// Helper row for batch-fetching user-role mappings.
+#[derive(Debug, Clone, FromRow)]
+pub struct UserRoleRow {
+    pub user_id: Uuid,
+    pub role_id: Uuid,
+    pub role_code: String,
+    pub role_name: String,
+}
+
 /// Concrete paginated type for OpenAPI schema generation.
 #[derive(Debug, Clone, Serialize, ToSchema)]
 pub struct PaginatedUsers {
-    pub data: Vec<UserListItem>,
+    pub data: Vec<UserListItemWithRoles>,
     pub total_count: i64,
     pub page: i64,
     pub page_size: i64,

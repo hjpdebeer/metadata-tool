@@ -1,0 +1,9 @@
+# Terraform state (stored in S3, not locally)
+*.tfstate
+*.tfstate.backup
+.terraform/
+.terraform.lock.hcl
+
+# Sensitive variable files
+*.auto.tfvars
+secrets.tfvars

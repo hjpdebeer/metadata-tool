@@ -585,6 +585,21 @@ async fn main() -> anyhow::Result<()> {
         app.merge(swagger_router)
     };
 
+    // Serve frontend static files as fallback for non-API routes (SPA support)
+    let frontend_dir = std::path::PathBuf::from(
+        std::env::var("FRONTEND_DIR").unwrap_or_else(|_| "./frontend/dist".into()),
+    );
+    let app = if frontend_dir.exists() {
+        tracing::info!("Serving frontend from {}", frontend_dir.display());
+        // Serve static files, falling back to index.html for SPA client-side routing
+        let serve_dir = tower_http::services::ServeDir::new(&frontend_dir)
+            .not_found_service(tower_http::services::ServeFile::new(frontend_dir.join("index.html")));
+        app.fallback_service(serve_dir)
+    } else {
+        tracing::info!("No frontend directory found at {}, API-only mode", frontend_dir.display());
+        app
+    };
+
     let app = app
         .layer(axum::middleware::from_fn(security_headers))
         .layer(TraceLayer::new_for_http())

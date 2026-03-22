@@ -248,12 +248,14 @@ pub async fn dev_login(
     }
 
     // SEC-021: Block dev-login when Entra SSO is properly configured
-    // Check that tenant ID is not empty, not the placeholder, and looks like a UUID
+    // Exception: the bootstrap admin account (@metadata-tool.app) is always allowed
     let entra_configured = !state.config.entra.tenant_id.is_empty()
         && state.config.entra.tenant_id != "your-tenant-id"
         && uuid::Uuid::parse_str(&state.config.entra.tenant_id).is_ok();
 
-    if entra_configured {
+    let is_bootstrap_admin = body.email.ends_with("@metadata-tool.app");
+
+    if entra_configured && !is_bootstrap_admin {
         return Err(AppError::Forbidden(
             "dev login disabled — Entra SSO is configured".into(),
         ));
@@ -548,16 +550,36 @@ pub async fn callback(
             .await
             .map_err(|e| AppError::Internal(e.into()))?;
 
-            // Assign default role: DATA_CONSUMER
+            // Check if any ADMIN user exists — if not, first SSO user becomes admin
+            let admin_exists = sqlx::query_scalar::<_, bool>(
+                r#"
+                SELECT EXISTS(
+                    SELECT 1 FROM user_roles ur
+                    JOIN roles r ON r.role_id = ur.role_id
+                    WHERE r.role_code = 'ADMIN'
+                )
+                "#,
+            )
+            .fetch_one(&state.pool)
+            .await
+            .unwrap_or(false);
+
+            let default_role = if admin_exists { "DATA_CONSUMER" } else { "ADMIN" };
+
+            if !admin_exists {
+                tracing::info!(email = %email, "no admin user exists — granting ADMIN role to first SSO user");
+            }
+
             sqlx::query(
                 r#"
                 INSERT INTO user_roles (user_id, role_id, granted_by, effective_from)
                 SELECT $1, role_id, $1, NOW()
                 FROM roles
-                WHERE role_code = 'DATA_CONSUMER'
+                WHERE role_code = $2
                 "#,
             )
             .bind(new_user_id)
+            .bind(default_role)
             .execute(&state.pool)
             .await
             .map_err(|e| AppError::Internal(e.into()))?;
@@ -566,7 +588,7 @@ pub async fn callback(
                 new_user_id,
                 email.clone(),
                 display_name.clone(),
-                vec!["DATA_CONSUMER".to_string()],
+                vec![default_role.to_string()],
             )
         }
     };

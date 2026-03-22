@@ -115,10 +115,8 @@ const AppLayout: React.FC = () => {
         },
       ],
     },
-    { key: '/data-quality', icon: <SafetyCertificateOutlined />, label: 'Data Quality Dashboard' },
-    { key: '/lineage', icon: <ApartmentOutlined />, label: 'Data Lineage' },
+    // Data Quality Dashboard, Data Lineage, and Business Processes hidden for demo — code retained
     { key: '/applications', icon: <AppstoreOutlined />, label: 'Applications' },
-    { key: '/processes', icon: <PartitionOutlined />, label: 'Business Processes' },
     { key: '/workflow', icon: <CheckSquareOutlined />, label: <span>My Tasks{pendingTaskCount > 0 && <Badge count={pendingTaskCount} size="small" offset={[6, -2]} />}</span> },
     ...(isAdmin
       ? [{ key: '/admin', icon: <SettingOutlined />, label: 'Admin Panel' }]
@@ -329,7 +327,10 @@ const AppLayout: React.FC = () => {
             justifyContent: collapsed ? 'center' : 'flex-start',
             padding: collapsed ? '0' : '0 20px',
             borderBottom: '1px solid #E5E7EB',
+            cursor: 'pointer',
           }}
+          onClick={() => navigate('/')}
+          role="button"
         >
           <DatabaseOutlined style={{ fontSize: 24, color: '#1B3A5C' }} />
           {!collapsed && (

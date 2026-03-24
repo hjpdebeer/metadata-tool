@@ -88,12 +88,12 @@ describe('dataQualityApi', () => {
     expect(api.delete).toHaveBeenCalledWith('/data-quality/rules/rule-123');
   });
 
-  it('getAssessments calls GET /data-quality/rules/{id}/assessments', async () => {
+  it('getAssessments calls GET /data-quality/assessments/{ruleId}', async () => {
     (api.get as ReturnType<typeof vi.fn>).mockResolvedValue({ data: [] });
 
     await dataQualityApi.getAssessments('rule-123');
 
-    expect(api.get).toHaveBeenCalledWith('/data-quality/rules/rule-123/assessments');
+    expect(api.get).toHaveBeenCalledWith('/data-quality/assessments/rule-123');
   });
 
   it('createAssessment calls POST /data-quality/assessments', async () => {

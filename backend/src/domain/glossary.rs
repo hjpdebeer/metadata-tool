@@ -437,6 +437,10 @@ pub struct CreateGlossaryTermRequest {
     pub definition: String,
     pub domain_id: Option<Uuid>,
     pub category_id: Option<Uuid>,
+    pub owner_user_id: Option<Uuid>,
+    pub steward_user_id: Option<Uuid>,
+    pub domain_owner_user_id: Option<Uuid>,
+    pub approver_user_id: Option<Uuid>,
 }
 
 /// Update request — all fields optional for edit form

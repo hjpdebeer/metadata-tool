@@ -404,6 +404,10 @@ pub struct CreateApplicationRequest {
     pub external_reference_id: Option<String>,
     pub license_type: Option<String>,
     pub lifecycle_stage_id: Option<Uuid>,
+    pub business_owner_id: Option<Uuid>,
+    pub technical_owner_id: Option<Uuid>,
+    pub steward_user_id: Option<Uuid>,
+    pub approver_user_id: Option<Uuid>,
 }
 
 /// Request body for partially updating an application. All fields are optional.

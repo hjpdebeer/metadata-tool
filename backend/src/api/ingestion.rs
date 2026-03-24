@@ -1621,7 +1621,7 @@ pub async fn ingest_scores(
                 match sqlx::query_as::<_, ResolvedRule>(
                     r#"
                     SELECT rule_id, element_id, dimension_id,
-                           threshold_percentage::FLOAT8 AS threshold_percentage
+                           threshold_percentage
                     FROM quality_rules
                     WHERE rule_code = $1 AND deleted_at IS NULL AND is_current_version = TRUE
                     "#,

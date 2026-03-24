@@ -199,7 +199,6 @@ const QualityRuleForm: React.FC = () => {
       } else {
         const cleanData: CreateQualityRuleRequest = {
           rule_name: values.rule_name as string,
-          rule_code: values.rule_code as string,
           description: values.description as string,
           dimension_id: values.dimension_id as string,
           rule_type_id: values.rule_type_id as string,
@@ -211,6 +210,9 @@ const QualityRuleForm: React.FC = () => {
           check_frequency: (values.check_frequency as string) || undefined,
           is_active: values.is_active as boolean,
         };
+        if (values.rule_code) {
+          cleanData.rule_code = values.rule_code as string;
+        }
 
         const response = await dataQualityApi.createRule(cleanData);
         message.success('Rule created successfully.');
@@ -314,7 +316,6 @@ const QualityRuleForm: React.FC = () => {
             name="rule_code"
             label="Rule Code"
             rules={[
-              { required: true, message: 'Rule code is required' },
               { max: 256, message: 'Rule code cannot exceed 256 characters' },
               {
                 pattern: /^[a-z][a-z0-9]*(_[a-z0-9]+)*$/,
@@ -323,7 +324,7 @@ const QualityRuleForm: React.FC = () => {
             ]}
             tooltip="Must be snake_case (e.g., completeness_customer_name)"
           >
-            <Input placeholder="e.g., completeness_customer_name" />
+            <Input placeholder="Leave blank for auto-generated code" />
           </Form.Item>
 
           <Form.Item

@@ -294,6 +294,9 @@ pub struct CreateDataElementRequest {
     pub glossary_term_id: Option<Uuid>,
     pub domain_id: Option<Uuid>,
     pub classification_id: Option<Uuid>,
+    pub owner_user_id: Option<Uuid>,
+    pub steward_user_id: Option<Uuid>,
+    pub approver_user_id: Option<Uuid>,
 }
 
 /// Request body for partially updating a data element. All fields are optional.

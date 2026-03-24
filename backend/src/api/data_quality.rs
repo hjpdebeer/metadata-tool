@@ -49,11 +49,11 @@ pub async fn list_dimensions(
         LEFT JOIN (
             SELECT
                 qr.dimension_id,
-                AVG(latest.score_percentage)::FLOAT8  AS avg_score,
+                AVG(latest.score_percentage) AS avg_score,
                 MAX(latest.assessed_at)       AS last_assessed
             FROM quality_rules qr
             JOIN LATERAL (
-                SELECT score_percentage::FLOAT8 AS score_percentage, assessed_at
+                SELECT score_percentage, assessed_at
                 FROM quality_assessments qa
                 WHERE qa.rule_id = qr.rule_id
                   AND qa.status = 'COMPLETED'
@@ -165,7 +165,7 @@ pub async fn list_rules(
             qr.severity,
             qr.is_active,
             uo.display_name               AS owner_name,
-            qr.threshold_percentage::FLOAT8 AS threshold_percentage,
+            qr.threshold_percentage,
             qr.scope,
             qr.check_frequency,
             qr.created_at,
@@ -231,7 +231,7 @@ pub async fn get_rule(
         SELECT
             qr.rule_id, qr.rule_name, qr.rule_code, qr.description,
             qr.dimension_id, qr.rule_type_id, qr.element_id, qr.column_id,
-            qr.rule_definition, qr.threshold_percentage::FLOAT8 AS threshold_percentage, qr.severity,
+            qr.rule_definition, qr.threshold_percentage, qr.severity,
             qr.is_active, qr.scope, qr.check_frequency, qr.owner_user_id, qr.deleted_at,
             qr.created_by, qr.updated_by, qr.created_at, qr.updated_at,
             qd.dimension_name,
@@ -279,10 +279,6 @@ pub async fn create_rule(
     if rule_name.is_empty() {
         return Err(AppError::Validation("rule_name is required".into()));
     }
-    let rule_code = body.rule_code.trim().to_string();
-    if rule_code.is_empty() {
-        return Err(AppError::Validation("rule_code is required".into()));
-    }
     let description = body.description.trim().to_string();
     if description.is_empty() {
         return Err(AppError::Validation("description is required".into()));
@@ -310,7 +306,7 @@ pub async fn create_rule(
         RETURNING
             rule_id, rule_name, rule_code, description,
             dimension_id, rule_type_id, element_id, column_id,
-            rule_definition, threshold_percentage::FLOAT8 AS threshold_percentage, severity,
+            rule_definition, threshold_percentage, severity,
             is_active, scope, check_frequency, owner_user_id, deleted_at,
             created_by, updated_by, created_at, updated_at,
             NULL::VARCHAR AS dimension_name,
@@ -319,7 +315,7 @@ pub async fn create_rule(
         "#,
     )
     .bind(&rule_name)           // $1
-    .bind(&rule_code)           // $2
+    .bind(body.rule_code.as_deref().filter(|s| !s.trim().is_empty())) // $2
     .bind(&description)         // $3
     .bind(body.dimension_id)    // $4
     .bind(body.rule_type_id)    // $5
@@ -410,7 +406,7 @@ pub async fn update_rule(
         RETURNING
             rule_id, rule_name, rule_code, description,
             dimension_id, rule_type_id, element_id, column_id,
-            rule_definition, threshold_percentage::FLOAT8 AS threshold_percentage, severity,
+            rule_definition, threshold_percentage, severity,
             is_active, scope, check_frequency, owner_user_id, deleted_at,
             created_by, updated_by, created_at, updated_at,
             NULL::VARCHAR AS dimension_name,
@@ -481,7 +477,7 @@ pub async fn get_assessments(
         SELECT
             assessment_id, rule_id, assessed_at,
             records_assessed, records_passed, records_failed,
-            score_percentage::FLOAT8 AS score_percentage, status, error_message, details,
+            score_percentage, status, error_message, details,
             executed_by, created_at
         FROM quality_assessments
         WHERE rule_id = $1
@@ -541,7 +537,7 @@ pub async fn create_assessment(
         SELECT
             rule_id, rule_name, rule_code, description,
             dimension_id, rule_type_id, element_id, column_id,
-            rule_definition, threshold_percentage::FLOAT8 AS threshold_percentage, severity,
+            rule_definition, threshold_percentage, severity,
             is_active, scope, check_frequency, owner_user_id, deleted_at,
             created_by, updated_by, created_at, updated_at,
             NULL::VARCHAR AS dimension_name,
@@ -568,7 +564,7 @@ pub async fn create_assessment(
         RETURNING
             assessment_id, rule_id, assessed_at,
             records_assessed, records_passed, records_failed,
-            score_percentage::FLOAT8 AS score_percentage, status, error_message, details,
+            score_percentage, status, error_message, details,
             executed_by, created_at
         "#,
     )
@@ -775,7 +771,7 @@ pub async fn accept_rule_suggestion(
         VALUES ($1, $2, $3, $4, $5, NULL, $6, $7, $8, TRUE, $9, $10, $11, $12, 'RECORD')
         RETURNING rule_id, rule_name, rule_code, description,
             dimension_id, rule_type_id, element_id, column_id,
-            rule_definition, threshold_percentage::FLOAT8 AS threshold_percentage, severity,
+            rule_definition, threshold_percentage, severity,
             is_active, scope, check_frequency, owner_user_id, deleted_at,
             created_by, updated_by, created_at, updated_at,
             NULL::VARCHAR AS dimension_name,
@@ -877,7 +873,7 @@ pub async fn get_recent_assessments(
         r#"
         SELECT qa.assessment_id, qa.rule_id, qr.rule_name,
                qa.assessed_at, qa.records_assessed, qa.records_passed,
-               qa.records_failed, qa.score_percentage::FLOAT8 AS "score_percentage",
+               qa.records_failed, qa.score_percentage,
                qa.status, qa.created_at
         FROM quality_assessments qa
         JOIN quality_rules qr ON qa.rule_id = qr.rule_id

@@ -355,9 +355,10 @@ pub async fn create_element(
             format_pattern, allowed_values, default_value,
             is_nullable, glossary_term_id, domain_id,
             classification_id, status_id, review_frequency_id,
-            version_number, is_current_version, created_by
+            version_number, is_current_version, created_by,
+            owner_user_id, steward_user_id, approver_user_id
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, 1, TRUE, $18)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, 1, TRUE, $18, $19, $20, $21)
         RETURNING {cols}
         "#,
         cols = DATA_ELEMENT_COLUMNS,
@@ -388,6 +389,9 @@ pub async fn create_element(
         .bind(draft_status_id)                     // $16
         .bind(annual_frequency_id)                 // $17
         .bind(claims.sub)                          // $18
+        .bind(body.owner_user_id)                  // $19
+        .bind(body.steward_user_id)                // $20
+        .bind(body.approver_user_id)               // $21
         .fetch_one(&state.pool)
         .await?;
 

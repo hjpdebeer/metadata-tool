@@ -102,7 +102,7 @@ export interface QualityScore {
 
 export interface CreateQualityRuleRequest {
   rule_name: string;
-  rule_code: string;
+  rule_code?: string;
   description: string;
   dimension_id: string;
   rule_type_id: string;
@@ -215,7 +215,7 @@ export const dataQualityApi = {
   },
 
   getAssessments(ruleId: string): Promise<AxiosResponse<QualityAssessment[]>> {
-    return api.get(`/data-quality/rules/${ruleId}/assessments`);
+    return api.get(`/data-quality/assessments/${ruleId}`);
   },
 
   createAssessment(data: CreateAssessmentRequest): Promise<AxiosResponse<QualityAssessment>> {

@@ -82,19 +82,21 @@ impl IntoResponse for AppError {
             // SEC-012: Log full error server-side, return generic message to client
             AppError::Database(e) => {
                 tracing::error!(error = %e, "database error");
-                (
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    "DATABASE_ERROR",
-                    "a database error occurred".to_string(),
-                )
+                let message = if cfg!(debug_assertions) {
+                    format!("database error: {e}")
+                } else {
+                    "a database error occurred".to_string()
+                };
+                (StatusCode::INTERNAL_SERVER_ERROR, "DATABASE_ERROR", message)
             }
             AppError::Internal(e) => {
                 tracing::error!(error = %e, "internal error");
-                (
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    "INTERNAL_ERROR",
-                    "an internal error occurred".to_string(),
-                )
+                let message = if cfg!(debug_assertions) {
+                    format!("internal error: {e}")
+                } else {
+                    "an internal error occurred".to_string()
+                };
+                (StatusCode::INTERNAL_SERVER_ERROR, "INTERNAL_ERROR", message)
             }
         };
 

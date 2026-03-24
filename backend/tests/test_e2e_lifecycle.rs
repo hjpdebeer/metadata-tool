@@ -52,35 +52,15 @@ async fn full_metadata_governance_lifecycle() {
             "definition": "The difference between interest earned on assets and interest paid on liabilities.",
             "domain_id": domain_id,
             "owner_user_id": ctx.admin_id,
-            "steward_user_id": ctx.admin_id
+            "steward_user_id": ctx.admin_id,
+            "domain_owner_user_id": ctx.admin_id,
+            "approver_user_id": ctx.admin_id
         }))
         .await;
     term_resp.assert_status(axum::http::StatusCode::CREATED);
     let term: serde_json::Value = term_resp.json();
     let term_id = term["term_id"].as_str().unwrap().to_string();
     assert_eq!(term["term_name"], "E2E Net Interest Income");
-
-    // 1b2. Set all ownership fields via direct SQL on test pool
-    sqlx::query(
-        "UPDATE glossary_terms SET domain_owner_user_id = $1, approver_user_id = $1, owner_user_id = $1, steward_user_id = $1 WHERE term_id = $2",
-    )
-    .bind(ctx.admin_id)
-    .bind(term_id.parse::<uuid::Uuid>().unwrap())
-    .execute(&ctx.pool)
-    .await
-    .expect("Failed to set ownership fields");
-
-    // Verify the fields were set
-    let check: (Option<uuid::Uuid>,) =
-        sqlx::query_as("SELECT owner_user_id FROM glossary_terms WHERE term_id = $1")
-            .bind(term_id.parse::<uuid::Uuid>().unwrap())
-            .fetch_one(&ctx.pool)
-            .await
-            .unwrap();
-    assert!(
-        check.0.is_some(),
-        "owner_user_id should be set after UPDATE"
-    );
 
     // 1c. Get the workflow instance for this term
     let wf_resp = ctx
@@ -225,14 +205,6 @@ async fn full_metadata_governance_lifecycle() {
     let element_id = element["element_id"].as_str().unwrap().to_string();
     assert_eq!(element["element_name"], "E2E Net Interest Income Amount");
 
-    // 2b. Ensure all ownership fields are set
-    sqlx::query("UPDATE data_elements SET owner_user_id = $1, steward_user_id = $1, approver_user_id = $1 WHERE element_id = $2")
-        .bind(ctx.admin_id)
-        .bind(element_id.parse::<uuid::Uuid>().unwrap())
-        .execute(&ctx.pool)
-        .await
-        .unwrap();
-
     // 2c. Submit and approve element through workflow
     let elem_wf = ctx
         .server
@@ -355,7 +327,6 @@ async fn full_metadata_governance_lifecycle() {
         .add_header(auth_name.clone(), auth_val.clone())
         .json(&json!({
             "rule_name": "E2E NII Not Null Check",
-            "rule_code": "AUTOGEN",
             "description": "Net Interest Income amount must not be null.",
             "dimension_id": completeness_id,
             "rule_type_id": not_null_type_id,
@@ -434,20 +405,17 @@ async fn full_metadata_governance_lifecycle() {
         .add_header(auth_name.clone(), auth_val.clone())
         .json(&json!({
             "application_name": "E2E Core Banking System",
-            "description": "Primary banking platform for interest calculations."
+            "description": "Primary banking platform for interest calculations.",
+            "classification_id": classification_id,
+            "business_owner_id": ctx.admin_id,
+            "technical_owner_id": ctx.admin_id,
+            "steward_user_id": ctx.admin_id,
+            "approver_user_id": ctx.admin_id
         }))
         .await;
     app_resp.assert_status(axum::http::StatusCode::CREATED);
     let application: serde_json::Value = app_resp.json();
     let app_id = application["application_id"].as_str().unwrap().to_string();
-
-    // 4b2. Ensure all ownership fields are set
-    sqlx::query("UPDATE applications SET business_owner_id = $1, technical_owner_id = $1, steward_user_id = $1, approver_user_id = $1 WHERE application_id = $2")
-        .bind(ctx.admin_id)
-        .bind(app_id.parse::<uuid::Uuid>().unwrap())
-        .execute(&ctx.pool)
-        .await
-        .unwrap();
 
     // 4c. Link data element to application
     let link_resp = ctx

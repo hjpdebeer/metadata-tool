@@ -340,30 +340,35 @@ pub async fn create_application(
             version, deployment_type, technology_stack,
             is_cba, cba_rationale, go_live_date, documentation_url,
             abbreviation, external_reference_id, license_type,
-            lifecycle_stage_id, created_by
+            lifecycle_stage_id, created_by,
+            business_owner_id, technical_owner_id, steward_user_id, approver_user_id
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22)
         RETURNING *
         "#,
     )
-    .bind(&application_name)
-    .bind(&description)
-    .bind(body.classification_id)
-    .bind(draft_status_id)
-    .bind(body.vendor.as_deref())
-    .bind(body.vendor_product_name.as_deref())
-    .bind(body.version.as_deref())
-    .bind(body.deployment_type.as_deref())
-    .bind(&body.technology_stack)
-    .bind(body.is_cba.unwrap_or(false))
-    .bind(body.cba_rationale.as_deref())
-    .bind(body.go_live_date)
-    .bind(body.documentation_url.as_deref())
-    .bind(body.abbreviation.as_deref())
-    .bind(body.external_reference_id.as_deref())
-    .bind(body.license_type.as_deref())
-    .bind(body.lifecycle_stage_id)
-    .bind(claims.sub)
+    .bind(&application_name)                       // $1
+    .bind(&description)                            // $2
+    .bind(body.classification_id)                  // $3
+    .bind(draft_status_id)                         // $4
+    .bind(body.vendor.as_deref())                  // $5
+    .bind(body.vendor_product_name.as_deref())     // $6
+    .bind(body.version.as_deref())                 // $7
+    .bind(body.deployment_type.as_deref())         // $8
+    .bind(&body.technology_stack)                   // $9
+    .bind(body.is_cba.unwrap_or(false))            // $10
+    .bind(body.cba_rationale.as_deref())           // $11
+    .bind(body.go_live_date)                       // $12
+    .bind(body.documentation_url.as_deref())       // $13
+    .bind(body.abbreviation.as_deref())            // $14
+    .bind(body.external_reference_id.as_deref())   // $15
+    .bind(body.license_type.as_deref())            // $16
+    .bind(body.lifecycle_stage_id)                 // $17
+    .bind(claims.sub)                              // $18
+    .bind(body.business_owner_id)                  // $19
+    .bind(body.technical_owner_id)                 // $20
+    .bind(body.steward_user_id)                    // $21
+    .bind(body.approver_user_id)                   // $22
     .fetch_one(&state.pool)
     .await?;
 

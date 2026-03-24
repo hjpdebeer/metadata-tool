@@ -188,7 +188,7 @@ pub struct ElementQualityOverview {
 #[derive(Debug, Clone, Deserialize, ToSchema)]
 pub struct CreateQualityRuleRequest {
     pub rule_name: String,
-    pub rule_code: String,
+    pub rule_code: Option<String>,
     pub description: String,
     pub dimension_id: Uuid,
     pub rule_type_id: Uuid,

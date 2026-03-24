@@ -447,21 +447,26 @@ pub async fn create_term(
         r#"
         INSERT INTO glossary_terms (
             term_name, definition, domain_id, category_id, status_id,
-            review_frequency_id, version_number, is_current_version, created_by
+            review_frequency_id, version_number, is_current_version, created_by,
+            owner_user_id, steward_user_id, domain_owner_user_id, approver_user_id
         )
-        VALUES ($1, $2, $3, $4, $5, $6, 1, TRUE, $7)
+        VALUES ($1, $2, $3, $4, $5, $6, 1, TRUE, $7, $8, $9, $10, $11)
         RETURNING {cols}
         "#,
         cols = GLOSSARY_TERM_COLUMNS,
     );
     let term = sqlx::query_as::<_, GlossaryTerm>(&insert_query)
-        .bind(&term_name)
-        .bind(&definition)
-        .bind(body.domain_id)
-        .bind(body.category_id)
-        .bind(draft_status_id)
-        .bind(annual_frequency_id)
-        .bind(claims.sub)
+        .bind(&term_name)                   // $1
+        .bind(&definition)                  // $2
+        .bind(body.domain_id)               // $3
+        .bind(body.category_id)             // $4
+        .bind(draft_status_id)              // $5
+        .bind(annual_frequency_id)          // $6
+        .bind(claims.sub)                   // $7
+        .bind(body.owner_user_id)           // $8
+        .bind(body.steward_user_id)         // $9
+        .bind(body.domain_owner_user_id)    // $10
+        .bind(body.approver_user_id)        // $11
         .fetch_one(&state.pool)
         .await?;
 

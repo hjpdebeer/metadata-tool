@@ -32,30 +32,28 @@ pub struct TestContext {
 pub async fn setup() -> TestContext {
     let config = AppConfig::test_default();
 
-    // Try connecting to test DB; if it doesn't exist, create it
+    // Try connecting to test DB; if it doesn't exist, create it.
+    // Multiple test binaries may race to create the DB — handle gracefully.
     let pool = match PgPool::connect(&config.database_url).await {
         Ok(pool) => pool,
         Err(_) => {
-            // Extract base URL (everything before the last '/')
             let base_url = config
                 .database_url
                 .rsplitn(2, '/')
                 .last()
                 .expect("DATABASE_URL must contain a '/'");
-            let admin_pool = PgPool::connect(&format!("{base_url}/postgres"))
-                .await
-                .expect("Failed to connect to postgres database for test DB creation");
-            sqlx::query("CREATE DATABASE metadata_tool_test")
-                .execute(&admin_pool)
-                .await
-                .expect(
-                    "Failed to create test database. \
-                     Run: createdb -U metadata_tool metadata_tool_test",
-                );
-            admin_pool.close().await;
+            if let Ok(admin_pool) = PgPool::connect(&format!("{base_url}/postgres")).await {
+                // Ignore errors (DB may already exist from parallel test)
+                let _ = sqlx::query("CREATE DATABASE metadata_tool_test")
+                    .execute(&admin_pool)
+                    .await;
+                admin_pool.close().await;
+            }
+            // Retry connection (may need a brief delay for DB to become ready)
+            tokio::time::sleep(std::time::Duration::from_millis(500)).await;
             PgPool::connect(&config.database_url)
                 .await
-                .expect("Failed to connect after creating test database")
+                .expect("Failed to connect to test database")
         }
     };
 

@@ -10,6 +10,7 @@ pub struct AppConfig {
     pub entra: EntraConfig,
     pub graph: GraphConfig,
     pub ai: AiConfig,
+    pub notification_email: NotificationEmailConfig,
     pub frontend_url: String,
 }
 
@@ -36,6 +37,16 @@ pub struct AiConfig {
     pub anthropic_model: String,
     pub openai_api_key: Option<String>,
     pub openai_model: String,
+}
+
+#[derive(Debug, Clone)]
+pub struct NotificationEmailConfig {
+    /// Email provider: "ses", "graph", or "disabled"
+    pub provider: String,
+    /// AWS region for SES (e.g. "eu-west-1")
+    pub ses_region: String,
+    /// Verified sender email address for SES
+    pub ses_sender_email: String,
 }
 
 impl AppConfig {
@@ -68,6 +79,11 @@ impl AppConfig {
                 anthropic_model: "claude-sonnet-4-6".into(),
                 openai_api_key: None,
                 openai_model: "gpt-4o".into(),
+            },
+            notification_email: NotificationEmailConfig {
+                provider: "disabled".into(),
+                ses_region: "eu-west-1".into(),
+                ses_sender_email: "test@test.local".into(),
             },
             frontend_url: "http://localhost:5173".into(),
         }
@@ -124,6 +140,12 @@ impl AppConfig {
                     .unwrap_or_else(|_| "claude-sonnet-4-6".into()),
                 openai_api_key: env::var("OPENAI_API_KEY").ok(),
                 openai_model: env::var("OPENAI_MODEL").unwrap_or_else(|_| "gpt-4o".into()),
+            },
+            notification_email: NotificationEmailConfig {
+                provider: env::var("NOTIFICATION_PROVIDER").unwrap_or_else(|_| "disabled".into()),
+                ses_region: env::var("SES_REGION").unwrap_or_else(|_| "eu-west-1".into()),
+                ses_sender_email: env::var("SES_SENDER_EMAIL")
+                    .unwrap_or_else(|_| "noreply@localhost".into()),
             },
             frontend_url: env::var("FRONTEND_URL")
                 .unwrap_or_else(|_| "http://localhost:5173".into()),

@@ -72,5 +72,9 @@ rand = "0.9"
 # URL encoding
 urlencoding = "2"
 
+# AWS SDK (SES email sending)
+aws-config = "1"
+aws-sdk-sesv2 = "1"
+
 # Testing
 axum-test = "19"

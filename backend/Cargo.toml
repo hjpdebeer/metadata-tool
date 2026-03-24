@@ -57,6 +57,10 @@ base64.workspace = true
 axum_typed_multipart.workspace = true
 tempfile.workspace = true
 
+# AWS SDK (SES email sending)
+aws-config.workspace = true
+aws-sdk-sesv2.workspace = true
+
 # Utilities (alphabetical)
 anyhow.workspace = true
 chrono.workspace = true

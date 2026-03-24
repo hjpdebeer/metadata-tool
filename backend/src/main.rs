@@ -9,6 +9,7 @@ use utoipa_swagger_ui::SwaggerUi;
 use metadata_tool::api;
 use metadata_tool::config::AppConfig;
 use metadata_tool::db::{self, AppState};
+use metadata_tool::notifications;
 
 #[derive(OpenApi)]
 #[openapi(
@@ -344,6 +345,32 @@ async fn main() -> anyhow::Result<()> {
     let pool = db::create_pool(&config.database_url).await?;
     sqlx::migrate!("./migrations").run(&pool).await?;
     tracing::info!("Database migrations applied");
+
+    // Start notification email processor
+    {
+        let provider: std::sync::Arc<dyn notifications::provider::NotificationProvider> =
+            match config.notification_email.provider.as_str() {
+                "ses" => {
+                    let ses = notifications::ses::SesProvider::new(
+                        &config.notification_email.ses_region,
+                        config.notification_email.ses_sender_email.clone(),
+                    )
+                    .await;
+                    std::sync::Arc::new(ses)
+                }
+                "graph" => std::sync::Arc::new(notifications::graph::GraphProvider::new(
+                    config.graph.tenant_id.clone(),
+                    config.graph.client_id.clone(),
+                    config.graph.client_secret.clone(),
+                    config.graph.sender_email.clone(),
+                )),
+                _ => {
+                    tracing::info!("Email notifications disabled (NOTIFICATION_PROVIDER=disabled)");
+                    std::sync::Arc::new(notifications::disabled::DisabledProvider)
+                }
+            };
+        notifications::processor::spawn(pool.clone(), provider);
+    }
 
     let state = AppState::new(pool.clone(), config.clone());
 

@@ -1,5 +1,11 @@
-// Notification module - handles email queue (via Microsoft Graph API, deferred)
-// and in-app notification management.
+// Notification module - handles email queue processing (SES, Graph API, or
+// disabled) and in-app notification management.
+
+pub mod disabled;
+pub mod graph;
+pub mod processor;
+pub mod provider;
+pub mod ses;
 
 use std::collections::HashMap;
 

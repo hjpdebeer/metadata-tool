@@ -49,11 +49,11 @@ pub async fn list_dimensions(
         LEFT JOIN (
             SELECT
                 qr.dimension_id,
-                AVG(latest.score_percentage)  AS avg_score,
+                AVG(latest.score_percentage)::FLOAT8  AS avg_score,
                 MAX(latest.assessed_at)       AS last_assessed
             FROM quality_rules qr
             JOIN LATERAL (
-                SELECT score_percentage, assessed_at
+                SELECT score_percentage::FLOAT8 AS score_percentage, assessed_at
                 FROM quality_assessments qa
                 WHERE qa.rule_id = qr.rule_id
                   AND qa.status = 'COMPLETED'
@@ -481,7 +481,7 @@ pub async fn get_assessments(
         SELECT
             assessment_id, rule_id, assessed_at,
             records_assessed, records_passed, records_failed,
-            score_percentage, status, error_message, details,
+            score_percentage::FLOAT8 AS score_percentage, status, error_message, details,
             executed_by, created_at
         FROM quality_assessments
         WHERE rule_id = $1
@@ -568,7 +568,7 @@ pub async fn create_assessment(
         RETURNING
             assessment_id, rule_id, assessed_at,
             records_assessed, records_passed, records_failed,
-            score_percentage, status, error_message, details,
+            score_percentage::FLOAT8 AS score_percentage, status, error_message, details,
             executed_by, created_at
         "#,
     )

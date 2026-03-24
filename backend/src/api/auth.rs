@@ -475,8 +475,14 @@ pub async fn callback(
         {
             Ok(resp) if resp.status().is_success() => {
                 let body: serde_json::Value = resp.json().await.unwrap_or_default();
-                let dept = body.get("department").and_then(|v| v.as_str()).map(String::from);
-                let title = body.get("jobTitle").and_then(|v| v.as_str()).map(String::from);
+                let dept = body
+                    .get("department")
+                    .and_then(|v| v.as_str())
+                    .map(String::from);
+                let title = body
+                    .get("jobTitle")
+                    .and_then(|v| v.as_str())
+                    .map(String::from);
                 tracing::debug!(department = ?dept, job_title = ?title, "fetched profile from Graph API");
                 (dept, title)
             }
@@ -530,7 +536,10 @@ pub async fn callback(
             tracing::info!(email = %email, display_name = %display_name, "auto-provisioning new SSO user");
 
             // Generate username from email (part before @)
-            let username = email.split('@').next().unwrap_or(&email)
+            let username = email
+                .split('@')
+                .next()
+                .unwrap_or(&email)
                 .to_lowercase()
                 .replace(|c: char| !c.is_alphanumeric() && c != '_', "_");
 
@@ -564,7 +573,11 @@ pub async fn callback(
             .await
             .unwrap_or(false);
 
-            let default_role = if admin_exists { "DATA_CONSUMER" } else { "ADMIN" };
+            let default_role = if admin_exists {
+                "DATA_CONSUMER"
+            } else {
+                "ADMIN"
+            };
 
             if !admin_exists {
                 tracing::info!(email = %email, "no admin user exists — granting ADMIN role to first SSO user");
@@ -704,7 +717,9 @@ pub async fn me_profile(
     .fetch_all(&state.pool)
     .await?;
 
-    Ok(Json(crate::domain::users::UserWithRoles::from_user_and_roles(user, roles)))
+    Ok(Json(
+        crate::domain::users::UserWithRoles::from_user_and_roles(user, roles),
+    ))
 }
 
 /// Check whether Entra SSO is configured (returns true when the tenant ID is

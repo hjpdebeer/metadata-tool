@@ -342,10 +342,12 @@ pub async fn assign_role(
         .await?;
 
     // Mark roles as reviewed by admin
-    sqlx::query("UPDATE users SET roles_reviewed = TRUE, updated_at = CURRENT_TIMESTAMP WHERE user_id = $1")
-        .bind(user_id)
-        .execute(&state.pool)
-        .await?;
+    sqlx::query(
+        "UPDATE users SET roles_reviewed = TRUE, updated_at = CURRENT_TIMESTAMP WHERE user_id = $1",
+    )
+    .bind(user_id)
+    .execute(&state.pool)
+    .await?;
 
     Ok(StatusCode::CREATED)
 }
@@ -389,10 +391,12 @@ pub async fn remove_role(
     }
 
     // Mark roles as reviewed by admin
-    sqlx::query("UPDATE users SET roles_reviewed = TRUE, updated_at = CURRENT_TIMESTAMP WHERE user_id = $1")
-        .bind(user_id)
-        .execute(&state.pool)
-        .await?;
+    sqlx::query(
+        "UPDATE users SET roles_reviewed = TRUE, updated_at = CURRENT_TIMESTAMP WHERE user_id = $1",
+    )
+    .bind(user_id)
+    .execute(&state.pool)
+    .await?;
 
     Ok(StatusCode::NO_CONTENT)
 }

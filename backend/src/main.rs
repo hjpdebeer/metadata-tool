@@ -305,10 +305,7 @@ async fn security_headers(
         "nosniff".parse().unwrap(),
     );
     // Deny framing (clickjacking protection)
-    headers.insert(
-        axum::http::header::X_FRAME_OPTIONS,
-        "DENY".parse().unwrap(),
-    );
+    headers.insert(axum::http::header::X_FRAME_OPTIONS, "DENY".parse().unwrap());
     // Control referrer information
     headers.insert(
         axum::http::header::REFERRER_POLICY,
@@ -592,11 +589,15 @@ async fn main() -> anyhow::Result<()> {
     let app = if frontend_dir.exists() {
         tracing::info!("Serving frontend from {}", frontend_dir.display());
         // Serve static files, falling back to index.html for SPA client-side routing
-        let serve_dir = tower_http::services::ServeDir::new(&frontend_dir)
-            .not_found_service(tower_http::services::ServeFile::new(frontend_dir.join("index.html")));
+        let serve_dir = tower_http::services::ServeDir::new(&frontend_dir).not_found_service(
+            tower_http::services::ServeFile::new(frontend_dir.join("index.html")),
+        );
         app.fallback_service(serve_dir)
     } else {
-        tracing::info!("No frontend directory found at {}, API-only mode", frontend_dir.display());
+        tracing::info!(
+            "No frontend directory found at {}, API-only mode",
+            frontend_dir.display()
+        );
         app
     };
 

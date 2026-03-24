@@ -1,0 +1,25 @@
+[general]
+host = "0.0.0.0"
+port = 6432
+admin_username = "pgcat"
+admin_password = "pgcat"
+server_lifetime = 86400
+idle_timeout = 600
+
+[pools.metadata_tool]
+pool_mode = "session"
+default_role = "primary"
+query_parser_enabled = true
+primary_reads_enabled = true
+load_balancing_mode = "random"
+
+[pools.metadata_tool.users.0]
+username = "metadata_tool"
+password = "password"
+pool_size = 5
+min_pool_size = 1
+pool_mode = "session"
+
+[pools.metadata_tool.shards.0]
+servers = [["db", 5432, "primary"]]
+database = "metadata_tool"

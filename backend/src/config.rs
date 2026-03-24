@@ -39,6 +39,40 @@ pub struct AiConfig {
 }
 
 impl AppConfig {
+    /// Create a test configuration with sensible defaults.
+    /// For use in integration tests -- not for production.
+    pub fn test_default() -> Self {
+        Self {
+            database_url: std::env::var("DATABASE_URL").unwrap_or_else(|_| {
+                "postgres://metadata_tool:password@127.0.0.1:5432/metadata_tool_test".into()
+            }),
+            host: "127.0.0.1".into(),
+            port: 0,
+            jwt_secret: "test-secret-key-that-is-at-least-32-characters-long-for-testing".into(),
+            jwt_expiry_hours: 8,
+            entra: EntraConfig {
+                tenant_id: String::new(),
+                client_id: String::new(),
+                client_secret: String::new(),
+                redirect_uri: String::new(),
+            },
+            graph: GraphConfig {
+                tenant_id: String::new(),
+                client_id: String::new(),
+                client_secret: String::new(),
+                sender_email: String::new(),
+            },
+            ai: AiConfig {
+                primary_provider: "claude".into(),
+                anthropic_api_key: None,
+                anthropic_model: "claude-sonnet-4-6".into(),
+                openai_api_key: None,
+                openai_model: "gpt-4o".into(),
+            },
+            frontend_url: "http://localhost:5173".into(),
+        }
+    }
+
     pub fn from_env() -> anyhow::Result<Self> {
         let port_str = env::var("PORT").unwrap_or_else(|_| "8080".into());
         let port: u16 = port_str

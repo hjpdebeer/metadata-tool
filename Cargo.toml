@@ -73,4 +73,4 @@ rand = "0.9"
 urlencoding = "2"
 
 # Testing
-axum-test = "16"
+axum-test = "19"

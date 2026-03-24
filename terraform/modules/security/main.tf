@@ -179,23 +179,28 @@ resource "aws_iam_role" "ecs_task" {
 # ---------------------------------------------------------------------------
 
 resource "aws_secretsmanager_secret" "database_url" {
-  name = "metadata-tool/${var.environment}/database-url"
+  name                    = "metadata-tool/${var.environment}/database-url"
+  recovery_window_in_days = 0 # Immediate deletion on destroy (no 30-day recovery)
 }
 
 resource "aws_secretsmanager_secret" "jwt_secret" {
-  name = "metadata-tool/${var.environment}/jwt-secret"
+  name                    = "metadata-tool/${var.environment}/jwt-secret"
+  recovery_window_in_days = 0
 }
 
 resource "aws_secretsmanager_secret" "settings_encryption_key" {
-  name = "metadata-tool/${var.environment}/encryption-key"
+  name                    = "metadata-tool/${var.environment}/encryption-key"
+  recovery_window_in_days = 0
 }
 
 resource "aws_secretsmanager_secret" "anthropic_api_key" {
-  name = "metadata-tool/${var.environment}/anthropic-api-key"
+  name                    = "metadata-tool/${var.environment}/anthropic-api-key"
+  recovery_window_in_days = 0
 }
 
 resource "aws_secretsmanager_secret" "openai_api_key" {
-  name = "metadata-tool/${var.environment}/openai-api-key"
+  name                    = "metadata-tool/${var.environment}/openai-api-key"
+  recovery_window_in_days = 0
 }
 
 # Populate secrets with values

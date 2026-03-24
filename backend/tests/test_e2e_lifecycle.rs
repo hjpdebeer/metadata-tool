@@ -25,7 +25,11 @@ fn auth(token: &str) -> (axum::http::HeaderName, axum::http::HeaderValue) {
 #[tokio::test]
 async fn full_metadata_governance_lifecycle() {
     let ctx = common::setup().await;
+
+    // Role-based auth headers: admin creates, steward reviews, owner approves
     let (auth_name, auth_val) = auth(&ctx.admin_token);
+    let (_steward_name, _steward_val) = auth(&ctx.steward_token);
+    let (_owner_name, _owner_val) = auth(&ctx.owner_token);
 
     // =========================================================================
     // PHASE 1: Glossary Term — Create, Assign Ownership, Approve

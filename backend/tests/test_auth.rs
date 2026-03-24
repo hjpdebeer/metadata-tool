@@ -9,7 +9,23 @@ async fn dev_login_with_valid_credentials() {
         .server
         .post("/api/v1/auth/dev-login")
         .json(&serde_json::json!({
-            "email": "testadmin@test.local",
+            "email": "admin@metadata-tool.app",
+            "password": "Password"
+        }))
+        .await;
+    response.assert_status_ok();
+    let body: serde_json::Value = response.json();
+    assert!(body["access_token"].is_string());
+}
+
+#[tokio::test]
+async fn dev_login_with_demo_steward() {
+    let ctx = common::setup().await;
+    let response = ctx
+        .server
+        .post("/api/v1/auth/dev-login")
+        .json(&serde_json::json!({
+            "email": "hjpdebeer+steward@protonmail.com",
             "password": "Password"
         }))
         .await;
@@ -25,7 +41,7 @@ async fn dev_login_with_wrong_password() {
         .server
         .post("/api/v1/auth/dev-login")
         .json(&serde_json::json!({
-            "email": "testadmin@test.local",
+            "email": "admin@metadata-tool.app",
             "password": "WrongPassword"
         }))
         .await;
@@ -42,7 +58,7 @@ async fn me_returns_user_info() {
         .await;
     response.assert_status_ok();
     let body: serde_json::Value = response.json();
-    assert_eq!(body["email"], "testadmin@test.local");
+    assert_eq!(body["email"], "admin@metadata-tool.app");
 }
 
 #[tokio::test]
@@ -58,10 +74,10 @@ async fn me_profile_returns_full_profile() {
     let response = ctx
         .server
         .get("/api/v1/auth/me/profile")
-        .authorization_bearer(&ctx.admin_token)
+        .authorization_bearer(&ctx.steward_token)
         .await;
     response.assert_status_ok();
     let body: serde_json::Value = response.json();
-    assert_eq!(body["email"], "testadmin@test.local");
+    assert_eq!(body["email"], "hjpdebeer+steward@protonmail.com");
     assert!(body["roles"].is_array());
 }

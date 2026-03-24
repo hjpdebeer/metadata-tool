@@ -247,18 +247,27 @@ pub async fn dev_login(
         ));
     }
 
-    // SEC-021: Block dev-login when Entra SSO is properly configured
-    // Exception: the bootstrap admin account (@metadata-tool.app) is always allowed
+    // SEC-021: Block dev-login when Entra SSO is configured.
+    // Exception: accounts with a password_hash in the database are always allowed
+    // (bootstrap admin + demo role accounts provisioned via migrations).
     let entra_configured = !state.config.entra.tenant_id.is_empty()
         && state.config.entra.tenant_id != "your-tenant-id"
         && uuid::Uuid::parse_str(&state.config.entra.tenant_id).is_ok();
 
-    let is_bootstrap_admin = body.email.ends_with("@metadata-tool.app");
+    if entra_configured {
+        let has_password = sqlx::query_scalar::<_, bool>(
+            "SELECT EXISTS(SELECT 1 FROM users WHERE email = $1 AND password_hash IS NOT NULL)",
+        )
+        .bind(&body.email)
+        .fetch_one(&state.pool)
+        .await
+        .unwrap_or(false);
 
-    if entra_configured && !is_bootstrap_admin {
-        return Err(AppError::Forbidden(
-            "dev login disabled — Entra SSO is configured".into(),
-        ));
+        if !has_password {
+            return Err(AppError::Forbidden(
+                "dev login disabled — Entra SSO is configured".into(),
+            ));
+        }
     }
 
     // Look up user by email with password hash, using pgcrypto's crypt() for bcrypt verification

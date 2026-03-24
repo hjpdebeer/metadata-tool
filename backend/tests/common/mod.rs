@@ -3,6 +3,9 @@
 //! Provides database connection, test server, authenticated test users, and
 //! helper functions for building integration test scenarios against a real
 //! PostgreSQL database.
+//!
+//! Uses the same demo role accounts provisioned by migration 051,
+//! matching the emails used in the running application.
 
 use axum_test::TestServer;
 use metadata_tool::auth::create_token;
@@ -21,6 +24,8 @@ pub struct TestContext {
     pub admin_token: String,
     pub steward_id: Uuid,
     pub steward_token: String,
+    pub owner_id: Uuid,
+    pub owner_token: String,
     pub consumer_id: Uuid,
     pub consumer_token: String,
 }
@@ -28,7 +33,8 @@ pub struct TestContext {
 /// Set up a test context with a real database, migrations, seeded users, and
 /// a test server running the full application router.
 ///
-/// Attempts to auto-create the test database if it does not exist.
+/// Uses the same demo accounts as migration 051 (hjpdebeer+role@protonmail.com)
+/// so test users match what's in the running application.
 pub async fn setup() -> TestContext {
     let config = AppConfig::test_default();
 
@@ -57,36 +63,49 @@ pub async fn setup() -> TestContext {
         }
     };
 
-    // Run migrations (idempotent)
+    // Run migrations (idempotent) — includes migration 051 demo accounts
     sqlx::migrate!("./migrations")
         .run(&pool)
         .await
         .expect("Failed to run migrations on test database");
 
-    // Seed test users with distinct roles
+    // Seed admin (bootstrap admin from migration 046, plus extra roles for testing)
     let admin_id = seed_user(
         &pool,
-        "testadmin",
-        "testadmin@test.local",
-        "Test Admin",
+        "sysadmin",
+        "admin@metadata-tool.app",
+        "System Administrator",
         "Password",
         &["ADMIN", "DATA_STEWARD", "DATA_OWNER"],
     )
     .await;
+
+    // Use demo accounts from migration 051
     let steward_id = seed_user(
         &pool,
-        "teststeward",
-        "teststeward@test.local",
-        "Test Steward",
+        "datasteward",
+        "hjpdebeer+steward@protonmail.com",
+        "Demo Data Steward",
         "Password",
         &["DATA_STEWARD"],
     )
     .await;
+
+    let owner_id = seed_user(
+        &pool,
+        "dataowner",
+        "hjpdebeer+owner@protonmail.com",
+        "Demo Data Owner",
+        "Password",
+        &["DATA_OWNER"],
+    )
+    .await;
+
     let consumer_id = seed_user(
         &pool,
-        "testconsumer",
-        "testconsumer@test.local",
-        "Test Consumer",
+        "dataconsumer",
+        "hjpdebeer+consumer@protonmail.com",
+        "Demo Data Consumer",
         "Password",
         &["DATA_CONSUMER"],
     )
@@ -96,8 +115,8 @@ pub async fn setup() -> TestContext {
     let jwt_secret = &config.jwt_secret;
     let admin_token = create_token(
         admin_id,
-        "testadmin@test.local",
-        "Test Admin",
+        "admin@metadata-tool.app",
+        "System Administrator",
         vec!["ADMIN".into(), "DATA_STEWARD".into(), "DATA_OWNER".into()],
         jwt_secret,
         8,
@@ -106,18 +125,28 @@ pub async fn setup() -> TestContext {
 
     let steward_token = create_token(
         steward_id,
-        "teststeward@test.local",
-        "Test Steward",
+        "hjpdebeer+steward@protonmail.com",
+        "Demo Data Steward",
         vec!["DATA_STEWARD".into()],
         jwt_secret,
         8,
     )
     .expect("Failed to create steward test token");
 
+    let owner_token = create_token(
+        owner_id,
+        "hjpdebeer+owner@protonmail.com",
+        "Demo Data Owner",
+        vec!["DATA_OWNER".into()],
+        jwt_secret,
+        8,
+    )
+    .expect("Failed to create owner test token");
+
     let consumer_token = create_token(
         consumer_id,
-        "testconsumer@test.local",
-        "Test Consumer",
+        "hjpdebeer+consumer@protonmail.com",
+        "Demo Data Consumer",
         vec!["DATA_CONSUMER".into()],
         jwt_secret,
         8,
@@ -141,6 +170,8 @@ pub async fn setup() -> TestContext {
         admin_token,
         steward_id,
         steward_token,
+        owner_id,
+        owner_token,
         consumer_id,
         consumer_token,
     }
@@ -196,4 +227,10 @@ async fn seed_user(
     }
 
     user_id
+}
+
+/// Format a Bearer authorization header value.
+#[allow(dead_code)]
+pub fn bearer(token: &str) -> String {
+    format!("Bearer {token}")
 }

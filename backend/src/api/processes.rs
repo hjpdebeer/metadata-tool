@@ -366,15 +366,16 @@ pub async fn update_process(
             detailed_description  = COALESCE($3, detailed_description),
             category_id           = COALESCE($4, category_id),
             parent_process_id     = COALESCE($5, parent_process_id),
-            is_critical           = COALESCE($6, is_critical),
-            criticality_rationale = COALESCE($7, criticality_rationale),
-            frequency             = COALESCE($8, frequency),
-            regulatory_requirement = COALESCE($9, regulatory_requirement),
-            sla_description       = COALESCE($10, sla_description),
-            documentation_url     = COALESCE($11, documentation_url),
-            updated_by            = $12,
+            owner_user_id         = COALESCE($6, owner_user_id),
+            is_critical           = COALESCE($7, is_critical),
+            criticality_rationale = COALESCE($8, criticality_rationale),
+            frequency             = COALESCE($9, frequency),
+            regulatory_requirement = COALESCE($10, regulatory_requirement),
+            sla_description       = COALESCE($11, sla_description),
+            documentation_url     = COALESCE($12, documentation_url),
+            updated_by            = $13,
             updated_at            = CURRENT_TIMESTAMP
-        WHERE process_id = $13 AND deleted_at IS NULL
+        WHERE process_id = $14 AND deleted_at IS NULL
         RETURNING
             process_id, process_name, process_code, description,
             detailed_description, category_id, status_id, owner_user_id,
@@ -388,6 +389,7 @@ pub async fn update_process(
     .bind(body.detailed_description.as_deref())
     .bind(body.category_id)
     .bind(body.parent_process_id)
+    .bind(body.owner_user_id)
     .bind(body.is_critical)
     .bind(body.criticality_rationale.as_deref())
     .bind(body.frequency.as_deref())

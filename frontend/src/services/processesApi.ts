@@ -90,11 +90,8 @@ export interface ProcessStep {
   description: string | null;
   responsible_role: string | null;
   application_id: string | null;
-  application_name: string | null;
   input_data_elements: unknown | null;
   output_data_elements: unknown | null;
-  created_at: string;
-  updated_at: string;
 }
 
 export interface ProcessDataElementLink {
@@ -145,6 +142,7 @@ export interface UpdateProcessRequest {
   detailed_description?: string;
   category_id?: string;
   parent_process_id?: string;
+  owner_user_id?: string;
   is_critical?: boolean;
   criticality_rationale?: string;
   frequency?: string;
@@ -172,6 +170,17 @@ export interface LinkApplicationRequest {
   application_id: string;
   role_in_process?: string;
   description?: string;
+}
+
+export interface CriticalProcessSummary {
+  process_id: string;
+  process_name: string;
+  process_code: string;
+  description: string;
+  category_name: string | null;
+  owner_name: string | null;
+  frequency: string | null;
+  data_elements_count: number;
 }
 
 export interface ListProcessesParams {
@@ -202,7 +211,7 @@ export const processesApi = {
     return api.put(`/processes/${id}`, data);
   },
 
-  listCriticalProcesses(): Promise<AxiosResponse<BusinessProcessListItem[]>> {
+  listCriticalProcesses(): Promise<AxiosResponse<CriticalProcessSummary[]>> {
     return api.get('/processes/critical');
   },
 
@@ -219,11 +228,11 @@ export const processesApi = {
   },
 
   linkDataElement(processId: string, data: LinkElementRequest): Promise<AxiosResponse<ProcessDataElementLink>> {
-    return api.post(`/processes/${processId}/data-elements`, data);
+    return api.post(`/processes/${processId}/elements`, data);
   },
 
   listProcessElements(processId: string): Promise<AxiosResponse<ProcessDataElementLink[]>> {
-    return api.get(`/processes/${processId}/data-elements`);
+    return api.get(`/processes/${processId}/elements`);
   },
 
   linkApplication(processId: string, data: LinkApplicationRequest): Promise<AxiosResponse<ProcessApplicationLink>> {

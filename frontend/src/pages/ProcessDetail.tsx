@@ -17,6 +17,7 @@ import {
   Space,
   Spin,
   Statistic,
+  Switch,
   Table,
   Tag,
   Timeline,
@@ -34,17 +35,19 @@ import {
   PlusOutlined,
   SendOutlined,
   UndoOutlined,
+  UserOutlined,
   WarningOutlined,
 } from '@ant-design/icons';
 import { processesApi } from '../services/processesApi';
 import { dataDictionaryApi } from '../services/dataDictionaryApi';
 import { applicationsApi } from '../services/applicationsApi';
 import { workflowApi } from '../services/glossaryApi';
+import { usersApi } from '../services/usersApi';
+import type { UserListItem } from '../services/usersApi';
 import type {
   BusinessProcessFullView,
   ProcessApplicationLink,
   ProcessDataElementLink,
-  ProcessStep,
 } from '../services/processesApi';
 import type { DataElementListItem } from '../services/dataDictionaryApi';
 import type { ApplicationListItem } from '../services/applicationsApi';
@@ -116,6 +119,15 @@ const ProcessDetail: React.FC = () => {
   const [linkAppLoading, setLinkAppLoading] = useState(false);
   const [appsLoading, setAppsLoading] = useState(false);
 
+  // Ownership state
+  type LabeledValue = { value: string; label: string };
+  const [allUsers, setAllUsers] = useState<UserListItem[]>([]);
+  const [ownerUserId, setOwnerUserId] = useState<LabeledValue | undefined>();
+  const [ownershipLoading, setOwnershipLoading] = useState(false);
+
+  // Critical toggle
+  const [criticalLoading, setCriticalLoading] = useState(false);
+
   const isSteward = user?.roles?.includes('data_steward') || user?.roles?.includes('admin');
 
   const fetchProcess = useCallback(async () => {
@@ -173,6 +185,22 @@ const ProcessDetail: React.FC = () => {
   useEffect(() => {
     fetchLinkedApps();
   }, [fetchLinkedApps]);
+
+  // Fetch users for ownership dropdown
+  useEffect(() => {
+    usersApi.lookupUsers().then((res) => setAllUsers(res.data)).catch(() => {});
+  }, []);
+
+  // Sync ownership state from detail response
+  useEffect(() => {
+    if (process) {
+      setOwnerUserId(
+        process.owner_user_id && process.owner_name
+          ? { value: process.owner_user_id, label: process.owner_name }
+          : undefined,
+      );
+    }
+  }, [process]);
 
   const fetchAvailableElements = async () => {
     setElementsLoading(true);
@@ -303,6 +331,68 @@ const ProcessDetail: React.FC = () => {
     }
   };
 
+  const handleSaveOwnership = async () => {
+    if (!id) return;
+    setOwnershipLoading(true);
+    try {
+      await processesApi.updateProcess(id, {
+        owner_user_id: ownerUserId?.value || undefined,
+      });
+      message.success('Process owner updated successfully.');
+      fetchProcess();
+    } catch {
+      message.error('Failed to update process owner.');
+    } finally {
+      setOwnershipLoading(false);
+    }
+  };
+
+  const handleCriticalToggle = (checked: boolean) => {
+    if (checked) {
+      Modal.confirm({
+        title: 'Mark as Critical Business Process?',
+        content: `This will automatically designate all ${process?.data_elements_count || 0} linked data elements as Critical Data Elements (CDEs). This action cannot be easily undone. Continue?`,
+        okText: 'Yes, Mark as Critical',
+        okType: 'danger',
+        onOk: async () => {
+          setCriticalLoading(true);
+          try {
+            await processesApi.updateProcess(id!, {
+              is_critical: true,
+              criticality_rationale: 'Designated as critical business process',
+            });
+            message.success('Process marked as critical. Linked data elements are now CDEs.');
+            fetchProcess();
+          } catch {
+            message.error('Failed to update critical status.');
+          } finally {
+            setCriticalLoading(false);
+          }
+        },
+      });
+    } else {
+      Modal.confirm({
+        title: 'Remove Critical Designation?',
+        content: 'This will remove the critical business process designation. Existing CDE designations on linked data elements will not be automatically removed.',
+        okText: 'Yes, Remove',
+        onOk: async () => {
+          setCriticalLoading(true);
+          try {
+            await processesApi.updateProcess(id!, {
+              is_critical: false,
+            });
+            message.success('Critical designation removed.');
+            fetchProcess();
+          } catch {
+            message.error('Failed to update critical status.');
+          } finally {
+            setCriticalLoading(false);
+          }
+        },
+      });
+    }
+  };
+
   const formatDate = (dateStr: string | null | undefined) => {
     if (!dateStr) return '-';
     return new Date(dateStr).toLocaleString('en-ZA', {
@@ -327,6 +417,7 @@ const ProcessDetail: React.FC = () => {
   }
 
   const status = process.status_code || 'DRAFT';
+  const canEditProcess = status === 'DRAFT' || status === 'REVISED';
 
   const renderActionButtons = () => {
     const buttons: React.ReactNode[] = [];
@@ -433,12 +524,12 @@ const ProcessDetail: React.FC = () => {
     },
     {
       title: 'Application',
-      dataIndex: 'application_name',
-      key: 'application_name',
+      dataIndex: 'application_id',
+      key: 'application_id',
       width: 160,
-      render: (name: string | null, record: ProcessStep) =>
-        name ? (
-          <a onClick={() => navigate(`/applications/${record.application_id}`)}>{name}</a>
+      render: (appId: string | null) =>
+        appId ? (
+          <a onClick={() => navigate(`/applications/${appId}`)}>View Application</a>
         ) : (
           '-'
         ),
@@ -653,7 +744,22 @@ const ProcessDetail: React.FC = () => {
               : '-'}
           </Descriptions.Item>
           <Descriptions.Item label="Critical">
-            {process.is_critical ? (
+            {canEditProcess ? (
+              <Space>
+                <Switch
+                  checked={process.is_critical}
+                  onChange={handleCriticalToggle}
+                  loading={criticalLoading}
+                  checkedChildren="Yes"
+                  unCheckedChildren="No"
+                />
+                {process.is_critical && (
+                  <Tag color="red" style={{ fontWeight: 600 }}>
+                    Critical Business Process
+                  </Tag>
+                )}
+              </Space>
+            ) : process.is_critical ? (
               <Tag color="red" style={{ fontWeight: 600 }}>
                 Critical Business Process
               </Tag>
@@ -706,24 +812,79 @@ const ProcessDetail: React.FC = () => {
         </Descriptions>
       </Card>
 
+      {/* --- Ownership Assignment (shown in DRAFT/REVISED status) --- */}
+      {canEditProcess && allUsers.length > 0 && (
+        <Card
+          title={
+            <Space>
+              <UserOutlined />
+              <Text strong>Assign Process Owner</Text>
+              {ownerUserId ? (
+                <Tag color="success">Assigned</Tag>
+              ) : (
+                <Tag color="warning">Not Assigned</Tag>
+              )}
+            </Space>
+          }
+          style={{
+            marginBottom: 24,
+            border: ownerUserId ? '1px solid #B7EB8F' : '1px solid #FFD591',
+            background: ownerUserId ? '#F6FFED' : '#FFF7E6',
+          }}
+        >
+          <Row gutter={[16, 16]}>
+            <Col xs={24} md={12}>
+              <div style={{ marginBottom: 4 }}>
+                <Text strong>Process Owner</Text>
+              </div>
+              <Select
+                style={{ width: '100%' }}
+                labelInValue
+                value={ownerUserId}
+                onChange={(val) => setOwnerUserId(val || undefined)}
+                options={allUsers.map((u) => ({
+                  value: u.user_id,
+                  label: `${u.display_name} (${u.email})`,
+                }))}
+                placeholder="Select process owner..."
+                showSearch
+                optionFilterProp="label"
+                allowClear
+              />
+            </Col>
+          </Row>
+          <div style={{ marginTop: 16, textAlign: 'right' }}>
+            <Button
+              type="primary"
+              onClick={handleSaveOwnership}
+              loading={ownershipLoading}
+            >
+              Save Owner
+            </Button>
+          </div>
+        </Card>
+      )}
+
       <Card
         title="Process Steps"
         style={{ marginBottom: 24 }}
         extra={
-          <Button
-            type="primary"
-            size="small"
-            icon={<PlusOutlined />}
-            onClick={() => {
-              stepForm.resetFields();
-              const nextStepNumber = (process.steps?.length || 0) + 1;
-              stepForm.setFieldsValue({ step_number: nextStepNumber });
-              fetchAvailableApps();
-              setStepModalOpen(true);
-            }}
-          >
-            Add Step
-          </Button>
+          status !== 'ACCEPTED' && status !== 'DEPRECATED' ? (
+            <Button
+              type="primary"
+              size="small"
+              icon={<PlusOutlined />}
+              onClick={() => {
+                stepForm.resetFields();
+                const nextStepNumber = (process.steps?.length || 0) + 1;
+                stepForm.setFieldsValue({ step_number: nextStepNumber });
+                fetchAvailableApps();
+                setStepModalOpen(true);
+              }}
+            >
+              Add Step
+            </Button>
+          ) : null
         }
       >
         <Table
@@ -740,18 +901,20 @@ const ProcessDetail: React.FC = () => {
         title="Linked Data Elements"
         style={{ marginBottom: 24 }}
         extra={
-          <Button
-            type="primary"
-            size="small"
-            icon={<LinkOutlined />}
-            onClick={() => {
-              linkElementForm.resetFields();
-              fetchAvailableElements();
-              setLinkElementModalOpen(true);
-            }}
-          >
-            Link Data Element
-          </Button>
+          status !== 'ACCEPTED' && status !== 'DEPRECATED' ? (
+            <Button
+              type="primary"
+              size="small"
+              icon={<LinkOutlined />}
+              onClick={() => {
+                linkElementForm.resetFields();
+                fetchAvailableElements();
+                setLinkElementModalOpen(true);
+              }}
+            >
+              Link Data Element
+            </Button>
+          ) : null
         }
       >
         {process.is_critical && linkedElements.length === 0 && (
@@ -777,18 +940,20 @@ const ProcessDetail: React.FC = () => {
         title="Linked Applications"
         style={{ marginBottom: 24 }}
         extra={
-          <Button
-            type="primary"
-            size="small"
-            icon={<AppstoreOutlined />}
-            onClick={() => {
-              linkAppForm.resetFields();
-              fetchAvailableApps();
-              setLinkAppModalOpen(true);
-            }}
-          >
-            Link Application
-          </Button>
+          status !== 'ACCEPTED' && status !== 'DEPRECATED' ? (
+            <Button
+              type="primary"
+              size="small"
+              icon={<AppstoreOutlined />}
+              onClick={() => {
+                linkAppForm.resetFields();
+                fetchAvailableApps();
+                setLinkAppModalOpen(true);
+              }}
+            >
+              Link Application
+            </Button>
+          ) : null
         }
       >
         <Table

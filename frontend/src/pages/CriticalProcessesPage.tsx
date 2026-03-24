@@ -3,29 +3,9 @@ import { useNavigate } from 'react-router-dom';
 import { Alert, Button, Card, Space, Table, Tag, Typography, message } from 'antd';
 import { ArrowLeftOutlined, WarningOutlined } from '@ant-design/icons';
 import { processesApi } from '../services/processesApi';
-import type { BusinessProcessListItem } from '../services/processesApi';
+import type { CriticalProcessSummary } from '../services/processesApi';
 
 const { Title, Text } = Typography;
-
-const statusColors: Record<string, string> = {
-  DRAFT: 'default',
-  PROPOSED: 'processing',
-  UNDER_REVIEW: 'warning',
-  REVISED: 'orange',
-  ACCEPTED: 'success',
-  REJECTED: 'error',
-  DEPRECATED: 'default',
-};
-
-const statusLabels: Record<string, string> = {
-  DRAFT: 'Draft',
-  PROPOSED: 'Proposed',
-  UNDER_REVIEW: 'Under Review',
-  REVISED: 'Revised',
-  ACCEPTED: 'Accepted',
-  REJECTED: 'Rejected',
-  DEPRECATED: 'Deprecated',
-};
 
 const frequencyLabels: Record<string, string> = {
   DAILY: 'Daily',
@@ -38,7 +18,7 @@ const frequencyLabels: Record<string, string> = {
 
 const CriticalProcessesPage: React.FC = () => {
   const navigate = useNavigate();
-  const [processes, setProcesses] = useState<BusinessProcessListItem[]>([]);
+  const [processes, setProcesses] = useState<CriticalProcessSummary[]>([]);
   const [loading, setLoading] = useState(false);
 
   const fetchCriticalProcesses = useCallback(async () => {
@@ -62,7 +42,7 @@ const CriticalProcessesPage: React.FC = () => {
       title: 'Process Name',
       dataIndex: 'process_name',
       key: 'process_name',
-      render: (name: string, record: BusinessProcessListItem) => (
+      render: (name: string, record: CriticalProcessSummary) => (
         <a onClick={() => navigate(`/processes/${record.process_id}`)}>{name}</a>
       ),
     },
@@ -85,17 +65,6 @@ const CriticalProcessesPage: React.FC = () => {
       render: (name: string | null) => name || '-',
     },
     {
-      title: 'Status',
-      dataIndex: 'status_code',
-      key: 'status_code',
-      width: 140,
-      render: (status: string) => (
-        <Tag color={statusColors[status] || 'default'}>
-          {statusLabels[status] || status}
-        </Tag>
-      ),
-    },
-    {
       title: 'Owner',
       dataIndex: 'owner_name',
       key: 'owner_name',
@@ -110,18 +79,14 @@ const CriticalProcessesPage: React.FC = () => {
         freq ? (frequencyLabels[freq] || freq) : '-',
     },
     {
-      title: 'Updated',
-      dataIndex: 'updated_at',
-      key: 'updated_at',
+      title: 'Data Elements',
+      dataIndex: 'data_elements_count',
+      key: 'data_elements_count',
       width: 140,
-      render: (date: string) => {
-        if (!date) return '-';
-        return new Date(date).toLocaleDateString('en-ZA', {
-          year: 'numeric',
-          month: 'short',
-          day: 'numeric',
-        });
-      },
+      align: 'center' as const,
+      render: (count: number) => (
+        <Tag color={count > 0 ? 'blue' : 'default'}>{count}</Tag>
+      ),
     },
   ];
 

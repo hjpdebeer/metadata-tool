@@ -33,6 +33,7 @@ import {
   MailOutlined,
   TeamOutlined,
   ClockCircleOutlined,
+  PartitionOutlined,
   WarningOutlined,
 } from '@ant-design/icons';
 import { useAuth } from '../hooks/useAuth';
@@ -112,8 +113,9 @@ const AppLayout: React.FC = () => {
         },
       ],
     },
-    // Data Quality Dashboard, Data Lineage, and Business Processes hidden for demo — code retained
+    // Data Quality Dashboard and Data Lineage hidden for demo — code retained
     { key: '/applications', icon: <AppstoreOutlined />, label: 'Applications' },
+    { key: '/processes', icon: <PartitionOutlined />, label: 'Business Processes' },
     { key: '/workflow', icon: <CheckSquareOutlined />, label: <span>My Tasks{pendingTaskCount > 0 && <Badge count={pendingTaskCount} size="small" offset={[6, -2]} />}</span> },
     ...(isAdmin
       ? [{ key: '/admin', icon: <SettingOutlined />, label: 'Admin Panel' }]

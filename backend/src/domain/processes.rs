@@ -235,6 +235,7 @@ pub struct UpdateBusinessProcessRequest {
     pub detailed_description: Option<String>,
     pub category_id: Option<Uuid>,
     pub parent_process_id: Option<Uuid>,
+    pub owner_user_id: Option<Uuid>,
     pub is_critical: Option<bool>,
     pub criticality_rationale: Option<String>,
     pub frequency: Option<String>,

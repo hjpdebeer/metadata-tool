@@ -62,6 +62,8 @@ pub struct QualityRule {
     pub threshold_percentage: Option<f64>,
     pub severity: String,
     pub is_active: bool,
+    pub scope: Option<String>,
+    pub check_frequency: Option<String>,
     pub owner_user_id: Option<Uuid>,
     pub deleted_at: Option<DateTime<Utc>>,
     pub created_by: Uuid,
@@ -93,6 +95,8 @@ pub struct QualityRuleListItem {
     pub is_active: bool,
     pub owner_name: Option<String>,
     pub threshold_percentage: Option<f64>,
+    pub scope: Option<String>,
+    pub check_frequency: Option<String>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }
@@ -193,6 +197,10 @@ pub struct CreateQualityRuleRequest {
     pub rule_definition: serde_json::Value,
     pub threshold_percentage: Option<f64>,
     pub severity: Option<String>,
+    pub scope: Option<String>,
+    pub check_frequency: Option<String>,
+    pub is_active: Option<bool>,
+    pub owner_user_id: Option<Uuid>,
 }
 
 /// Request body for partially updating a quality rule. All fields are optional.
@@ -210,6 +218,8 @@ pub struct UpdateQualityRuleRequest {
     pub severity: Option<String>,
     pub is_active: Option<bool>,
     pub owner_user_id: Option<Uuid>,
+    pub scope: Option<String>,
+    pub check_frequency: Option<String>,
 }
 
 /// Request body for recording a quality assessment result.
@@ -233,4 +243,23 @@ pub struct SearchQualityRulesRequest {
     pub is_active: Option<bool>,
     pub page: Option<i64>,
     pub page_size: Option<i64>,
+}
+
+// ---------------------------------------------------------------------------
+// Assessment with rule name (for recent-assessments view)
+// ---------------------------------------------------------------------------
+
+/// A quality assessment joined with its rule name for cross-rule display.
+#[derive(Debug, Clone, Serialize, FromRow, ToSchema)]
+pub struct QualityAssessmentWithRule {
+    pub assessment_id: Uuid,
+    pub rule_id: Uuid,
+    pub rule_name: String,
+    pub assessed_at: DateTime<Utc>,
+    pub records_assessed: i64,
+    pub records_passed: i64,
+    pub records_failed: i64,
+    pub score_percentage: f64,
+    pub status: String,
+    pub created_at: DateTime<Utc>,
 }

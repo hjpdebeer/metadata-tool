@@ -191,7 +191,7 @@ const DataElementDetail: React.FC = () => {
     }
   };
 
-  const handleDismissRuleSuggestion = (index: number) => {
+  const handleRejectRuleSuggestion = (index: number) => {
     setAiRuleSuggestions((prev) => prev.filter((_, i) => i !== index));
   };
 
@@ -1094,9 +1094,10 @@ const DataElementDetail: React.FC = () => {
                 </Button>
                 <Button
                   size="small"
+                  danger
                   onClick={() => setAiRuleSuggestions([])}
                 >
-                  Dismiss All
+                  Reject All
                 </Button>
               </Space>
             </div>
@@ -1187,10 +1188,11 @@ const DataElementDetail: React.FC = () => {
                       </Button>
                       <Button
                         size="small"
+                        danger
                         icon={<CloseOutlined />}
-                        onClick={() => handleDismissRuleSuggestion(index)}
+                        onClick={() => handleRejectRuleSuggestion(index)}
                       >
-                        Dismiss
+                        Reject
                       </Button>
                     </Space>
                   </div>

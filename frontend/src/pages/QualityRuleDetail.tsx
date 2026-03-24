@@ -6,10 +6,12 @@ import {
   Card,
   Col,
   Descriptions,
+  Divider,
   Form,
   Input,
   InputNumber,
   Modal,
+  Popconfirm,
   Row,
   Space,
   Spin,
@@ -21,6 +23,7 @@ import {
 } from 'antd';
 import {
   ArrowLeftOutlined,
+  DeleteOutlined,
   EditOutlined,
   LinkOutlined,
 } from '@ant-design/icons';
@@ -40,6 +43,82 @@ const getScoreColor = (score: number): string => {
   if (score >= 90) return '#52C41A';
   if (score >= 70) return '#FAAD14';
   return '#FF4D4F';
+};
+
+const scopeColors: Record<string, string> = {
+  RECORD: 'blue',
+  DATASET: 'purple',
+  CROSS_SYSTEM: 'magenta',
+};
+
+const frequencyColors: Record<string, string> = {
+  REALTIME: 'red',
+  HOURLY: 'orange',
+  DAILY: 'gold',
+  WEEKLY: 'cyan',
+  MONTHLY: 'geekblue',
+  ON_DEMAND: 'default',
+};
+
+const frequencyLabels: Record<string, string> = {
+  REALTIME: 'Real-time',
+  HOURLY: 'Hourly',
+  DAILY: 'Daily',
+  WEEKLY: 'Weekly',
+  MONTHLY: 'Monthly',
+  ON_DEMAND: 'On Demand',
+};
+
+const scopeLabels: Record<string, string> = {
+  RECORD: 'Record',
+  DATASET: 'Dataset',
+  CROSS_SYSTEM: 'Cross-System',
+};
+
+const AssessmentTrendChart: React.FC<{ assessments: QualityAssessment[]; threshold: number }> = ({ assessments, threshold }) => {
+  if (assessments.length < 2) return null;
+
+  const sorted = [...assessments].sort((a, b) => new Date(a.assessed_at).getTime() - new Date(b.assessed_at).getTime());
+  const width = 500;
+  const height = 120;
+  const padding = { top: 10, right: 10, bottom: 20, left: 40 };
+  const chartW = width - padding.left - padding.right;
+  const chartH = height - padding.top - padding.bottom;
+
+  const xScale = (i: number) => padding.left + (i / (sorted.length - 1)) * chartW;
+  const yScale = (v: number) => padding.top + chartH - (v / 100) * chartH;
+
+  const points = sorted.map((a, i) => `${xScale(i)},${yScale(a.score_percentage)}`).join(' ');
+  const areaPoints = `${xScale(0)},${yScale(0)} ${points} ${xScale(sorted.length - 1)},${yScale(0)}`;
+
+  const thresholdY = yScale(threshold);
+  const latestScore = sorted[sorted.length - 1].score_percentage;
+  const scoreColor = latestScore >= threshold ? '#52C41A' : '#FF4D4F';
+
+  return (
+    <div style={{ marginBottom: 16 }}>
+      <svg width="100%" viewBox={`0 0 ${width} ${height}`} style={{ maxWidth: width }}>
+        {/* Threshold line */}
+        <line x1={padding.left} y1={thresholdY} x2={width - padding.right} y2={thresholdY}
+              stroke="#FFA940" strokeWidth="1" strokeDasharray="4,4" />
+        <text x={padding.left - 4} y={thresholdY + 4} textAnchor="end" fontSize="10" fill="#FFA940">
+          {threshold}%
+        </text>
+        {/* Area fill */}
+        <polygon points={areaPoints} fill={scoreColor} opacity="0.1" />
+        {/* Line */}
+        <polyline points={points} fill="none" stroke={scoreColor} strokeWidth="2" />
+        {/* Data points */}
+        {sorted.map((a, i) => (
+          <circle key={a.assessment_id} cx={xScale(i)} cy={yScale(a.score_percentage)}
+                  r="3" fill={a.score_percentage >= threshold ? '#52C41A' : '#FF4D4F'} />
+        ))}
+        {/* Y-axis labels */}
+        <text x={padding.left - 4} y={padding.top + 4} textAnchor="end" fontSize="10" fill="#999">100%</text>
+        <text x={padding.left - 4} y={height - padding.bottom + 4} textAnchor="end" fontSize="10" fill="#999">0%</text>
+      </svg>
+    </div>
+  );
 };
 
 const QualityRuleDetail: React.FC = () => {
@@ -121,6 +200,16 @@ const QualityRuleDetail: React.FC = () => {
     }
   };
 
+  const handleDelete = async () => {
+    try {
+      await dataQualityApi.deleteRule(id!);
+      message.success('Quality rule deleted');
+      navigate('/data-quality/rules');
+    } catch {
+      message.error('Failed to delete rule');
+    }
+  };
+
   const formatDate = (dateStr: string | null | undefined) => {
     if (!dateStr) return '-';
     return new Date(dateStr).toLocaleString('en-ZA', {
@@ -158,6 +247,18 @@ const QualityRuleDetail: React.FC = () => {
         >
           Edit
         </Button>,
+      );
+      buttons.push(
+        <Popconfirm
+          key="delete"
+          title="Delete this quality rule?"
+          description="This action cannot be undone."
+          onConfirm={handleDelete}
+          okText="Delete"
+          okType="danger"
+        >
+          <Button danger icon={<DeleteOutlined />}>Delete</Button>
+        </Popconfirm>,
       );
     }
 
@@ -363,6 +464,20 @@ const QualityRuleDetail: React.FC = () => {
           <Descriptions.Item label="Threshold">
             {rule.threshold_percentage}%
           </Descriptions.Item>
+          <Descriptions.Item label="Scope">
+            {rule.scope ? (
+              <Tag color={scopeColors[rule.scope] || 'default'}>
+                {scopeLabels[rule.scope] || rule.scope}
+              </Tag>
+            ) : '-'}
+          </Descriptions.Item>
+          <Descriptions.Item label="Check Frequency">
+            {rule.check_frequency ? (
+              <Tag color={frequencyColors[rule.check_frequency] || 'default'}>
+                {frequencyLabels[rule.check_frequency] || rule.check_frequency}
+              </Tag>
+            ) : '-'}
+          </Descriptions.Item>
           <Descriptions.Item label="Active">
             {rule.is_active ? (
               <Tag color="green">Active</Tag>
@@ -398,6 +513,8 @@ const QualityRuleDetail: React.FC = () => {
       </Card>
 
       <Card title="Assessment History" style={{ marginBottom: 24 }}>
+        <AssessmentTrendChart assessments={assessments} threshold={rule.threshold_percentage} />
+        {assessments.length >= 2 && <Divider style={{ margin: '12px 0 16px' }} />}
         <Table
           columns={assessmentColumns}
           dataSource={assessments}

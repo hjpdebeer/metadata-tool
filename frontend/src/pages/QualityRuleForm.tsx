@@ -36,6 +36,21 @@ const SEVERITY_OPTIONS = [
   { value: 'CRITICAL', label: 'Critical' },
 ];
 
+const SCOPE_OPTIONS = [
+  { value: 'RECORD', label: 'Record' },
+  { value: 'DATASET', label: 'Dataset' },
+  { value: 'CROSS_SYSTEM', label: 'Cross-System' },
+];
+
+const CHECK_FREQUENCY_OPTIONS = [
+  { value: 'REALTIME', label: 'Real-time' },
+  { value: 'HOURLY', label: 'Hourly' },
+  { value: 'DAILY', label: 'Daily' },
+  { value: 'WEEKLY', label: 'Weekly' },
+  { value: 'MONTHLY', label: 'Monthly' },
+  { value: 'ON_DEMAND', label: 'On Demand' },
+];
+
 const QualityRuleForm: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
@@ -104,6 +119,8 @@ const QualityRuleForm: React.FC = () => {
         rule_definition: ruleDefStr,
         threshold_percentage: response.data.threshold_percentage,
         severity: response.data.severity,
+        scope: response.data.scope || 'RECORD',
+        check_frequency: response.data.check_frequency || undefined,
         is_active: response.data.is_active,
       });
     } catch {
@@ -167,6 +184,12 @@ const QualityRuleForm: React.FC = () => {
         if (values.is_active !== existingData?.is_active) {
           updateData.is_active = values.is_active as boolean;
         }
+        if (values.scope !== existingData?.scope) {
+          updateData.scope = (values.scope as string) || undefined;
+        }
+        if (values.check_frequency !== existingData?.check_frequency) {
+          updateData.check_frequency = (values.check_frequency as string) || undefined;
+        }
         // Always include rule_definition as it may have changed
         updateData.rule_definition = parsedDefinition;
 
@@ -184,6 +207,8 @@ const QualityRuleForm: React.FC = () => {
           rule_definition: parsedDefinition,
           threshold_percentage: values.threshold_percentage as number,
           severity: values.severity as string,
+          scope: (values.scope as string) || undefined,
+          check_frequency: (values.check_frequency as string) || undefined,
           is_active: values.is_active as boolean,
         };
 
@@ -417,6 +442,14 @@ const QualityRuleForm: React.FC = () => {
               placeholder="Select severity level"
               options={SEVERITY_OPTIONS}
             />
+          </Form.Item>
+
+          <Form.Item name="scope" label="Scope" initialValue="RECORD">
+            <Select options={SCOPE_OPTIONS} />
+          </Form.Item>
+
+          <Form.Item name="check_frequency" label="Check Frequency">
+            <Select allowClear placeholder="Select frequency" options={CHECK_FREQUENCY_OPTIONS} />
           </Form.Item>
 
           <Form.Item

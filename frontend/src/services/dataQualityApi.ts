@@ -40,6 +40,8 @@ export interface QualityRule {
   threshold_percentage: number;
   severity: string;
   is_active: boolean;
+  scope: string | null;
+  check_frequency: string | null;
   owner_user_id: string | null;
   created_by: string;
   created_at: string;
@@ -63,6 +65,8 @@ export interface QualityRuleListItem {
   is_active: boolean;
   owner_name: string | null;
   threshold_percentage: number;
+  scope: string | null;
+  check_frequency: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -72,6 +76,7 @@ export interface QualityRuleListItem {
 export interface QualityAssessment {
   assessment_id: string;
   rule_id: string;
+  rule_name?: string;
   assessed_at: string;
   records_assessed: number;
   records_passed: number;
@@ -106,6 +111,8 @@ export interface CreateQualityRuleRequest {
   rule_definition: Record<string, unknown>;
   threshold_percentage?: number;
   severity: string;
+  scope?: string;
+  check_frequency?: string;
   is_active?: boolean;
 }
 
@@ -121,6 +128,8 @@ export interface UpdateQualityRuleRequest {
   threshold_percentage?: number;
   severity?: string;
   is_active?: boolean;
+  scope?: string;
+  check_frequency?: string;
 }
 
 export interface CreateAssessmentRequest {
@@ -199,6 +208,10 @@ export const dataQualityApi = {
 
   updateRule(id: string, data: UpdateQualityRuleRequest): Promise<AxiosResponse<QualityRule>> {
     return api.put(`/data-quality/rules/${id}`, data);
+  },
+
+  deleteRule(id: string): Promise<AxiosResponse<void>> {
+    return api.delete(`/data-quality/rules/${id}`);
   },
 
   getAssessments(ruleId: string): Promise<AxiosResponse<QualityAssessment[]>> {

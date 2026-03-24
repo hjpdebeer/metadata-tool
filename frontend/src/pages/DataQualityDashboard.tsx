@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Button, Card, Col, Progress, Row, Space, Table, Tag, Typography, message } from 'antd';
+import { Button, Card, Col, Progress, Row, Space, Statistic, Table, Tag, Typography, message } from 'antd';
 import { ArrowRightOutlined, SafetyCertificateOutlined } from '@ant-design/icons';
 import { dataQualityApi } from '../services/dataQualityApi';
 import type { QualityAssessment, QualityDimensionSummary } from '../services/dataQualityApi';
@@ -148,6 +148,28 @@ const DataQualityDashboard: React.FC = () => {
           Manage Rules
         </Button>
       </div>
+
+      {/* Overall Quality Score */}
+      {!loadingDimensions && dimensions.length > 0 && (() => {
+        const scored = dimensions.filter((d) => d.avg_score !== null);
+        if (scored.length === 0) return null;
+        const overall = scored.reduce((sum, d) => sum + (d.avg_score ?? 0), 0) / scored.length;
+        const overallRounded = Math.round(overall * 10) / 10;
+        const color = overallRounded >= 80 ? '#52C41A' : overallRounded >= 60 ? '#FAAD14' : '#FF4D4F';
+        return (
+          <Card style={{ marginBottom: 24, textAlign: 'center' }}>
+            <Statistic
+              title="Overall Quality Score"
+              value={overallRounded}
+              suffix="%"
+              valueStyle={{ color, fontSize: 36, fontWeight: 700 }}
+            />
+            <Text type="secondary">
+              Average across {scored.length} {scored.length === 1 ? 'dimension' : 'dimensions'} with assessments
+            </Text>
+          </Card>
+        );
+      })()}
 
       <Row gutter={[16, 16]} style={{ marginBottom: 24 }}>
         {loadingDimensions ? (

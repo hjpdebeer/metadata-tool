@@ -102,7 +102,7 @@ resource "aws_ecs_task_definition" "api" {
 
       # Environment variables (non-sensitive)
       environment = [
-        { name = "DATABASE_URL", value = "postgres://${var.db_username}:${var.db_password}@${var.db_host}:${var.db_port}/${var.db_name}?sslmode=require" },
+        { name = "DATABASE_URL", value = "postgres://${var.db_username}:${var.db_password}@localhost:6432/${var.db_name}" },
         { name = "HOST", value = "0.0.0.0" },
         { name = "PORT", value = "8080" },
         { name = "RUST_LOG", value = "metadata_tool=info,tower_http=info" },
@@ -139,13 +139,15 @@ resource "aws_ecs_task_definition" "api" {
         }
       }
 
-      # PgCat sidecar is non-essential for now (direct RDS connection)
-      # Re-enable when PgCat auth is configured correctly
+      dependsOn = [{
+        containerName = "pgcat"
+        condition     = "START"
+      }]
     },
     {
       name      = "pgcat"
       image     = "ghcr.io/postgresml/pgcat:latest"
-      essential = false
+      essential = true
       cpu       = 256
       memory    = 256
 
@@ -158,38 +160,38 @@ resource "aws_ecs_task_definition" "api" {
         { name = "PGCAT_CONFIG", value = "/tmp/pgcat.toml" },
       ]
 
-      # PgCat config is injected via command
+      # PgCat config written via printf to avoid heredoc quoting issues with passwords
       command = [
         "sh", "-c",
         join("", [
-          "cat > /tmp/pgcat.toml << 'TOML'\n",
-          "[general]\n",
-          "host = \"0.0.0.0\"\n",
-          "port = 6432\n",
-          "admin_username = \"pgcat\"\n",
-          "admin_password = \"pgcat\"\n",
-          "server_lifetime = 86400\n",
-          "idle_timeout = 600\n",
-          "\n",
-          "[pools.metadata_tool]\n",
-          "pool_mode = \"transaction\"\n",
-          "default_role = \"primary\"\n",
-          "query_parser_enabled = true\n",
-          "primary_reads_enabled = true\n",
-          "load_balancing_mode = \"random\"\n",
-          "\n",
-          "[pools.metadata_tool.users.0]\n",
-          "username = \"${var.db_username}\"\n",
-          "password = \"${var.db_password}\"\n",
-          "pool_size = 5\n",
-          "min_pool_size = 1\n",
-          "pool_mode = \"transaction\"\n",
-          "\n",
-          "[pools.metadata_tool.shards.0]\n",
-          "servers = [[\"${var.db_host}\", ${var.db_port}, \"primary\"]]\n",
-          "database = \"${var.db_name}\"\n",
-          "TOML\n",
-          "pgcat /tmp/pgcat.toml",
+          "printf '%s\\n' ",
+          "'[general]' ",
+          "'host = \"0.0.0.0\"' ",
+          "'port = 6432' ",
+          "'admin_username = \"pgcat\"' ",
+          "'admin_password = \"pgcat\"' ",
+          "'server_lifetime = 86400' ",
+          "'idle_timeout = 600' ",
+          "'' ",
+          "'[pools.metadata_tool]' ",
+          "'pool_mode = \"transaction\"' ",
+          "'default_role = \"primary\"' ",
+          "'query_parser_enabled = true' ",
+          "'primary_reads_enabled = true' ",
+          "'load_balancing_mode = \"random\"' ",
+          "'' ",
+          "'[pools.metadata_tool.users.0]' ",
+          "'username = \"${var.db_username}\"' ",
+          "'password = \"${replace(var.db_password, "'", "'\\''")}\"' ",
+          "'pool_size = 5' ",
+          "'min_pool_size = 1' ",
+          "'pool_mode = \"transaction\"' ",
+          "'' ",
+          "'[pools.metadata_tool.shards.0]' ",
+          "'servers = [[\"${var.db_host}\", ${var.db_port}, \"primary\"]]' ",
+          "'database = \"${var.db_name}\"' ",
+          "'server_tls = true' ",
+          "> /tmp/pgcat.toml && pgcat /tmp/pgcat.toml",
         ])
       ]
 

@@ -22,7 +22,7 @@ const DATA_ELEMENT_COLUMNS: &str = r#"
     cde_rationale, cde_designated_at, glossary_term_id,
     domain_id, classification_id,
     status_id, owner_user_id, steward_user_id,
-    approver_user_id, organisational_unit,
+    organisational_unit,
     review_frequency_id, next_review_date, approved_at,
     is_pii, version_number, is_current_version, previous_version_id,
     created_by, updated_by, created_at, updated_at
@@ -66,14 +66,12 @@ pub async fn list_elements(
                   OR de.created_by = $7
                   OR de.owner_user_id = $7
                   OR de.steward_user_id = $7
-                  OR de.approver_user_id = $7
                   OR $8::BOOLEAN = TRUE
               ))
               OR (de.is_current_version = FALSE AND es.status_code NOT IN ('SUPERSEDED', 'REJECTED') AND (
                   de.created_by = $7
                   OR de.owner_user_id = $7
                   OR de.steward_user_id = $7
-                  OR de.approver_user_id = $7
                   OR $8::BOOLEAN = TRUE
               ))
           )
@@ -204,7 +202,7 @@ pub async fn get_element(
             de.cde_rationale, de.cde_designated_at, de.glossary_term_id,
             de.domain_id, de.classification_id,
             de.status_id, de.owner_user_id, de.steward_user_id,
-            de.approver_user_id, de.organisational_unit,
+            de.organisational_unit,
             de.review_frequency_id, de.next_review_date, de.approved_at,
             de.is_pii, de.version_number, de.is_current_version, de.previous_version_id,
             de.created_by, de.updated_by, de.created_at, de.updated_at,
@@ -213,7 +211,6 @@ pub async fn get_element(
             dc.classification_name,
             uo.display_name               AS owner_name,
             us.display_name               AS steward_name,
-            uap.display_name              AS approver_name,
             grf.frequency_name            AS review_frequency_name,
             es.status_code,
             es.status_name,
@@ -226,7 +223,6 @@ pub async fn get_element(
         LEFT JOIN data_classifications dc ON dc.classification_id = de.classification_id
         LEFT JOIN users uo ON uo.user_id = de.owner_user_id
         LEFT JOIN users us ON us.user_id = de.steward_user_id
-        LEFT JOIN users uap ON uap.user_id = de.approver_user_id
         LEFT JOIN glossary_review_frequencies grf ON grf.frequency_id = de.review_frequency_id
         LEFT JOIN entity_statuses es ON es.status_id = de.status_id
         LEFT JOIN users ucb ON ucb.user_id = de.created_by
@@ -247,8 +243,7 @@ pub async fn get_element(
         let is_admin = claims.roles.iter().any(|r| r == "ADMIN" || r == "admin");
         let is_involved = row.created_by == claims.sub
             || row.owner_user_id == Some(claims.sub)
-            || row.steward_user_id == Some(claims.sub)
-            || row.approver_user_id == Some(claims.sub);
+            || row.steward_user_id == Some(claims.sub);
         if !is_admin && !is_involved {
             return Err(AppError::NotFound(format!(
                 "data element not found: {element_id}"
@@ -356,9 +351,9 @@ pub async fn create_element(
             is_nullable, glossary_term_id, domain_id,
             classification_id, status_id, review_frequency_id,
             version_number, is_current_version, created_by,
-            owner_user_id, steward_user_id, approver_user_id
+            owner_user_id, steward_user_id
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, 1, TRUE, $18, $19, $20, $21)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, 1, TRUE, $18, $19, $20)
         RETURNING {cols}
         "#,
         cols = DATA_ELEMENT_COLUMNS,
@@ -391,7 +386,6 @@ pub async fn create_element(
         .bind(claims.sub)                          // $18
         .bind(body.owner_user_id)                  // $19
         .bind(body.steward_user_id)                // $20
-        .bind(body.approver_user_id)               // $21
         .fetch_one(&state.pool)
         .await?;
 
@@ -467,13 +461,12 @@ pub async fn update_element(
             classification_id   = COALESCE($16, classification_id),
             owner_user_id       = COALESCE($17, owner_user_id),
             steward_user_id     = COALESCE($18, steward_user_id),
-            approver_user_id    = COALESCE($19, approver_user_id),
-            organisational_unit = COALESCE($20, organisational_unit),
-            review_frequency_id = COALESCE($21, review_frequency_id),
-            is_pii              = COALESCE($22, is_pii),
-            updated_by          = $23,
+            organisational_unit = COALESCE($19, organisational_unit),
+            review_frequency_id = COALESCE($20, review_frequency_id),
+            is_pii              = COALESCE($21, is_pii),
+            updated_by          = $22,
             updated_at          = CURRENT_TIMESTAMP
-        WHERE element_id = $24 AND deleted_at IS NULL
+        WHERE element_id = $23 AND deleted_at IS NULL
         RETURNING {cols}
         "#,
         cols = DATA_ELEMENT_COLUMNS,
@@ -498,12 +491,11 @@ pub async fn update_element(
         .bind(body.classification_id)              // $16
         .bind(body.owner_user_id)                  // $17
         .bind(body.steward_user_id)                // $18
-        .bind(body.approver_user_id)               // $19
-        .bind(body.organisational_unit.as_deref()) // $20
-        .bind(body.review_frequency_id)            // $21
-        .bind(body.is_pii)                         // $22
-        .bind(claims.sub)                          // $23
-        .bind(element_id)                          // $24
+        .bind(body.organisational_unit.as_deref()) // $19
+        .bind(body.review_frequency_id)            // $20
+        .bind(body.is_pii)                         // $21
+        .bind(claims.sub)                          // $22
+        .bind(element_id)                          // $23
         .fetch_one(&state.pool)
         .await?;
 
@@ -592,7 +584,7 @@ pub async fn amend_element(
                 is_nullable, is_cde, cde_rationale, cde_designated_at,
                 glossary_term_id, domain_id, classification_id,
                 status_id, owner_user_id, steward_user_id,
-                approver_user_id, organisational_unit,
+                organisational_unit,
                 review_frequency_id, is_pii,
                 version_number, is_current_version, previous_version_id,
                 created_by
@@ -600,8 +592,8 @@ pub async fn amend_element(
             VALUES (
                 $1, $2, $3, $4, $5, $6, $7, $8, $9, $10,
                 $11, $12, $13, $14, $15, $16, $17, $18, $19,
-                $20, $21, $22, $23, $24, $25, $26,
-                $27, FALSE, $28, $29
+                $20, $21, $22, $23, $24, $25,
+                $26, FALSE, $27, $28
             )
             RETURNING {cols}
             "#,
@@ -630,13 +622,12 @@ pub async fn amend_element(
     .bind(draft_status_id)                   // $20
     .bind(original.owner_user_id)            // $21
     .bind(original.steward_user_id)          // $22
-    .bind(original.approver_user_id)         // $23
-    .bind(original.organisational_unit.as_deref()) // $24
-    .bind(original.review_frequency_id)      // $25
-    .bind(original.is_pii)                   // $26
-    .bind(new_version)                       // $27
-    .bind(element_id)                        // $28 = previous_version_id
-    .bind(claims.sub)                        // $29 = created_by
+    .bind(original.organisational_unit.as_deref()) // $23
+    .bind(original.review_frequency_id)      // $24
+    .bind(original.is_pii)                   // $25
+    .bind(new_version)                       // $26
+    .bind(element_id)                        // $27 = previous_version_id
+    .bind(claims.sub)                        // $28 = created_by
     .fetch_one(&state.pool)
     .await?;
 

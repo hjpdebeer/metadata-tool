@@ -143,7 +143,6 @@ const GlossaryTermForm: React.FC = () => {
         owner_user_id: detail.owner_user_id || undefined,
         steward_user_id: detail.steward_user_id || undefined,
         domain_owner_user_id: detail.domain_owner_user_id || undefined,
-        approver_user_id: detail.approver_user_id || undefined,
         organisational_unit: detail.organisational_unit || undefined,
         review_frequency_id: detail.review_frequency_id || undefined,
         is_cbt: detail.is_cbt,
@@ -219,7 +218,7 @@ const GlossaryTermForm: React.FC = () => {
         'term_name', 'definition', 'definition_notes', 'counter_examples', 'formula',
         'business_context', 'examples', 'abbreviation', 'domain_id', 'category_id',
         'term_type_id', 'unit_of_measure_id', 'classification_id',
-        'owner_user_id', 'steward_user_id', 'domain_owner_user_id', 'approver_user_id',
+        'owner_user_id', 'steward_user_id', 'domain_owner_user_id',
         'organisational_unit', 'review_frequency_id',
         'golden_source_app_id', 'visibility_id', 'language_id',
         'used_in_reports', 'used_in_policies', 'regulatory_reporting_usage',
@@ -636,17 +635,6 @@ const GlossaryTermForm: React.FC = () => {
               <Form.Item name="domain_owner_user_id" label="Data Domain Owner">
                 <Select
                   placeholder="Select domain owner"
-                  options={userOptions}
-                  allowClear
-                  showSearch
-                  optionFilterProp="label"
-                />
-              </Form.Item>
-            </Col>
-            <Col xs={24} md={12}>
-              <Form.Item name="approver_user_id" label="Approver">
-                <Select
-                  placeholder="Select approver"
                   options={userOptions}
                   allowClear
                   showSearch

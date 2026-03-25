@@ -57,8 +57,7 @@ async fn full_metadata_governance_lifecycle() {
             "domain_id": domain_id,
             "owner_user_id": ctx.admin_id,
             "steward_user_id": ctx.admin_id,
-            "domain_owner_user_id": ctx.admin_id,
-            "approver_user_id": ctx.admin_id
+            "domain_owner_user_id": ctx.admin_id
         }))
         .await;
     term_resp.assert_status(axum::http::StatusCode::CREATED);
@@ -200,8 +199,7 @@ async fn full_metadata_governance_lifecycle() {
             "data_type": "DECIMAL",
             "glossary_term_id": term_id,
             "owner_user_id": ctx.admin_id,
-            "steward_user_id": ctx.admin_id,
-            "approver_user_id": ctx.admin_id
+            "steward_user_id": ctx.admin_id
         }))
         .await;
     elem_resp.assert_status(axum::http::StatusCode::CREATED);
@@ -413,8 +411,7 @@ async fn full_metadata_governance_lifecycle() {
             "classification_id": classification_id,
             "business_owner_id": ctx.admin_id,
             "technical_owner_id": ctx.admin_id,
-            "steward_user_id": ctx.admin_id,
-            "approver_user_id": ctx.admin_id
+            "steward_user_id": ctx.admin_id
         }))
         .await;
     app_resp.assert_status(axum::http::StatusCode::CREATED);

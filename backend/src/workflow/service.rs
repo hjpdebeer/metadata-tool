@@ -1127,11 +1127,10 @@ async fn validate_ownership_before_submit(
             owner_user_id: Option<Uuid>,
             steward_user_id: Option<Uuid>,
             domain_owner_user_id: Option<Uuid>,
-            approver_user_id: Option<Uuid>,
         }
 
         let row = sqlx::query_as::<_, OwnershipCheck>(
-            "SELECT owner_user_id, steward_user_id, domain_owner_user_id, approver_user_id FROM glossary_terms WHERE term_id = $1 AND deleted_at IS NULL",
+            "SELECT owner_user_id, steward_user_id, domain_owner_user_id FROM glossary_terms WHERE term_id = $1 AND deleted_at IS NULL",
         )
         .bind(instance.entity_id)
         .fetch_optional(pool)
@@ -1148,9 +1147,6 @@ async fn validate_ownership_before_submit(
         if row.domain_owner_user_id.is_none() {
             missing.push("Data Domain Owner");
         }
-        if row.approver_user_id.is_none() {
-            missing.push("Approver");
-        }
 
         if !missing.is_empty() {
             return Err(AppError::Validation(format!(
@@ -1164,11 +1160,10 @@ async fn validate_ownership_before_submit(
             business_owner_id: Option<Uuid>,
             technical_owner_id: Option<Uuid>,
             steward_user_id: Option<Uuid>,
-            approver_user_id: Option<Uuid>,
         }
 
         let row = sqlx::query_as::<_, AppOwnershipCheck>(
-            "SELECT business_owner_id, technical_owner_id, steward_user_id, approver_user_id FROM applications WHERE application_id = $1 AND deleted_at IS NULL",
+            "SELECT business_owner_id, technical_owner_id, steward_user_id FROM applications WHERE application_id = $1 AND deleted_at IS NULL",
         )
         .bind(instance.entity_id)
         .fetch_optional(pool)
@@ -1185,9 +1180,6 @@ async fn validate_ownership_before_submit(
         if row.steward_user_id.is_none() {
             missing.push("Data Steward");
         }
-        if row.approver_user_id.is_none() {
-            missing.push("Approver");
-        }
 
         if !missing.is_empty() {
             return Err(AppError::Validation(format!(
@@ -1200,11 +1192,10 @@ async fn validate_ownership_before_submit(
         struct DeOwnershipCheck {
             owner_user_id: Option<Uuid>,
             steward_user_id: Option<Uuid>,
-            approver_user_id: Option<Uuid>,
         }
 
         let row = sqlx::query_as::<_, DeOwnershipCheck>(
-            "SELECT owner_user_id, steward_user_id, approver_user_id FROM data_elements WHERE element_id = $1 AND deleted_at IS NULL",
+            "SELECT owner_user_id, steward_user_id FROM data_elements WHERE element_id = $1 AND deleted_at IS NULL",
         )
         .bind(instance.entity_id)
         .fetch_optional(pool)
@@ -1217,9 +1208,6 @@ async fn validate_ownership_before_submit(
         }
         if row.steward_user_id.is_none() {
             missing.push("Data Steward");
-        }
-        if row.approver_user_id.is_none() {
-            missing.push("Approver");
         }
 
         if !missing.is_empty() {

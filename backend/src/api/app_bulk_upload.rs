@@ -43,11 +43,10 @@ const TEMPLATE_HEADERS: &[&str] = &[
     "Business Owner",        // I  (8)
     "Technical Owner",       // J  (9)
     "Data Steward",          // K  (10)
-    "Approver",              // L  (11)
-    "Organisational Unit",   // M  (12)
-    "CBA Flag",              // N  (13)
-    "CBA Rationale",         // O  (14)
-    "External Reference ID", // P  (15)
+    "Organisational Unit",   // L  (11)
+    "CBA Flag",              // M  (12)
+    "CBA Rationale",         // N  (13)
+    "External Reference ID", // O  (14)
 ];
 
 /// Instructions for each column (field, description, mandatory, max_length, notes).
@@ -119,13 +118,6 @@ const INSTRUCTIONS: &[(&str, &str, &str, &str, &str)] = &[
     (
         "Data Steward",
         "Email address of the data steward",
-        "Yes",
-        "",
-        "Must exist in the system",
-    ),
-    (
-        "Approver",
-        "Email address of the approver",
         "Yes",
         "",
         "Must exist in the system",
@@ -264,8 +256,7 @@ async fn generate_template(pool: &PgPool) -> AppResult<Vec<u8>> {
         (8, 3),  // Business Owner      -> Users
         (9, 3),  // Technical Owner     -> Users
         (10, 3), // Data Steward        -> Users
-        (11, 3), // Approver            -> Users
-        (12, 2), // Organisational Unit -> OrganisationalUnits
+        (11, 2), // Organisational Unit -> OrganisationalUnits
     ];
 
     // Pre-build the data validations (no borrow on workbook needed yet)
@@ -647,11 +638,10 @@ async fn process_app_row(
     let business_owner_email = cols[8].trim().to_string();
     let technical_owner_email = cols[9].trim().to_string();
     let steward_email = cols[10].trim().to_string();
-    let approver_email = cols[11].trim().to_string();
-    let org_unit_val = cols[12].trim().to_string();
-    let cba_flag_str = non_empty(&cols[13]);
-    let cba_rationale = non_empty(&cols[14]);
-    let external_reference_id = cols[15].trim().to_string();
+    let org_unit_val = cols[11].trim().to_string();
+    let cba_flag_str = non_empty(&cols[12]);
+    let cba_rationale = non_empty(&cols[13]);
+    let external_reference_id = cols[14].trim().to_string();
 
     // --- Mandatory field validation ---
     if application_name.is_empty() {
@@ -729,13 +719,6 @@ async fn process_app_row(
             row: row_num,
             field: Some("Data Steward".into()),
             message: "Data Steward email is required".into(),
-        });
-    }
-    if approver_email.is_empty() {
-        row_errors.push(BulkUploadError {
-            row: row_num,
-            field: Some("Approver".into()),
-            message: "Approver email is required".into(),
         });
     }
     if org_unit_val.is_empty() {
@@ -895,15 +878,6 @@ async fn process_app_row(
         &mut row_errors,
     )
     .await;
-    let approver_user_id = resolve_user_by_email(
-        ctx.pool,
-        row_num,
-        "Approver",
-        &approver_email,
-        &mut row_errors,
-    )
-    .await;
-
     // If there are validation errors, return them all
     if !row_errors.is_empty() {
         return Err(row_errors);
@@ -918,7 +892,7 @@ async fn process_app_row(
             classification_id, vendor, vendor_product_name,
             deployment_type, lifecycle_stage_id, license_type,
             business_owner_id, technical_owner_id,
-            steward_user_id, approver_user_id,
+            steward_user_id,
             organisational_unit,
             is_cba, cba_rationale,
             external_reference_id,
@@ -926,7 +900,7 @@ async fn process_app_row(
         )
         VALUES (
             $1, $2, $3, $4, $5, $6, $7, $8, $9, $10,
-            $11, $12, $13, $14, $15, $16, $17, $18
+            $11, $12, $13, $14, $15, $16, $17
         )
         RETURNING application_id
         "#,
@@ -942,13 +916,12 @@ async fn process_app_row(
     .bind(business_owner_id)          // $9
     .bind(technical_owner_id)         // $10
     .bind(steward_user_id)            // $11
-    .bind(approver_user_id)           // $12
-    .bind(&org_unit_val)              // $13
-    .bind(is_cba)                     // $14
-    .bind(cba_rationale.as_deref())   // $15
-    .bind(&external_reference_id)     // $16
-    .bind(ctx.draft_status_id)        // $17
-    .bind(ctx.user_id)                // $18
+    .bind(&org_unit_val)              // $12
+    .bind(is_cba)                     // $13
+    .bind(cba_rationale.as_deref())   // $14
+    .bind(&external_reference_id)     // $15
+    .bind(ctx.draft_status_id)        // $16
+    .bind(ctx.user_id)                // $17
     .fetch_one(ctx.pool)
     .await
     .map_err(|e| {

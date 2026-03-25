@@ -136,7 +136,6 @@ export interface GlossaryTerm {
   steward_user_id: string | null;
   steward_name: string | null;
   domain_owner_user_id: string | null;
-  approver_user_id: string | null;
   organisational_unit: string | null;
   parent_term_id: string | null;
   version_number: number;
@@ -189,7 +188,6 @@ export interface GlossaryTermDetailView {
   owner_user_id: string | null;
   steward_user_id: string | null;
   domain_owner_user_id: string | null;
-  approver_user_id: string | null;
   organisational_unit: string | null;
   status_id: string;
   version_number: number;
@@ -229,7 +227,6 @@ export interface GlossaryTermDetailView {
   owner_name: string | null;
   steward_name: string | null;
   domain_owner_name: string | null;
-  approver_name: string | null;
   status_code: string | null;
   status_name: string | null;
   // Junction data (from separate queries)
@@ -271,7 +268,6 @@ export interface UpdateGlossaryTermRequest {
   owner_user_id?: string;
   steward_user_id?: string;
   domain_owner_user_id?: string;
-  approver_user_id?: string;
   organisational_unit?: string;
   review_frequency_id?: string;
   is_cbt?: boolean;

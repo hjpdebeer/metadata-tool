@@ -135,7 +135,6 @@ const ApplicationForm: React.FC = () => {
         business_owner_id: response.data.business_owner_id || undefined,
         technical_owner_id: response.data.technical_owner_id || undefined,
         steward_user_id: response.data.steward_user_id || undefined,
-        approver_user_id: response.data.approver_user_id || undefined,
         organisational_unit: response.data.organisational_unit || undefined,
       });
     } catch {
@@ -214,7 +213,7 @@ const ApplicationForm: React.FC = () => {
           'data_classification_id', 'regulatory_scope',
           'support_model', 'dr_tier_id', 'review_frequency_id',
           'business_owner_id', 'technical_owner_id',
-          'steward_user_id', 'approver_user_id', 'organisational_unit',
+          'steward_user_id', 'organisational_unit',
         ] as const;
 
         for (const field of fields) {
@@ -649,18 +648,7 @@ const ApplicationForm: React.FC = () => {
                   />
                 </Form.Item>
               </Col>
-              <Col xs={24} md={12}>
-                <Form.Item name="approver_user_id" label="Approver">
-                  <Select
-                    placeholder="Select approver"
-                    options={userOptions}
-                    allowClear
-                    showSearch
-                    optionFilterProp="label"
-                  />
-                </Form.Item>
-              </Col>
-            </Row>
+              </Row>
             <Row gutter={16}>
               <Col xs={24} md={12}>
                 <Form.Item name="organisational_unit" label="Organisational Unit">

@@ -48,7 +48,6 @@ pub async fn list_terms(
                   OR gt.owner_user_id = $7
                   OR gt.steward_user_id = $7
                   OR gt.domain_owner_user_id = $7
-                  OR gt.approver_user_id = $7
                   OR $8::BOOLEAN = TRUE
               ))
               OR (gt.is_current_version = FALSE AND es.status_code NOT IN ('SUPERSEDED', 'REJECTED') AND (
@@ -56,7 +55,6 @@ pub async fn list_terms(
                   OR gt.owner_user_id = $7
                   OR gt.steward_user_id = $7
                   OR gt.domain_owner_user_id = $7
-                  OR gt.approver_user_id = $7
                   OR $8::BOOLEAN = TRUE
               ))
           )
@@ -167,7 +165,7 @@ const GLOSSARY_TERM_COLUMNS: &str = r#"
     formula, unit_of_measure_id,
     term_type_id, domain_id, category_id, classification_id,
     owner_user_id, steward_user_id, domain_owner_user_id,
-    approver_user_id, organisational_unit,
+    organisational_unit,
     status_id, version_number, is_current_version,
     approved_at, review_frequency_id, next_review_date,
     parent_term_id, source_reference, regulatory_reference,
@@ -204,7 +202,7 @@ pub async fn get_term(
             gt.unit_of_measure_id, gt.term_type_id, gt.domain_id,
             gt.category_id, gt.classification_id,
             gt.owner_user_id, gt.steward_user_id,
-            gt.domain_owner_user_id, gt.approver_user_id,
+            gt.domain_owner_user_id,
             gt.organisational_unit,
             gt.status_id, gt.version_number, gt.is_current_version,
             gt.approved_at, gt.review_frequency_id, gt.next_review_date,
@@ -230,7 +228,6 @@ pub async fn get_term(
             uo.display_name               AS owner_name,
             us.display_name               AS steward_name,
             udo.display_name              AS domain_owner_name,
-            ua.display_name               AS approver_name,
             es.status_code,
             es.status_name
         FROM glossary_terms gt
@@ -248,7 +245,6 @@ pub async fn get_term(
         LEFT JOIN users uo                  ON uo.user_id = gt.owner_user_id
         LEFT JOIN users us                  ON us.user_id = gt.steward_user_id
         LEFT JOIN users udo                 ON udo.user_id = gt.domain_owner_user_id
-        LEFT JOIN users ua                  ON ua.user_id = gt.approver_user_id
         LEFT JOIN entity_statuses es        ON es.status_id = gt.status_id
         WHERE gt.term_id = $1 AND gt.deleted_at IS NULL
         "#,
@@ -265,8 +261,7 @@ pub async fn get_term(
         let is_involved = row.created_by == claims.sub
             || row.owner_user_id == Some(claims.sub)
             || row.steward_user_id == Some(claims.sub)
-            || row.domain_owner_user_id == Some(claims.sub)
-            || row.approver_user_id == Some(claims.sub);
+            || row.domain_owner_user_id == Some(claims.sub);
         if !is_admin && !is_involved {
             return Err(AppError::NotFound(format!(
                 "glossary term not found: {term_id}"
@@ -448,9 +443,9 @@ pub async fn create_term(
         INSERT INTO glossary_terms (
             term_name, definition, domain_id, category_id, status_id,
             review_frequency_id, version_number, is_current_version, created_by,
-            owner_user_id, steward_user_id, domain_owner_user_id, approver_user_id
+            owner_user_id, steward_user_id, domain_owner_user_id
         )
-        VALUES ($1, $2, $3, $4, $5, $6, 1, TRUE, $7, $8, $9, $10, $11)
+        VALUES ($1, $2, $3, $4, $5, $6, 1, TRUE, $7, $8, $9, $10)
         RETURNING {cols}
         "#,
         cols = GLOSSARY_TERM_COLUMNS,
@@ -466,7 +461,6 @@ pub async fn create_term(
         .bind(body.owner_user_id)           // $8
         .bind(body.steward_user_id)         // $9
         .bind(body.domain_owner_user_id)    // $10
-        .bind(body.approver_user_id)        // $11
         .fetch_one(&state.pool)
         .await?;
 
@@ -581,25 +575,24 @@ pub async fn update_term(
             owner_user_id            = COALESCE($14, owner_user_id),
             steward_user_id          = COALESCE($15, steward_user_id),
             domain_owner_user_id     = COALESCE($16, domain_owner_user_id),
-            approver_user_id         = COALESCE($17, approver_user_id),
-            organisational_unit      = COALESCE($18, organisational_unit),
-            approved_at              = COALESCE($19, approved_at),
-            review_frequency_id      = COALESCE($20, review_frequency_id),
-            parent_term_id           = COALESCE($21, parent_term_id),
-            source_reference         = COALESCE($22, source_reference),
-            regulatory_reference     = COALESCE($23, regulatory_reference),
-            used_in_reports          = COALESCE($24, used_in_reports),
-            used_in_policies         = COALESCE($25, used_in_policies),
-            regulatory_reporting_usage = COALESCE($26, regulatory_reporting_usage),
-            is_cbt                   = COALESCE($27, is_cbt),
-            golden_source_app_id     = COALESCE($28, golden_source_app_id),
-            confidence_level_id      = COALESCE($29, confidence_level_id),
-            visibility_id            = COALESCE($30, visibility_id),
-            language_id              = COALESCE($31, language_id),
-            external_reference       = COALESCE($32, external_reference),
-            updated_by               = $33,
+            organisational_unit      = COALESCE($17, organisational_unit),
+            approved_at              = COALESCE($18, approved_at),
+            review_frequency_id      = COALESCE($19, review_frequency_id),
+            parent_term_id           = COALESCE($20, parent_term_id),
+            source_reference         = COALESCE($21, source_reference),
+            regulatory_reference     = COALESCE($22, regulatory_reference),
+            used_in_reports          = COALESCE($23, used_in_reports),
+            used_in_policies         = COALESCE($24, used_in_policies),
+            regulatory_reporting_usage = COALESCE($25, regulatory_reporting_usage),
+            is_cbt                   = COALESCE($26, is_cbt),
+            golden_source_app_id     = COALESCE($27, golden_source_app_id),
+            confidence_level_id      = COALESCE($28, confidence_level_id),
+            visibility_id            = COALESCE($29, visibility_id),
+            language_id              = COALESCE($30, language_id),
+            external_reference       = COALESCE($31, external_reference),
+            updated_by               = $32,
             updated_at               = CURRENT_TIMESTAMP
-        WHERE term_id = $34 AND deleted_at IS NULL
+        WHERE term_id = $33 AND deleted_at IS NULL
         RETURNING {cols}
         "#,
         cols = GLOSSARY_TERM_COLUMNS,
@@ -622,7 +615,6 @@ pub async fn update_term(
         .bind(body.owner_user_id)
         .bind(body.steward_user_id)
         .bind(body.domain_owner_user_id)
-        .bind(body.approver_user_id)
         .bind(body.organisational_unit.as_deref())
         .bind(body.approved_at)
         .bind(body.review_frequency_id)
@@ -726,7 +718,7 @@ pub async fn amend_term(
                 formula, unit_of_measure_id,
                 term_type_id, domain_id, category_id, classification_id,
                 owner_user_id, steward_user_id, domain_owner_user_id,
-                approver_user_id, organisational_unit,
+                organisational_unit,
                 status_id, version_number, is_current_version,
                 review_frequency_id,
                 parent_term_id, source_reference, regulatory_reference,
@@ -737,53 +729,52 @@ pub async fn amend_term(
             )
             VALUES (
                 $1, $2, $3, $4, $5, $6, $7, $8, $9, $10,
-                $11, $12, $13, $14, $15, $16, $17, $18, $19,
-                $20, $21, FALSE,
-                $22, $23, $24, $25, $26, $27, $28,
-                $29, $30, $31, $32, $33, $34,
-                $35, $36
+                $11, $12, $13, $14, $15, $16, $17, $18,
+                $19, $20, FALSE,
+                $21, $22, $23, $24, $25, $26, $27,
+                $28, $29, $30, $31, $32, $33,
+                $34, $35
             )
             RETURNING {cols}
             "#,
             cols = GLOSSARY_TERM_COLUMNS
         ),
     )
-    .bind(&original.term_name)
-    .bind(&original.term_code) // same term_code, new version_number
-    .bind(&original.definition)
-    .bind(original.abbreviation.as_deref())
-    .bind(original.business_context.as_deref())
-    .bind(original.examples.as_deref())
-    .bind(original.definition_notes.as_deref())
-    .bind(original.counter_examples.as_deref())
-    .bind(original.formula.as_deref())
-    .bind(original.unit_of_measure_id)
-    .bind(original.term_type_id)
-    .bind(original.domain_id)
-    .bind(original.category_id)
-    .bind(original.classification_id)
-    .bind(original.owner_user_id)
-    .bind(original.steward_user_id)
-    .bind(original.domain_owner_user_id)
-    .bind(original.approver_user_id)
-    .bind(original.organisational_unit.as_deref())
-    .bind(draft_status_id)                  // $20
-    .bind(new_version)                      // $21
-    .bind(original.review_frequency_id)     // $22
-    .bind(original.parent_term_id)          // $23
-    .bind(original.source_reference.as_deref())
-    .bind(original.regulatory_reference.as_deref())
-    .bind(original.used_in_reports.as_deref())
-    .bind(original.used_in_policies.as_deref())
-    .bind(original.regulatory_reporting_usage.as_deref())
-    .bind(original.is_cbt)                  // $29
-    .bind(original.golden_source_app_id)
-    .bind(original.confidence_level_id)
-    .bind(original.visibility_id)
-    .bind(original.language_id)
-    .bind(original.external_reference.as_deref())
-    .bind(term_id)                          // $36 = previous_version_id
-    .bind(claims.sub)                       // $37 = created_by
+    .bind(&original.term_name)              // $1
+    .bind(&original.term_code)              // $2
+    .bind(&original.definition)             // $3
+    .bind(original.abbreviation.as_deref()) // $4
+    .bind(original.business_context.as_deref()) // $5
+    .bind(original.examples.as_deref())     // $6
+    .bind(original.definition_notes.as_deref()) // $7
+    .bind(original.counter_examples.as_deref()) // $8
+    .bind(original.formula.as_deref())      // $9
+    .bind(original.unit_of_measure_id)      // $10
+    .bind(original.term_type_id)            // $11
+    .bind(original.domain_id)               // $12
+    .bind(original.category_id)             // $13
+    .bind(original.classification_id)       // $14
+    .bind(original.owner_user_id)           // $15
+    .bind(original.steward_user_id)         // $16
+    .bind(original.domain_owner_user_id)    // $17
+    .bind(original.organisational_unit.as_deref()) // $18
+    .bind(draft_status_id)                  // $19
+    .bind(new_version)                      // $20
+    .bind(original.review_frequency_id)     // $21
+    .bind(original.parent_term_id)          // $22
+    .bind(original.source_reference.as_deref()) // $23
+    .bind(original.regulatory_reference.as_deref()) // $24
+    .bind(original.used_in_reports.as_deref()) // $25
+    .bind(original.used_in_policies.as_deref()) // $26
+    .bind(original.regulatory_reporting_usage.as_deref()) // $27
+    .bind(original.is_cbt)                  // $28
+    .bind(original.golden_source_app_id)    // $29
+    .bind(original.confidence_level_id)     // $30
+    .bind(original.visibility_id)           // $31
+    .bind(original.language_id)             // $32
+    .bind(original.external_reference.as_deref()) // $33
+    .bind(term_id)                          // $34 = previous_version_id
+    .bind(claims.sub)                       // $35 = created_by
     .fetch_one(&state.pool)
     .await?;
 

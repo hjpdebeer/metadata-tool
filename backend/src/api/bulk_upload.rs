@@ -48,20 +48,19 @@ const TEMPLATE_HEADERS: &[&str] = &[
     "Business Term Owner",  // O  (14)
     "Data Steward",         // P  (15)
     "Data Domain Owner",    // Q  (16)
-    "Approver",             // R  (17)
-    "Organisational Unit",  // S  (18)
-    "Parent Term",          // T  (19)
-    "Source Reference",     // U  (20)
-    "Regulatory Reference", // V  (21)
-    "External Reference",   // W  (22)
-    "Business Rules",       // X  (23)
-    "Examples",             // Y  (24)
-    "Used in Reports",      // Z  (25)
-    "Used in Policies",     // AA (26)
-    "Regulatory Reporting", // AB (27)
-    "CBT Flag",             // AC (28)
-    "Regulatory Tags",      // AD (29)
-    "Subject Areas",        // AE (30)
+    "Organisational Unit",  // R  (17)
+    "Parent Term",          // S  (18)
+    "Source Reference",     // T  (19)
+    "Regulatory Reference", // U  (20)
+    "External Reference",   // V  (21)
+    "Business Rules",       // W  (22)
+    "Examples",             // X  (23)
+    "Used in Reports",      // Y  (24)
+    "Used in Policies",     // Z  (25)
+    "Regulatory Reporting", // AA (26)
+    "CBT Flag",             // AB (27)
+    "Regulatory Tags",      // AC (28)
+    "Subject Areas",        // AD (29)
     "Tags",                 // AF (31)
 ];
 
@@ -176,13 +175,6 @@ const INSTRUCTIONS: &[(&str, &str, &str, &str, &str)] = &[
     (
         "Data Domain Owner",
         "Email address of the data domain owner",
-        "Yes",
-        "",
-        "Must exist in the system",
-    ),
-    (
-        "Approver",
-        "Email address of the approver",
         "Yes",
         "",
         "Must exist in the system",
@@ -444,8 +436,7 @@ async fn generate_template(pool: &PgPool) -> AppResult<Vec<u8>> {
         (14, 8), // Owner email    -> UserEmails
         (15, 8), // Steward email  -> UserEmails
         (16, 8), // Domain Owner   -> UserEmails
-        (17, 8), // Approver       -> UserEmails
-        (18, 9), // Org Unit       -> OrganisationalUnits
+        (17, 9), // Org Unit       -> OrganisationalUnits
     ];
 
     // Pre-build the data validations (no borrow on workbook needed yet)
@@ -860,21 +851,20 @@ async fn process_row(
     let owner_email = cols[14].trim().to_string();
     let steward_email = cols[15].trim().to_string();
     let domain_owner_email = cols[16].trim().to_string();
-    let approver_email = cols[17].trim().to_string();
-    let org_unit_val = non_empty(&cols[18]);
-    let parent_term_val = non_empty(&cols[19]);
-    let source_reference = non_empty(&cols[20]);
-    let regulatory_reference = non_empty(&cols[21]);
-    let external_reference = non_empty(&cols[22]);
-    let business_context = non_empty(&cols[23]);
-    let examples = non_empty(&cols[24]);
-    let used_in_reports = non_empty(&cols[25]);
-    let used_in_policies = non_empty(&cols[26]);
-    let regulatory_reporting_usage = non_empty(&cols[27]);
-    let cbt_flag_str = non_empty(&cols[28]);
-    let reg_tags_str = non_empty(&cols[29]);
-    let subject_areas_str = non_empty(&cols[30]);
-    let tags_str = non_empty(&cols[31]);
+    let org_unit_val = non_empty(&cols[17]);
+    let parent_term_val = non_empty(&cols[18]);
+    let source_reference = non_empty(&cols[19]);
+    let regulatory_reference = non_empty(&cols[20]);
+    let external_reference = non_empty(&cols[21]);
+    let business_context = non_empty(&cols[22]);
+    let examples = non_empty(&cols[23]);
+    let used_in_reports = non_empty(&cols[24]);
+    let used_in_policies = non_empty(&cols[25]);
+    let regulatory_reporting_usage = non_empty(&cols[26]);
+    let cbt_flag_str = non_empty(&cols[27]);
+    let reg_tags_str = non_empty(&cols[28]);
+    let subject_areas_str = non_empty(&cols[29]);
+    let tags_str = non_empty(&cols[30]);
 
     // --- Mandatory field validation ---
     if term_name.is_empty() {
@@ -910,13 +900,6 @@ async fn process_row(
             row: row_num,
             field: Some("Data Domain Owner".into()),
             message: "Data Domain Owner email is required".into(),
-        });
-    }
-    if approver_email.is_empty() {
-        row_errors.push(BulkUploadError {
-            row: row_num,
-            field: Some("Approver".into()),
-            message: "Approver email is required".into(),
         });
     }
     if org_unit_val.is_none() {
@@ -1058,15 +1041,6 @@ async fn process_row(
         &mut row_errors,
     )
     .await;
-    let approver_user_id = resolve_user_by_email(
-        ctx.pool,
-        row_num,
-        "Approver",
-        &approver_email,
-        &mut row_errors,
-    )
-    .await;
-
     // Resolve organisational unit text (stored as text, not FK)
     let organisational_unit = org_unit_val.clone();
 
@@ -1112,7 +1086,7 @@ async fn process_row(
             term_type_id, unit_of_measure_id, review_frequency_id,
             visibility_id, language_id,
             owner_user_id, steward_user_id, domain_owner_user_id,
-            approver_user_id, organisational_unit, parent_term_id,
+            organisational_unit, parent_term_id,
             source_reference, regulatory_reference, external_reference,
             business_context, examples, used_in_reports, used_in_policies,
             regulatory_reporting_usage, is_cbt,
@@ -1120,9 +1094,9 @@ async fn process_row(
         )
         VALUES (
             $1, $2, $3, $4, $5, $6, $7, $8, $9, $10,
-            $11, $12, $13, $14, $15, $16, $17, $18, $19, $20,
-            $21, $22, $23, $24, $25, $26, $27, $28,
-            $29, $30, 1, TRUE, $31
+            $11, $12, $13, $14, $15, $16, $17, $18, $19,
+            $20, $21, $22, $23, $24, $25, $26, $27,
+            $28, $29, 1, TRUE, $30
         )
         RETURNING term_id
         "#,
@@ -1144,20 +1118,19 @@ async fn process_row(
     .bind(owner_user_id)                    // $15
     .bind(steward_user_id)                  // $16
     .bind(domain_owner_user_id)             // $17
-    .bind(approver_user_id)                 // $18
-    .bind(organisational_unit.as_deref())   // $19
-    .bind(parent_term_id)                   // $20
-    .bind(source_reference.as_deref())      // $21
-    .bind(regulatory_reference.as_deref())  // $22
-    .bind(external_reference.as_deref())    // $23
-    .bind(business_context.as_deref())      // $24
-    .bind(examples.as_deref())              // $25
-    .bind(used_in_reports.as_deref())       // $26
-    .bind(used_in_policies.as_deref())      // $27
-    .bind(regulatory_reporting_usage.as_deref()) // $28
-    .bind(is_cbt)                           // $29
-    .bind(ctx.draft_status_id)              // $30
-    .bind(ctx.user_id)                      // $31
+    .bind(organisational_unit.as_deref())   // $18
+    .bind(parent_term_id)                   // $19
+    .bind(source_reference.as_deref())      // $20
+    .bind(regulatory_reference.as_deref())  // $21
+    .bind(external_reference.as_deref())    // $22
+    .bind(business_context.as_deref())      // $23
+    .bind(examples.as_deref())              // $24
+    .bind(used_in_reports.as_deref())       // $25
+    .bind(used_in_policies.as_deref())      // $26
+    .bind(regulatory_reporting_usage.as_deref()) // $27
+    .bind(is_cbt)                           // $28
+    .bind(ctx.draft_status_id)              // $29
+    .bind(ctx.user_id)                      // $30
     .fetch_one(ctx.pool)
     .await
     .map_err(|e| {

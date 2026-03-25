@@ -45,7 +45,6 @@ pub async fn list_applications(
                   OR a.business_owner_id = $6
                   OR a.technical_owner_id = $6
                   OR a.steward_user_id = $6
-                  OR a.approver_user_id = $6
                   OR $7::BOOLEAN = TRUE
               ))
               OR (a.is_current_version = FALSE AND es.status_code NOT IN ('SUPERSEDED', 'REJECTED') AND (
@@ -53,7 +52,6 @@ pub async fn list_applications(
                   OR a.business_owner_id = $6
                   OR a.technical_owner_id = $6
                   OR a.steward_user_id = $6
-                  OR a.approver_user_id = $6
                   OR $7::BOOLEAN = TRUE
               ))
           )
@@ -177,7 +175,7 @@ pub async fn get_application(
             a.classification_id, a.deployment_type, a.technology_stack,
             a.status_id,
             a.business_owner_id, a.technical_owner_id,
-            a.steward_user_id, a.approver_user_id, a.organisational_unit,
+            a.steward_user_id, a.organisational_unit,
             a.vendor, a.vendor_product_name, a.version, a.license_type,
             a.abbreviation, a.external_reference_id,
             a.business_capability, a.user_base,
@@ -198,7 +196,6 @@ pub async fn get_application(
             ubo.display_name              AS business_owner_name,
             uto.display_name              AS technical_owner_name,
             ust.display_name              AS steward_name,
-            uap.display_name              AS approver_name,
             act.tier_name                 AS criticality_tier_name,
             arr.rating_name               AS risk_rating_name,
             dc.classification_name        AS data_classification_name,
@@ -215,7 +212,6 @@ pub async fn get_application(
         LEFT JOIN users ubo ON ubo.user_id = a.business_owner_id
         LEFT JOIN users uto ON uto.user_id = a.technical_owner_id
         LEFT JOIN users ust ON ust.user_id = a.steward_user_id
-        LEFT JOIN users uap ON uap.user_id = a.approver_user_id
         LEFT JOIN application_criticality_tiers act ON act.tier_id = a.criticality_tier_id
         LEFT JOIN application_risk_ratings arr ON arr.rating_id = a.risk_rating_id
         LEFT JOIN data_classifications dc ON dc.classification_id = a.data_classification_id
@@ -239,8 +235,7 @@ pub async fn get_application(
         let is_involved = row.created_by == claims.sub
             || row.business_owner_id == Some(claims.sub)
             || row.technical_owner_id == Some(claims.sub)
-            || row.steward_user_id == Some(claims.sub)
-            || row.approver_user_id == Some(claims.sub);
+            || row.steward_user_id == Some(claims.sub);
         if !is_admin && !is_involved {
             return Err(AppError::NotFound(format!(
                 "application not found: {app_id}"
@@ -341,9 +336,9 @@ pub async fn create_application(
             is_cba, cba_rationale, go_live_date, documentation_url,
             abbreviation, external_reference_id, license_type,
             lifecycle_stage_id, created_by,
-            business_owner_id, technical_owner_id, steward_user_id, approver_user_id
+            business_owner_id, technical_owner_id, steward_user_id
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21)
         RETURNING *
         "#,
     )
@@ -368,7 +363,6 @@ pub async fn create_application(
     .bind(body.business_owner_id)                  // $19
     .bind(body.technical_owner_id)                 // $20
     .bind(body.steward_user_id)                    // $21
-    .bind(body.approver_user_id)                   // $22
     .fetch_one(&state.pool)
     .await?;
 
@@ -461,11 +455,10 @@ pub async fn update_application(
             business_owner_id      = COALESCE($29, business_owner_id),
             technical_owner_id     = COALESCE($30, technical_owner_id),
             steward_user_id        = COALESCE($31, steward_user_id),
-            approver_user_id       = COALESCE($32, approver_user_id),
-            organisational_unit    = COALESCE($33, organisational_unit),
-            updated_by             = $34,
+            organisational_unit    = COALESCE($32, organisational_unit),
+            updated_by             = $33,
             updated_at             = CURRENT_TIMESTAMP
-        WHERE application_id = $35 AND deleted_at IS NULL
+        WHERE application_id = $34 AND deleted_at IS NULL
         RETURNING *
         "#,
     )
@@ -500,7 +493,6 @@ pub async fn update_application(
     .bind(body.business_owner_id)
     .bind(body.technical_owner_id)
     .bind(body.steward_user_id)
-    .bind(body.approver_user_id)
     .bind(body.organisational_unit.as_deref())
     .bind(claims.sub)
     .bind(app_id)
@@ -854,7 +846,7 @@ pub async fn amend_application(
             classification_id, deployment_type, technology_stack,
             status_id,
             business_owner_id, technical_owner_id,
-            steward_user_id, approver_user_id, organisational_unit,
+            steward_user_id, organisational_unit,
             vendor, vendor_product_name, version, license_type,
             abbreviation, external_reference_id,
             business_capability, user_base,
@@ -873,7 +865,7 @@ pub async fn amend_application(
             $1, $2, $3, $4, $5, $6, $7, $8, $9, $10,
             $11, $12, $13, $14, $15, $16, $17, $18, $19, $20,
             $21, $22, $23, $24, $25, $26, $27, $28, $29, $30,
-            $31, $32, $33, $34, $35, $36, FALSE, $37, $38
+            $31, $32, $33, $34, $35, FALSE, $36, $37
         )
         RETURNING *
         "#,
@@ -888,34 +880,33 @@ pub async fn amend_application(
     .bind(original.business_owner_id)           // $8
     .bind(original.technical_owner_id)          // $9
     .bind(original.steward_user_id)             // $10
-    .bind(original.approver_user_id)            // $11
-    .bind(original.organisational_unit.as_deref()) // $12
-    .bind(original.vendor.as_deref())           // $13
-    .bind(original.vendor_product_name.as_deref()) // $14
-    .bind(original.version.as_deref())          // $15
-    .bind(original.license_type.as_deref())     // $16
-    .bind(original.abbreviation.as_deref())     // $17
-    .bind(original.external_reference_id.as_deref()) // $18
-    .bind(original.business_capability.as_deref()) // $19
-    .bind(original.user_base.as_deref())        // $20
-    .bind(original.is_cba)                      // $21
-    .bind(original.cba_rationale.as_deref())    // $22
-    .bind(original.criticality_tier_id)         // $23
-    .bind(original.risk_rating_id)              // $24
-    .bind(original.data_classification_id)      // $25
-    .bind(original.regulatory_scope.as_deref()) // $26
-    .bind(original.last_security_assessment)    // $27
-    .bind(original.support_model.as_deref())    // $28
-    .bind(original.dr_tier_id)                  // $29
-    .bind(original.lifecycle_stage_id)          // $30
-    .bind(original.go_live_date)                // $31
-    .bind(original.retirement_date)             // $32
-    .bind(original.contract_end_date)           // $33
-    .bind(original.review_frequency_id)         // $34
-    .bind(original.documentation_url.as_deref()) // $35
-    .bind(new_version)                          // $36
-    .bind(app_id)                               // $37 = previous_version_id
-    .bind(claims.sub)                           // $38 = created_by
+    .bind(original.organisational_unit.as_deref()) // $11
+    .bind(original.vendor.as_deref())           // $12
+    .bind(original.vendor_product_name.as_deref()) // $13
+    .bind(original.version.as_deref())          // $14
+    .bind(original.license_type.as_deref())     // $15
+    .bind(original.abbreviation.as_deref())     // $16
+    .bind(original.external_reference_id.as_deref()) // $17
+    .bind(original.business_capability.as_deref()) // $18
+    .bind(original.user_base.as_deref())        // $19
+    .bind(original.is_cba)                      // $20
+    .bind(original.cba_rationale.as_deref())    // $21
+    .bind(original.criticality_tier_id)         // $22
+    .bind(original.risk_rating_id)              // $23
+    .bind(original.data_classification_id)      // $24
+    .bind(original.regulatory_scope.as_deref()) // $25
+    .bind(original.last_security_assessment)    // $26
+    .bind(original.support_model.as_deref())    // $27
+    .bind(original.dr_tier_id)                  // $28
+    .bind(original.lifecycle_stage_id)          // $29
+    .bind(original.go_live_date)                // $30
+    .bind(original.retirement_date)             // $31
+    .bind(original.contract_end_date)           // $32
+    .bind(original.review_frequency_id)         // $33
+    .bind(original.documentation_url.as_deref()) // $34
+    .bind(new_version)                          // $35
+    .bind(app_id)                               // $36 = previous_version_id
+    .bind(claims.sub)                           // $37 = created_by
     .fetch_one(&state.pool)
     .await?;
 

@@ -119,7 +119,6 @@ const DataElementForm: React.FC = () => {
         classification_id: response.data.classification_id || undefined,
         owner_user_id: response.data.owner_user_id || undefined,
         steward_user_id: response.data.steward_user_id || undefined,
-        approver_user_id: response.data.approver_user_id || undefined,
         organisational_unit: response.data.organisational_unit || undefined,
         review_frequency_id: response.data.review_frequency_id || undefined,
       });
@@ -184,7 +183,7 @@ const DataElementForm: React.FC = () => {
         'max_length', 'numeric_precision', 'numeric_scale',
         'format_pattern', 'allowed_values', 'default_value',
         'glossary_term_id', 'domain_id', 'classification_id',
-        'owner_user_id', 'steward_user_id', 'approver_user_id',
+        'owner_user_id', 'steward_user_id',
         'organisational_unit', 'review_frequency_id',
       ] as const;
 
@@ -582,17 +581,6 @@ const DataElementForm: React.FC = () => {
             </Col>
           </Row>
           <Row gutter={16}>
-            <Col xs={24} md={12}>
-              <Form.Item name="approver_user_id" label="Approver">
-                <Select
-                  placeholder="Select approver"
-                  options={userOptions}
-                  allowClear
-                  showSearch
-                  optionFilterProp="label"
-                />
-              </Form.Item>
-            </Col>
             <Col xs={24} md={12}>
               <Form.Item name="organisational_unit" label="Organisational Unit">
                 <Select

@@ -59,7 +59,6 @@ pub struct GlossaryTerm {
     pub owner_user_id: Option<Uuid>,
     pub steward_user_id: Option<Uuid>,
     pub domain_owner_user_id: Option<Uuid>,
-    pub approver_user_id: Option<Uuid>,
     pub organisational_unit: Option<String>,
 
     // Section 5: Lifecycle
@@ -128,7 +127,6 @@ pub struct GlossaryTermDetailRow {
     pub owner_user_id: Option<Uuid>,
     pub steward_user_id: Option<Uuid>,
     pub domain_owner_user_id: Option<Uuid>,
-    pub approver_user_id: Option<Uuid>,
     pub organisational_unit: Option<String>,
     pub status_id: Uuid,
     pub version_number: i32,
@@ -168,7 +166,6 @@ pub struct GlossaryTermDetailRow {
     pub owner_name: Option<String>,
     pub steward_name: Option<String>,
     pub domain_owner_name: Option<String>,
-    pub approver_name: Option<String>,
     pub status_code: Option<String>,
     pub status_name: Option<String>,
 }
@@ -197,7 +194,6 @@ pub struct GlossaryTermDetail {
     pub owner_user_id: Option<Uuid>,
     pub steward_user_id: Option<Uuid>,
     pub domain_owner_user_id: Option<Uuid>,
-    pub approver_user_id: Option<Uuid>,
     pub organisational_unit: Option<String>,
     pub status_id: Uuid,
     pub version_number: i32,
@@ -237,7 +233,6 @@ pub struct GlossaryTermDetail {
     pub owner_name: Option<String>,
     pub steward_name: Option<String>,
     pub domain_owner_name: Option<String>,
-    pub approver_name: Option<String>,
     pub status_code: Option<String>,
     pub status_name: Option<String>,
     // === Junction data (from separate queries) ===
@@ -315,7 +310,6 @@ impl GlossaryTermDetail {
             owner_user_id: row.owner_user_id,
             steward_user_id: row.steward_user_id,
             domain_owner_user_id: row.domain_owner_user_id,
-            approver_user_id: row.approver_user_id,
             organisational_unit: row.organisational_unit,
             status_id: row.status_id,
             version_number: row.version_number,
@@ -354,7 +348,6 @@ impl GlossaryTermDetail {
             owner_name: row.owner_name,
             steward_name: row.steward_name,
             domain_owner_name: row.domain_owner_name,
-            approver_name: row.approver_name,
             status_code: row.status_code,
             status_name: row.status_name,
             regulatory_tags,
@@ -440,7 +433,6 @@ pub struct CreateGlossaryTermRequest {
     pub owner_user_id: Option<Uuid>,
     pub steward_user_id: Option<Uuid>,
     pub domain_owner_user_id: Option<Uuid>,
-    pub approver_user_id: Option<Uuid>,
 }
 
 /// Update request — all fields optional for edit form
@@ -469,7 +461,6 @@ pub struct UpdateGlossaryTermRequest {
     pub owner_user_id: Option<Uuid>,
     pub steward_user_id: Option<Uuid>,
     pub domain_owner_user_id: Option<Uuid>,
-    pub approver_user_id: Option<Uuid>,
     pub organisational_unit: Option<String>,
 
     // Lifecycle

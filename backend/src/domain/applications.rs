@@ -24,7 +24,6 @@ pub struct Application {
     pub business_owner_id: Option<Uuid>,
     pub technical_owner_id: Option<Uuid>,
     pub steward_user_id: Option<Uuid>,
-    pub approver_user_id: Option<Uuid>,
     pub organisational_unit: Option<String>,
     // Vendor & product
     pub vendor: Option<String>,
@@ -127,7 +126,6 @@ pub struct ApplicationDetailRow {
     pub business_owner_id: Option<Uuid>,
     pub technical_owner_id: Option<Uuid>,
     pub steward_user_id: Option<Uuid>,
-    pub approver_user_id: Option<Uuid>,
     pub organisational_unit: Option<String>,
     pub vendor: Option<String>,
     pub vendor_product_name: Option<String>,
@@ -168,7 +166,6 @@ pub struct ApplicationDetailRow {
     pub business_owner_name: Option<String>,
     pub technical_owner_name: Option<String>,
     pub steward_name: Option<String>,
-    pub approver_name: Option<String>,
     pub criticality_tier_name: Option<String>,
     pub risk_rating_name: Option<String>,
     pub data_classification_name: Option<String>,
@@ -202,8 +199,6 @@ pub struct ApplicationFullView {
     pub technical_owner_name: Option<String>,
     pub steward_user_id: Option<Uuid>,
     pub steward_name: Option<String>,
-    pub approver_user_id: Option<Uuid>,
-    pub approver_name: Option<String>,
     pub organisational_unit: Option<String>,
     pub vendor: Option<String>,
     pub vendor_product_name: Option<String>,
@@ -278,8 +273,6 @@ impl ApplicationFullView {
             technical_owner_name: row.technical_owner_name,
             steward_user_id: row.steward_user_id,
             steward_name: row.steward_name,
-            approver_user_id: row.approver_user_id,
-            approver_name: row.approver_name,
             organisational_unit: row.organisational_unit,
             vendor: row.vendor,
             vendor_product_name: row.vendor_product_name,
@@ -407,7 +400,6 @@ pub struct CreateApplicationRequest {
     pub business_owner_id: Option<Uuid>,
     pub technical_owner_id: Option<Uuid>,
     pub steward_user_id: Option<Uuid>,
-    pub approver_user_id: Option<Uuid>,
 }
 
 /// Request body for partially updating an application. All fields are optional.
@@ -445,7 +437,6 @@ pub struct UpdateApplicationRequest {
     pub business_owner_id: Option<Uuid>,
     pub technical_owner_id: Option<Uuid>,
     pub steward_user_id: Option<Uuid>,
-    pub approver_user_id: Option<Uuid>,
     pub organisational_unit: Option<String>,
 }
 

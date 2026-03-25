@@ -34,7 +34,6 @@ pub struct DataElement {
     pub status_id: Uuid,
     pub owner_user_id: Option<Uuid>,
     pub steward_user_id: Option<Uuid>,
-    pub approver_user_id: Option<Uuid>,
     pub organisational_unit: Option<String>,
     pub review_frequency_id: Option<Uuid>,
     pub next_review_date: Option<NaiveDate>,
@@ -117,7 +116,6 @@ pub struct DataElementDetailRow {
     pub status_id: Uuid,
     pub owner_user_id: Option<Uuid>,
     pub steward_user_id: Option<Uuid>,
-    pub approver_user_id: Option<Uuid>,
     pub organisational_unit: Option<String>,
     pub review_frequency_id: Option<Uuid>,
     pub next_review_date: Option<NaiveDate>,
@@ -136,7 +134,6 @@ pub struct DataElementDetailRow {
     pub classification_name: Option<String>,
     pub owner_name: Option<String>,
     pub steward_name: Option<String>,
-    pub approver_name: Option<String>,
     pub review_frequency_name: Option<String>,
     pub status_code: Option<String>,
     pub status_name: Option<String>,
@@ -173,7 +170,6 @@ pub struct DataElementFullView {
     pub status_id: Uuid,
     pub owner_user_id: Option<Uuid>,
     pub steward_user_id: Option<Uuid>,
-    pub approver_user_id: Option<Uuid>,
     pub organisational_unit: Option<String>,
     pub review_frequency_id: Option<Uuid>,
     pub review_frequency_name: Option<String>,
@@ -193,7 +189,6 @@ pub struct DataElementFullView {
     pub classification_name: Option<String>,
     pub owner_name: Option<String>,
     pub steward_name: Option<String>,
-    pub approver_name: Option<String>,
     pub status_code: Option<String>,
     pub status_name: Option<String>,
     pub created_by_name: Option<String>,
@@ -239,7 +234,6 @@ impl DataElementFullView {
             status_id: row.status_id,
             owner_user_id: row.owner_user_id,
             steward_user_id: row.steward_user_id,
-            approver_user_id: row.approver_user_id,
             organisational_unit: row.organisational_unit,
             review_frequency_id: row.review_frequency_id,
             review_frequency_name: row.review_frequency_name,
@@ -258,7 +252,6 @@ impl DataElementFullView {
             classification_name: row.classification_name,
             owner_name: row.owner_name,
             steward_name: row.steward_name,
-            approver_name: row.approver_name,
             status_code: row.status_code,
             status_name: row.status_name,
             created_by_name: row.created_by_name,
@@ -296,7 +289,6 @@ pub struct CreateDataElementRequest {
     pub classification_id: Option<Uuid>,
     pub owner_user_id: Option<Uuid>,
     pub steward_user_id: Option<Uuid>,
-    pub approver_user_id: Option<Uuid>,
 }
 
 /// Request body for partially updating a data element. All fields are optional.
@@ -321,7 +313,6 @@ pub struct UpdateDataElementRequest {
     // Ownership
     pub owner_user_id: Option<Uuid>,
     pub steward_user_id: Option<Uuid>,
-    pub approver_user_id: Option<Uuid>,
     pub organisational_unit: Option<String>,
     // Lifecycle
     pub review_frequency_id: Option<Uuid>,

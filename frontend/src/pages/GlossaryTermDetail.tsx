@@ -88,7 +88,6 @@ const GlossaryTermDetail: React.FC = () => {
   const [ownerUserId, setOwnerUserId] = useState<LabeledValue | undefined>();
   const [stewardUserId, setStewardUserId] = useState<LabeledValue | undefined>();
   const [domainOwnerUserId, setDomainOwnerUserId] = useState<LabeledValue | undefined>();
-  const [approverUserId, setApproverUserId] = useState<LabeledValue | undefined>();
   const [orgUnit, setOrgUnit] = useState<string | undefined>();
 
   // Tag management state
@@ -153,8 +152,6 @@ const GlossaryTermDetail: React.FC = () => {
         ? { value: detail.steward_user_id, label: detail.steward_name } : undefined);
       setDomainOwnerUserId(detail.domain_owner_user_id && detail.domain_owner_name
         ? { value: detail.domain_owner_user_id, label: detail.domain_owner_name } : undefined);
-      setApproverUserId(detail.approver_user_id && detail.approver_name
-        ? { value: detail.approver_user_id, label: detail.approver_name } : undefined);
       setOrgUnit(detail.organisational_unit || undefined);
     }
   }, [detail]);
@@ -169,7 +166,6 @@ const GlossaryTermDetail: React.FC = () => {
         owner_user_id: ownerUserId?.value || undefined,
         steward_user_id: stewardUserId?.value || undefined,
         domain_owner_user_id: domainOwnerUserId?.value || undefined,
-        approver_user_id: approverUserId?.value || undefined,
         organisational_unit: orgUnit || undefined,
       } as Record<string, unknown>);
       message.success('Ownership updated successfully.');
@@ -181,7 +177,7 @@ const GlossaryTermDetail: React.FC = () => {
     }
   };
 
-  const ownershipComplete = !!(ownerUserId && stewardUserId && domainOwnerUserId && approverUserId);
+  const ownershipComplete = !!(ownerUserId && stewardUserId && domainOwnerUserId);
   const showOwnershipSection = detail && allUsers.length > 0 && (detail.status_code === 'DRAFT' || detail.status_code === 'REVISED');
 
   // --- Junction management ---
@@ -303,7 +299,6 @@ const GlossaryTermDetail: React.FC = () => {
       if (!detail?.owner_user_id) missing.push('Business Term Owner');
       if (!detail?.steward_user_id) missing.push('Data Steward');
       if (!detail?.domain_owner_user_id) missing.push('Data Domain Owner');
-      if (!detail?.approver_user_id) missing.push('Approver');
       if (missing.length > 0) {
         message.warning(
           `Please assign all ownership fields before submitting: ${missing.join(', ')}. Use the Edit button to assign owners.`,
@@ -776,9 +771,6 @@ const GlossaryTermDetail: React.FC = () => {
           </Descriptions.Item>
           <Descriptions.Item label="Data Domain Owner">
             {detail.domain_owner_name || <EmptyValue />}
-          </Descriptions.Item>
-          <Descriptions.Item label="Approver">
-            {detail.approver_name || <EmptyValue />}
           </Descriptions.Item>
           <Descriptions.Item label="Organisational Unit" span={2}>
             {term.organisational_unit || <EmptyValue />}
@@ -1283,23 +1275,6 @@ const GlossaryTermDetail: React.FC = () => {
                 allowClear
               />
             </Col>
-            <Col xs={24} md={12}>
-              <div style={{ marginBottom: 4 }}>
-                <Text strong>Approver</Text>
-                {!approverUserId && <Text type="danger"> *</Text>}
-              </div>
-              <Select
-                style={{ width: '100%' }}
-                labelInValue
-                value={approverUserId}
-                onChange={(val) => setApproverUserId(val || undefined)}
-                options={allUsers.map((u) => ({ value: u.user_id, label: `${u.display_name} (${u.email})` }))}
-                placeholder="Select approver..."
-                showSearch
-                optionFilterProp="label"
-                allowClear
-              />
-            </Col>
           </Row>
           <Row gutter={[16, 16]} style={{ marginTop: 16 }}>
             <Col xs={24} md={12}>
@@ -1323,7 +1298,7 @@ const GlossaryTermDetail: React.FC = () => {
               type="primary"
               onClick={handleSaveOwnership}
               loading={ownershipLoading}
-              disabled={!ownerUserId && !stewardUserId && !domainOwnerUserId && !approverUserId}
+              disabled={!ownerUserId && !stewardUserId && !domainOwnerUserId}
             >
               Save Ownership
             </Button>

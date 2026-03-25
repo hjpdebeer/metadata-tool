@@ -81,7 +81,6 @@ const DataElementDetail: React.FC = () => {
   const [ownershipLoading, setOwnershipLoading] = useState(false);
   const [ownerUserId, setOwnerUserId] = useState<LabeledValue | undefined>();
   const [stewardUserId, setStewardUserId] = useState<LabeledValue | undefined>();
-  const [approverUserId, setApproverUserId] = useState<LabeledValue | undefined>();
   const [orgUnit, setOrgUnit] = useState<string | undefined>();
 
   const fetchElement = useCallback(async (showSpinner = false) => {
@@ -241,8 +240,6 @@ const DataElementDetail: React.FC = () => {
         ? { value: element.owner_user_id, label: element.owner_name } : undefined);
       setStewardUserId(element.steward_user_id && element.steward_name
         ? { value: element.steward_user_id, label: element.steward_name } : undefined);
-      setApproverUserId(element.approver_user_id && element.approver_name
-        ? { value: element.approver_user_id, label: element.approver_name } : undefined);
       setOrgUnit(element.organisational_unit || undefined);
     }
   }, [element]);
@@ -256,7 +253,6 @@ const DataElementDetail: React.FC = () => {
       await dataDictionaryApi.updateElement(id, {
         owner_user_id: ownerUserId?.value || undefined,
         steward_user_id: stewardUserId?.value || undefined,
-        approver_user_id: approverUserId?.value || undefined,
         organisational_unit: orgUnit || undefined,
       } as Record<string, unknown>);
       message.success('Ownership updated successfully.');
@@ -268,7 +264,7 @@ const DataElementDetail: React.FC = () => {
     }
   };
 
-  const ownershipComplete = !!(ownerUserId && stewardUserId && approverUserId);
+  const ownershipComplete = !!(ownerUserId && stewardUserId);
   const showOwnershipSection = element && allUsers.length > 0 && (element.status_code === 'DRAFT' || element.status_code === 'REVISED');
 
   // --- Amendment ---
@@ -315,7 +311,6 @@ const DataElementDetail: React.FC = () => {
       const missing: string[] = [];
       if (!element?.owner_user_id) missing.push('Data Owner');
       if (!element?.steward_user_id) missing.push('Data Steward');
-      if (!element?.approver_user_id) missing.push('Approver');
       if (missing.length > 0) {
         message.warning(
           `Please assign all ownership fields before submitting: ${missing.join(', ')}. Use the Ownership card below to assign owners.`,
@@ -844,23 +839,6 @@ const DataElementDetail: React.FC = () => {
             </Col>
             <Col xs={24} md={12}>
               <div style={{ marginBottom: 4 }}>
-                <Text strong>Approver</Text>
-                {!approverUserId && <Text type="danger"> *</Text>}
-              </div>
-              <Select
-                style={{ width: '100%' }}
-                labelInValue
-                value={approverUserId}
-                onChange={(val) => setApproverUserId(val || undefined)}
-                options={allUsers.map((u) => ({ value: u.user_id, label: `${u.display_name} (${u.email})` }))}
-                placeholder="Select approver..."
-                showSearch
-                optionFilterProp="label"
-                allowClear
-              />
-            </Col>
-            <Col xs={24} md={12}>
-              <div style={{ marginBottom: 4 }}>
                 <Text strong>Organisational Unit</Text>
               </div>
               <Select
@@ -880,7 +858,7 @@ const DataElementDetail: React.FC = () => {
               type="primary"
               onClick={handleSaveOwnership}
               loading={ownershipLoading}
-              disabled={!ownerUserId && !stewardUserId && !approverUserId}
+              disabled={!ownerUserId && !stewardUserId}
             >
               Save Ownership
             </Button>
@@ -1000,9 +978,6 @@ const DataElementDetail: React.FC = () => {
           </Descriptions.Item>
           <Descriptions.Item label="Data Steward">
             {element.steward_name || '-'}
-          </Descriptions.Item>
-          <Descriptions.Item label="Approver">
-            {element.approver_name || '-'}
           </Descriptions.Item>
           <Descriptions.Item label="Organisational Unit">
             {element.organisational_unit || '-'}

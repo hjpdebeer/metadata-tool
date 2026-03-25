@@ -109,7 +109,6 @@ const ApplicationDetail: React.FC = () => {
   const [businessOwnerId, setBusinessOwnerId] = useState<LabeledValue | undefined>();
   const [technicalOwnerId, setTechnicalOwnerId] = useState<LabeledValue | undefined>();
   const [stewardUserId, setStewardUserId] = useState<LabeledValue | undefined>();
-  const [approverUserId, setApproverUserId] = useState<LabeledValue | undefined>();
   const [orgUnit, setOrgUnit] = useState<string | undefined>();
 
   const fetchApplication = useCallback(async () => {
@@ -188,8 +187,6 @@ const ApplicationDetail: React.FC = () => {
         ? { value: application.technical_owner_id, label: application.technical_owner_name } : undefined);
       setStewardUserId(application.steward_user_id && application.steward_name
         ? { value: application.steward_user_id, label: application.steward_name } : undefined);
-      setApproverUserId(application.approver_user_id && application.approver_name
-        ? { value: application.approver_user_id, label: application.approver_name } : undefined);
       setOrgUnit(application.organisational_unit || undefined);
     }
   }, [application]);
@@ -222,7 +219,6 @@ const ApplicationDetail: React.FC = () => {
         business_owner_id: businessOwnerId?.value || undefined,
         technical_owner_id: technicalOwnerId?.value || undefined,
         steward_user_id: stewardUserId?.value || undefined,
-        approver_user_id: approverUserId?.value || undefined,
         organisational_unit: orgUnit || undefined,
       });
       message.success('Ownership updated successfully.');
@@ -234,7 +230,7 @@ const ApplicationDetail: React.FC = () => {
     }
   };
 
-  const ownershipComplete = !!(businessOwnerId && technicalOwnerId && stewardUserId && approverUserId);
+  const ownershipComplete = !!(businessOwnerId && technicalOwnerId && stewardUserId);
 
   // --- Workflow ---
 
@@ -248,7 +244,6 @@ const ApplicationDetail: React.FC = () => {
       if (!application?.business_owner_id) missing.push('Business Owner');
       if (!application?.technical_owner_id) missing.push('Technical Owner');
       if (!application?.steward_user_id) missing.push('Data Steward');
-      if (!application?.approver_user_id) missing.push('Approver');
       if (missing.length > 0) {
         message.warning(
           `Please assign all ownership fields before submitting: ${missing.join(', ')}. Use the Ownership section below to assign owners.`,
@@ -743,9 +738,6 @@ const ApplicationDetail: React.FC = () => {
           <Descriptions.Item label="Data Steward">
             {detail.steward_name || <EmptyValue />}
           </Descriptions.Item>
-          <Descriptions.Item label="Approver">
-            {detail.approver_name || <EmptyValue />}
-          </Descriptions.Item>
           <Descriptions.Item label="Organisational Unit" span={2}>
             {detail.organisational_unit || <EmptyValue />}
           </Descriptions.Item>
@@ -1117,23 +1109,6 @@ const ApplicationDetail: React.FC = () => {
                 allowClear
               />
             </Col>
-            <Col xs={24} md={12}>
-              <div style={{ marginBottom: 4 }}>
-                <Text strong>Approver</Text>
-                {!approverUserId && <Text type="danger"> *</Text>}
-              </div>
-              <Select
-                style={{ width: '100%' }}
-                labelInValue
-                value={approverUserId}
-                onChange={(val) => setApproverUserId(val || undefined)}
-                options={allUsers.map((u) => ({ value: u.user_id, label: `${u.display_name} (${u.email})` }))}
-                placeholder="Select approver..."
-                showSearch
-                optionFilterProp="label"
-                allowClear
-              />
-            </Col>
           </Row>
           <Row gutter={[16, 16]} style={{ marginTop: 16 }}>
             <Col xs={24} md={12}>
@@ -1157,7 +1132,7 @@ const ApplicationDetail: React.FC = () => {
               type="primary"
               onClick={handleSaveOwnership}
               loading={ownershipLoading}
-              disabled={!businessOwnerId && !technicalOwnerId && !stewardUserId && !approverUserId}
+              disabled={!businessOwnerId && !technicalOwnerId && !stewardUserId}
             >
               Save Ownership
             </Button>

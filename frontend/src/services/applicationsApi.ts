@@ -60,7 +60,6 @@ export interface Application {
   business_owner_id: string | null;
   technical_owner_id: string | null;
   steward_user_id: string | null;
-  approver_user_id: string | null;
   organisational_unit: string | null;
   // Vendor & product
   vendor: string | null;
@@ -142,8 +141,6 @@ export interface ApplicationFullView {
   technical_owner_name: string | null;
   steward_user_id: string | null;
   steward_name: string | null;
-  approver_user_id: string | null;
-  approver_name: string | null;
   organisational_unit: string | null;
   vendor: string | null;
   vendor_product_name: string | null;
@@ -273,7 +270,6 @@ export interface UpdateApplicationRequest {
   business_owner_id?: string;
   technical_owner_id?: string;
   steward_user_id?: string;
-  approver_user_id?: string;
   organisational_unit?: string;
 }
 

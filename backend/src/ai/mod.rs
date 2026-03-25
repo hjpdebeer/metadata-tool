@@ -283,7 +283,7 @@ IMPORTANT: Suggest values for TEXT fields and LOOKUP fields shown below. NEVER s
 - Any field ending in _id that is NOT listed in LOOKUP FIELDS below
 - Any field ending in _at (timestamps)
 - System fields like status_id, created_by, updated_by, version_number, is_current_version, is_cbt, is_cba, is_nullable, is_pii
-- Ownership fields (owner_user_id, steward_user_id, approver_user_id, organisational_unit)
+- Ownership fields (owner_user_id, steward_user_id, organisational_unit)
 - golden_source, golden_source_app_id
 
 DATA TYPE RULES: When suggesting data_type, use ONLY the clean type name without precision or length.

@@ -48,8 +48,7 @@ const TEMPLATE_HEADERS: &[&str] = &[
     "Glossary Term",       // N  (13)
     "Owner Email",         // O  (14)
     "Steward Email",       // P  (15)
-    "Approver Email",      // Q  (16)
-    "Org Unit",            // R  (17)
+    "Org Unit",            // Q  (16)
 ];
 
 /// Instructions for each column (field, description, mandatory, max_length, notes).
@@ -167,13 +166,6 @@ const INSTRUCTIONS: &[(&str, &str, &str, &str, &str)] = &[
         "Must exist in the system",
     ),
     (
-        "Approver Email",
-        "Email address of the approver",
-        "Yes",
-        "",
-        "Must exist in the system",
-    ),
-    (
         "Org Unit",
         "Responsible organisational unit",
         "Yes",
@@ -286,8 +278,8 @@ async fn generate_template(pool: &PgPool) -> AppResult<Vec<u8>> {
         .set_border(FormatBorder::Thin);
 
     // Mandatory column indices: Element Name (0), Description (1),
-    // Domain (11), Classification (12), Owner (14), Steward (15), Approver (16), Org Unit (17)
-    let mandatory_cols: &[u16] = &[0, 1, 11, 12, 14, 15, 16, 17];
+    // Domain (11), Classification (12), Owner (14), Steward (15), Org Unit (16)
+    let mandatory_cols: &[u16] = &[0, 1, 11, 12, 14, 15, 16];
 
     // Each lookup list with its name (for Valid Values sheet)
     let lookup_lists: Vec<(&str, &[String])> = vec![
@@ -307,8 +299,7 @@ async fn generate_template(pool: &PgPool) -> AppResult<Vec<u8>> {
         (13, 3), // Glossary Term     -> GlossaryTerms
         (14, 5), // Owner Email       -> Users
         (15, 5), // Steward Email     -> Users
-        (16, 5), // Approver Email    -> Users
-        (17, 4), // Org Unit          -> OrganisationalUnits
+        (16, 4), // Org Unit          -> OrganisationalUnits
     ];
 
     // Pre-build the data validations
@@ -693,8 +684,7 @@ async fn process_de_row(
     let glossary_term_val = cols[13].trim().to_string(); // N (13)
     let owner_email = cols[14].trim().to_string(); // O (14)
     let steward_email = cols[15].trim().to_string(); // P (15)
-    let approver_email = cols[16].trim().to_string(); // Q (16)
-    let org_unit_val = cols[17].trim().to_string(); // R (17)
+    let org_unit_val = cols[16].trim().to_string(); // Q (16)
 
     // --- Mandatory field validation ---
     if element_name.is_empty() {
@@ -737,13 +727,6 @@ async fn process_de_row(
             row: row_num,
             field: Some("Steward Email".into()),
             message: "Steward Email is required".into(),
-        });
-    }
-    if approver_email.is_empty() {
-        row_errors.push(BulkUploadError {
-            row: row_num,
-            field: Some("Approver Email".into()),
-            message: "Approver Email is required".into(),
         });
     }
     if org_unit_val.is_empty() {
@@ -952,15 +935,6 @@ async fn process_de_row(
         &mut row_errors,
     )
     .await;
-    let approver_user_id = resolve_user_by_email(
-        ctx.pool,
-        row_num,
-        "Approver Email",
-        &approver_email,
-        &mut row_errors,
-    )
-    .await;
-
     // If there are validation errors, return them all
     if !row_errors.is_empty() {
         return Err(row_errors);
@@ -976,15 +950,15 @@ async fn process_de_row(
             business_definition, business_rules, format_pattern,
             is_nullable, is_pii,
             domain_id, classification_id, glossary_term_id,
-            owner_user_id, steward_user_id, approver_user_id,
+            owner_user_id, steward_user_id,
             organisational_unit,
             status_id, review_frequency_id,
             version_number, is_current_version, created_by
         )
         VALUES (
             $1, $2, $3, $4, $5, $6, $7, $8, $9, $10,
-            $11, $12, $13, $14, $15, $16, $17, $18,
-            $19, $20, 1, TRUE, $21
+            $11, $12, $13, $14, $15, $16, $17,
+            $18, $19, 1, TRUE, $20
         )
         RETURNING element_id
         "#,
@@ -1005,11 +979,10 @@ async fn process_de_row(
     .bind(glossary_term_id)                     // $14
     .bind(owner_user_id)                        // $15
     .bind(steward_user_id)                      // $16
-    .bind(approver_user_id)                     // $17
-    .bind(&org_unit_val)                        // $18
-    .bind(ctx.draft_status_id)                  // $19
-    .bind(ctx.annual_frequency_id)              // $20
-    .bind(ctx.user_id)                          // $21
+    .bind(&org_unit_val)                        // $17
+    .bind(ctx.draft_status_id)                  // $18
+    .bind(ctx.annual_frequency_id)              // $19
+    .bind(ctx.user_id)                          // $20
     .fetch_one(ctx.pool)
     .await
     .map_err(|e| {

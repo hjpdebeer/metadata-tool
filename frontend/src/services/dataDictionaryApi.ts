@@ -28,7 +28,6 @@ export interface DataElement {
   status_id: string;
   owner_user_id: string | null;
   steward_user_id: string | null;
-  approver_user_id: string | null;
   organisational_unit: string | null;
   review_frequency_id: string | null;
   next_review_date: string | null;
@@ -66,7 +65,6 @@ export interface DataElementFullView extends DataElement {
   classification_name: string | null;
   owner_name: string | null;
   steward_name: string | null;
-  approver_name: string | null;
   review_frequency_name: string | null;
   status_code: string;
   status_name: string | null;
@@ -170,7 +168,6 @@ export interface UpdateDataElementRequest {
   classification_id?: string;
   owner_user_id?: string;
   steward_user_id?: string;
-  approver_user_id?: string;
   organisational_unit?: string;
   review_frequency_id?: string;
   is_pii?: boolean;

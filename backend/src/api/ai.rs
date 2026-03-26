@@ -296,8 +296,75 @@ async fn fetch_entity_data(
 
             Ok((json, existing))
         }
+        "business_process" => {
+            let row = sqlx::query_as::<_, crate::domain::processes::BusinessProcess>(
+                r#"
+                SELECT
+                    process_id, process_name, process_code, description,
+                    detailed_description, category_id, status_id, owner_user_id,
+                    steward_user_id,
+                    parent_process_id, is_critical, criticality_rationale,
+                    frequency, regulatory_requirement, sla_description,
+                    documentation_url, created_by, updated_by, created_at, updated_at
+                FROM business_processes
+                WHERE process_id = $1 AND deleted_at IS NULL
+                "#,
+            )
+            .bind(entity_id)
+            .fetch_optional(pool)
+            .await?
+            .ok_or_else(|| {
+                AppError::NotFound(format!("business process not found: {entity_id}"))
+            })?;
+
+            // Resolve category name for prompt context
+            let category_name: Option<String> = if let Some(cat_id) = row.category_id {
+                sqlx::query_scalar(
+                    "SELECT category_name FROM process_categories WHERE category_id = $1",
+                )
+                .bind(cat_id)
+                .fetch_optional(pool)
+                .await?
+            } else {
+                None
+            };
+
+            let json = serde_json::json!({
+                "process_name": row.process_name,
+                "process_code": row.process_code,
+                "description": row.description,
+                "detailed_description": row.detailed_description,
+                "category_name": category_name,
+                "is_critical": row.is_critical,
+                "frequency": row.frequency,
+                "regulatory_requirement": row.regulatory_requirement,
+                "sla_description": row.sla_description,
+            });
+
+            let mut existing = Vec::new();
+            if !row.process_name.is_empty() {
+                existing.push("process_name".to_string());
+            }
+            if !row.description.is_empty() {
+                existing.push("description".to_string());
+            }
+            if row.detailed_description.is_some() {
+                existing.push("detailed_description".to_string());
+            }
+            if row.frequency.is_some() {
+                existing.push("frequency".to_string());
+            }
+            if row.regulatory_requirement.is_some() {
+                existing.push("regulatory_requirement".to_string());
+            }
+            if row.sla_description.is_some() {
+                existing.push("sla_description".to_string());
+            }
+
+            Ok((json, existing))
+        }
         _ => Err(AppError::Validation(format!(
-            "unsupported entity type for AI enrichment: {entity_type} — supported types: glossary_term, data_element, application"
+            "unsupported entity type for AI enrichment: {entity_type} — supported types: glossary_term, data_element, application, business_process"
         ))),
     }
 }
@@ -593,6 +660,37 @@ async fn apply_suggestion_to_entity(
                 }
             }
         }
+        "business_process" => match field_name {
+            "detailed_description" => {
+                sqlx::query("UPDATE business_processes SET detailed_description = $1, updated_by = $2, updated_at = CURRENT_TIMESTAMP WHERE process_id = $3 AND deleted_at IS NULL")
+                        .bind(value).bind(user_id).bind(entity_id).execute(pool).await?;
+            }
+            "regulatory_requirement" => {
+                sqlx::query("UPDATE business_processes SET regulatory_requirement = $1, updated_by = $2, updated_at = CURRENT_TIMESTAMP WHERE process_id = $3 AND deleted_at IS NULL")
+                        .bind(value).bind(user_id).bind(entity_id).execute(pool).await?;
+            }
+            "sla_description" => {
+                sqlx::query("UPDATE business_processes SET sla_description = $1, updated_by = $2, updated_at = CURRENT_TIMESTAMP WHERE process_id = $3 AND deleted_at IS NULL")
+                        .bind(value).bind(user_id).bind(entity_id).execute(pool).await?;
+            }
+            "frequency" => {
+                sqlx::query("UPDATE business_processes SET frequency = $1, updated_by = $2, updated_at = CURRENT_TIMESTAMP WHERE process_id = $3 AND deleted_at IS NULL")
+                        .bind(value).bind(user_id).bind(entity_id).execute(pool).await?;
+            }
+            "documentation_url" => {
+                sqlx::query("UPDATE business_processes SET documentation_url = $1, updated_by = $2, updated_at = CURRENT_TIMESTAMP WHERE process_id = $3 AND deleted_at IS NULL")
+                        .bind(value).bind(user_id).bind(entity_id).execute(pool).await?;
+            }
+            "criticality_rationale" => {
+                sqlx::query("UPDATE business_processes SET criticality_rationale = $1, updated_by = $2, updated_at = CURRENT_TIMESTAMP WHERE process_id = $3 AND deleted_at IS NULL")
+                        .bind(value).bind(user_id).bind(entity_id).execute(pool).await?;
+            }
+            _ => {
+                return Err(AppError::Validation(format!(
+                    "cannot apply suggestion to field '{field_name}' on business_process"
+                )));
+            }
+        },
         _ => {
             return Err(AppError::Validation(format!(
                 "cannot apply suggestion to unsupported entity type: {entity_type}"
@@ -664,6 +762,10 @@ pub async fn enrich(
             serde_json::json!({
                 "data_classification": classifications.iter().map(|r| serde_json::json!({"id": r.id, "name": r.name})).collect::<Vec<_>>(),
             })
+        }
+        "business_process" => {
+            // No lookup fields for business processes — all AI suggestions are text fields
+            serde_json::json!({})
         }
         _ => serde_json::json!({}),
     };

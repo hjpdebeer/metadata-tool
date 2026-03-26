@@ -558,6 +558,58 @@ fn resolve_table(table_name: &str) -> AppResult<LookupTableConfig> {
             name_column: "unit_name",
             desc_column: Some("description"),
         }),
+        // Application lookups
+        "app-classifications" => Ok(LookupTableConfig {
+            db_table: "application_classifications",
+            pk_column: "classification_id",
+            code_column: Some("classification_code"),
+            name_column: "classification_name",
+            desc_column: Some("description"),
+        }),
+        "dr-tiers" => Ok(LookupTableConfig {
+            db_table: "disaster_recovery_tiers",
+            pk_column: "dr_tier_id",
+            code_column: Some("tier_code"),
+            name_column: "tier_name",
+            desc_column: Some("description"),
+        }),
+        "lifecycle-stages" => Ok(LookupTableConfig {
+            db_table: "application_lifecycle_stages",
+            pk_column: "stage_id",
+            code_column: Some("stage_code"),
+            name_column: "stage_name",
+            desc_column: Some("description"),
+        }),
+        "criticality-tiers" => Ok(LookupTableConfig {
+            db_table: "application_criticality_tiers",
+            pk_column: "tier_id",
+            code_column: Some("tier_code"),
+            name_column: "tier_name",
+            desc_column: Some("description"),
+        }),
+        "risk-ratings" => Ok(LookupTableConfig {
+            db_table: "application_risk_ratings",
+            pk_column: "rating_id",
+            code_column: Some("rating_code"),
+            name_column: "rating_name",
+            desc_column: Some("description"),
+        }),
+        // Process lookups
+        "process-categories" => Ok(LookupTableConfig {
+            db_table: "process_categories",
+            pk_column: "category_id",
+            code_column: None,
+            name_column: "category_name",
+            desc_column: Some("description"),
+        }),
+        // Glossary tags
+        "tags" => Ok(LookupTableConfig {
+            db_table: "glossary_tags",
+            pk_column: "tag_id",
+            code_column: None,
+            name_column: "tag_name",
+            desc_column: Some("description"),
+        }),
         _ => Err(AppError::NotFound(format!(
             "unknown lookup table: {table_name}"
         ))),
@@ -717,6 +769,79 @@ pub async fn list_lookup(
                ORDER BY display_order, unit_name LIMIT $2 OFFSET $3"#,
             r#"SELECT COUNT(*) FROM organisational_units
                WHERE ($1::TEXT IS NULL OR unit_name ILIKE '%' || $1 || '%' OR unit_code ILIKE '%' || $1 || '%')"#,
+            search, page_size, offset,
+        ).await,
+        // Application lookups
+        "app-classifications" => list_lookup_impl(
+            &state.pool,
+            r#"SELECT classification_id AS id, classification_code AS code, classification_name AS name, description
+               FROM application_classifications
+               WHERE ($1::TEXT IS NULL OR classification_name ILIKE '%' || $1 || '%' OR classification_code ILIKE '%' || $1 || '%')
+               ORDER BY display_order, classification_name LIMIT $2 OFFSET $3"#,
+            r#"SELECT COUNT(*) FROM application_classifications
+               WHERE ($1::TEXT IS NULL OR classification_name ILIKE '%' || $1 || '%' OR classification_code ILIKE '%' || $1 || '%')"#,
+            search, page_size, offset,
+        ).await,
+        "dr-tiers" => list_lookup_impl(
+            &state.pool,
+            r#"SELECT dr_tier_id AS id, tier_code AS code, tier_name AS name, description
+               FROM disaster_recovery_tiers
+               WHERE ($1::TEXT IS NULL OR tier_name ILIKE '%' || $1 || '%' OR tier_code ILIKE '%' || $1 || '%')
+               ORDER BY display_order, tier_name LIMIT $2 OFFSET $3"#,
+            r#"SELECT COUNT(*) FROM disaster_recovery_tiers
+               WHERE ($1::TEXT IS NULL OR tier_name ILIKE '%' || $1 || '%' OR tier_code ILIKE '%' || $1 || '%')"#,
+            search, page_size, offset,
+        ).await,
+        "lifecycle-stages" => list_lookup_impl(
+            &state.pool,
+            r#"SELECT stage_id AS id, stage_code AS code, stage_name AS name, description
+               FROM application_lifecycle_stages
+               WHERE ($1::TEXT IS NULL OR stage_name ILIKE '%' || $1 || '%' OR stage_code ILIKE '%' || $1 || '%')
+               ORDER BY display_order, stage_name LIMIT $2 OFFSET $3"#,
+            r#"SELECT COUNT(*) FROM application_lifecycle_stages
+               WHERE ($1::TEXT IS NULL OR stage_name ILIKE '%' || $1 || '%' OR stage_code ILIKE '%' || $1 || '%')"#,
+            search, page_size, offset,
+        ).await,
+        "criticality-tiers" => list_lookup_impl(
+            &state.pool,
+            r#"SELECT tier_id AS id, tier_code AS code, tier_name AS name, description
+               FROM application_criticality_tiers
+               WHERE ($1::TEXT IS NULL OR tier_name ILIKE '%' || $1 || '%' OR tier_code ILIKE '%' || $1 || '%')
+               ORDER BY display_order, tier_name LIMIT $2 OFFSET $3"#,
+            r#"SELECT COUNT(*) FROM application_criticality_tiers
+               WHERE ($1::TEXT IS NULL OR tier_name ILIKE '%' || $1 || '%' OR tier_code ILIKE '%' || $1 || '%')"#,
+            search, page_size, offset,
+        ).await,
+        "risk-ratings" => list_lookup_impl(
+            &state.pool,
+            r#"SELECT rating_id AS id, rating_code AS code, rating_name AS name, description
+               FROM application_risk_ratings
+               WHERE ($1::TEXT IS NULL OR rating_name ILIKE '%' || $1 || '%' OR rating_code ILIKE '%' || $1 || '%')
+               ORDER BY display_order, rating_name LIMIT $2 OFFSET $3"#,
+            r#"SELECT COUNT(*) FROM application_risk_ratings
+               WHERE ($1::TEXT IS NULL OR rating_name ILIKE '%' || $1 || '%' OR rating_code ILIKE '%' || $1 || '%')"#,
+            search, page_size, offset,
+        ).await,
+        // Process lookups
+        "process-categories" => list_lookup_impl(
+            &state.pool,
+            r#"SELECT category_id AS id, NULL::VARCHAR AS code, category_name AS name, description
+               FROM process_categories
+               WHERE ($1::TEXT IS NULL OR category_name ILIKE '%' || $1 || '%')
+               ORDER BY category_name LIMIT $2 OFFSET $3"#,
+            r#"SELECT COUNT(*) FROM process_categories
+               WHERE ($1::TEXT IS NULL OR category_name ILIKE '%' || $1 || '%')"#,
+            search, page_size, offset,
+        ).await,
+        // Glossary tags
+        "tags" => list_lookup_impl(
+            &state.pool,
+            r#"SELECT tag_id AS id, NULL::VARCHAR AS code, tag_name AS name, description
+               FROM glossary_tags
+               WHERE ($1::TEXT IS NULL OR tag_name ILIKE '%' || $1 || '%')
+               ORDER BY tag_name LIMIT $2 OFFSET $3"#,
+            r#"SELECT COUNT(*) FROM glossary_tags
+               WHERE ($1::TEXT IS NULL OR tag_name ILIKE '%' || $1 || '%')"#,
             search, page_size, offset,
         ).await,
         _ => Err(AppError::NotFound(format!("unknown lookup table: {table_name}"))),
@@ -989,6 +1114,111 @@ pub async fn create_lookup(
             .fetch_one(&state.pool)
             .await?
         }
+        // Application lookups
+        "app-classifications" => {
+            let code = body.code.as_deref().unwrap_or("").to_string();
+            if code.is_empty() {
+                return Err(AppError::Validation("code is required for app classifications".into()));
+            }
+            sqlx::query_as::<_, LookupQueryRow>(
+                r#"INSERT INTO application_classifications (classification_code, classification_name, description)
+                   VALUES ($1, $2, $3)
+                   RETURNING classification_id AS id, classification_code AS code, classification_name AS name, description"#,
+            )
+            .bind(&code)
+            .bind(body.name.trim())
+            .bind(body.description.as_deref())
+            .fetch_one(&state.pool)
+            .await?
+        }
+        "dr-tiers" => {
+            let code = body.code.as_deref().unwrap_or("").to_string();
+            if code.is_empty() {
+                return Err(AppError::Validation("code is required for DR tiers".into()));
+            }
+            sqlx::query_as::<_, LookupQueryRow>(
+                r#"INSERT INTO disaster_recovery_tiers (tier_code, tier_name, description)
+                   VALUES ($1, $2, $3)
+                   RETURNING dr_tier_id AS id, tier_code AS code, tier_name AS name, description"#,
+            )
+            .bind(&code)
+            .bind(body.name.trim())
+            .bind(body.description.as_deref())
+            .fetch_one(&state.pool)
+            .await?
+        }
+        "lifecycle-stages" => {
+            let code = body.code.as_deref().unwrap_or("").to_string();
+            if code.is_empty() {
+                return Err(AppError::Validation("code is required for lifecycle stages".into()));
+            }
+            sqlx::query_as::<_, LookupQueryRow>(
+                r#"INSERT INTO application_lifecycle_stages (stage_code, stage_name, description)
+                   VALUES ($1, $2, $3)
+                   RETURNING stage_id AS id, stage_code AS code, stage_name AS name, description"#,
+            )
+            .bind(&code)
+            .bind(body.name.trim())
+            .bind(body.description.as_deref())
+            .fetch_one(&state.pool)
+            .await?
+        }
+        "criticality-tiers" => {
+            let code = body.code.as_deref().unwrap_or("").to_string();
+            if code.is_empty() {
+                return Err(AppError::Validation("code is required for criticality tiers".into()));
+            }
+            sqlx::query_as::<_, LookupQueryRow>(
+                r#"INSERT INTO application_criticality_tiers (tier_code, tier_name, description)
+                   VALUES ($1, $2, $3)
+                   RETURNING tier_id AS id, tier_code AS code, tier_name AS name, description"#,
+            )
+            .bind(&code)
+            .bind(body.name.trim())
+            .bind(body.description.as_deref())
+            .fetch_one(&state.pool)
+            .await?
+        }
+        "risk-ratings" => {
+            let code = body.code.as_deref().unwrap_or("").to_string();
+            if code.is_empty() {
+                return Err(AppError::Validation("code is required for risk ratings".into()));
+            }
+            sqlx::query_as::<_, LookupQueryRow>(
+                r#"INSERT INTO application_risk_ratings (rating_code, rating_name, description)
+                   VALUES ($1, $2, $3)
+                   RETURNING rating_id AS id, rating_code AS code, rating_name AS name, description"#,
+            )
+            .bind(&code)
+            .bind(body.name.trim())
+            .bind(body.description.as_deref())
+            .fetch_one(&state.pool)
+            .await?
+        }
+        // Process lookups
+        "process-categories" => {
+            sqlx::query_as::<_, LookupQueryRow>(
+                r#"INSERT INTO process_categories (category_name, description)
+                   VALUES ($1, $2)
+                   RETURNING category_id AS id, NULL::VARCHAR AS code, category_name AS name, description"#,
+            )
+            .bind(body.name.trim())
+            .bind(body.description.as_deref())
+            .fetch_one(&state.pool)
+            .await?
+        }
+        // Glossary tags
+        "tags" => {
+            sqlx::query_as::<_, LookupQueryRow>(
+                r#"INSERT INTO glossary_tags (tag_name, description)
+                   VALUES ($1, $2)
+                   RETURNING tag_id AS id, NULL::VARCHAR AS code, tag_name AS name, description"#,
+            )
+            .bind(body.name.trim())
+            .bind(body.description.as_deref())
+            .fetch_one(&state.pool)
+            .await?
+        }
         _ => return Err(AppError::NotFound(format!("unknown lookup table: {table_name}"))),
     };
 
@@ -1208,6 +1438,110 @@ pub async fn update_lookup(
             .fetch_optional(&state.pool)
             .await?
         }
+        // Application lookups
+        "app-classifications" => {
+            sqlx::query_as::<_, LookupQueryRow>(
+                r#"UPDATE application_classifications
+                   SET classification_code = COALESCE($1, classification_code),
+                       classification_name = $2, description = $3
+                   WHERE classification_id = $4
+                   RETURNING classification_id AS id, classification_code AS code, classification_name AS name, description"#,
+            )
+            .bind(body.code.as_deref())
+            .bind(body.name.trim())
+            .bind(body.description.as_deref())
+            .bind(id)
+            .fetch_optional(&state.pool)
+            .await?
+        }
+        "dr-tiers" => {
+            sqlx::query_as::<_, LookupQueryRow>(
+                r#"UPDATE disaster_recovery_tiers
+                   SET tier_code = COALESCE($1, tier_code),
+                       tier_name = $2, description = $3
+                   WHERE dr_tier_id = $4
+                   RETURNING dr_tier_id AS id, tier_code AS code, tier_name AS name, description"#,
+            )
+            .bind(body.code.as_deref())
+            .bind(body.name.trim())
+            .bind(body.description.as_deref())
+            .bind(id)
+            .fetch_optional(&state.pool)
+            .await?
+        }
+        "lifecycle-stages" => {
+            sqlx::query_as::<_, LookupQueryRow>(
+                r#"UPDATE application_lifecycle_stages
+                   SET stage_code = COALESCE($1, stage_code),
+                       stage_name = $2, description = $3
+                   WHERE stage_id = $4
+                   RETURNING stage_id AS id, stage_code AS code, stage_name AS name, description"#,
+            )
+            .bind(body.code.as_deref())
+            .bind(body.name.trim())
+            .bind(body.description.as_deref())
+            .bind(id)
+            .fetch_optional(&state.pool)
+            .await?
+        }
+        "criticality-tiers" => {
+            sqlx::query_as::<_, LookupQueryRow>(
+                r#"UPDATE application_criticality_tiers
+                   SET tier_code = COALESCE($1, tier_code),
+                       tier_name = $2, description = $3
+                   WHERE tier_id = $4
+                   RETURNING tier_id AS id, tier_code AS code, tier_name AS name, description"#,
+            )
+            .bind(body.code.as_deref())
+            .bind(body.name.trim())
+            .bind(body.description.as_deref())
+            .bind(id)
+            .fetch_optional(&state.pool)
+            .await?
+        }
+        "risk-ratings" => {
+            sqlx::query_as::<_, LookupQueryRow>(
+                r#"UPDATE application_risk_ratings
+                   SET rating_code = COALESCE($1, rating_code),
+                       rating_name = $2, description = $3
+                   WHERE rating_id = $4
+                   RETURNING rating_id AS id, rating_code AS code, rating_name AS name, description"#,
+            )
+            .bind(body.code.as_deref())
+            .bind(body.name.trim())
+            .bind(body.description.as_deref())
+            .bind(id)
+            .fetch_optional(&state.pool)
+            .await?
+        }
+        // Process lookups
+        "process-categories" => {
+            sqlx::query_as::<_, LookupQueryRow>(
+                r#"UPDATE process_categories
+                   SET category_name = $1, description = $2
+                   WHERE category_id = $3
+                   RETURNING category_id AS id, NULL::VARCHAR AS code, category_name AS name, description"#,
+            )
+            .bind(body.name.trim())
+            .bind(body.description.as_deref())
+            .bind(id)
+            .fetch_optional(&state.pool)
+            .await?
+        }
+        // Glossary tags
+        "tags" => {
+            sqlx::query_as::<_, LookupQueryRow>(
+                r#"UPDATE glossary_tags
+                   SET tag_name = $1, description = $2
+                   WHERE tag_id = $3
+                   RETURNING tag_id AS id, NULL::VARCHAR AS code, tag_name AS name, description"#,
+            )
+            .bind(body.name.trim())
+            .bind(body.description.as_deref())
+            .bind(id)
+            .fetch_optional(&state.pool)
+            .await?
+        }
         _ => return Err(AppError::NotFound(format!("unknown lookup table: {table_name}"))),
     };
 
@@ -1338,6 +1672,52 @@ pub async fn delete_lookup(
                 .await?
                 .rows_affected()
         }
+        // Application lookups
+        "app-classifications" => {
+            sqlx::query("DELETE FROM application_classifications WHERE classification_id = $1")
+                .bind(id)
+                .execute(&state.pool)
+                .await?
+                .rows_affected()
+        }
+        "dr-tiers" => sqlx::query("DELETE FROM disaster_recovery_tiers WHERE dr_tier_id = $1")
+            .bind(id)
+            .execute(&state.pool)
+            .await?
+            .rows_affected(),
+        "lifecycle-stages" => {
+            sqlx::query("DELETE FROM application_lifecycle_stages WHERE stage_id = $1")
+                .bind(id)
+                .execute(&state.pool)
+                .await?
+                .rows_affected()
+        }
+        "criticality-tiers" => {
+            sqlx::query("DELETE FROM application_criticality_tiers WHERE tier_id = $1")
+                .bind(id)
+                .execute(&state.pool)
+                .await?
+                .rows_affected()
+        }
+        "risk-ratings" => sqlx::query("DELETE FROM application_risk_ratings WHERE rating_id = $1")
+            .bind(id)
+            .execute(&state.pool)
+            .await?
+            .rows_affected(),
+        // Process lookups
+        "process-categories" => {
+            sqlx::query("DELETE FROM process_categories WHERE category_id = $1")
+                .bind(id)
+                .execute(&state.pool)
+                .await?
+                .rows_affected()
+        }
+        // Glossary tags
+        "tags" => sqlx::query("DELETE FROM glossary_tags WHERE tag_id = $1")
+            .bind(id)
+            .execute(&state.pool)
+            .await?
+            .rows_affected(),
         _ => {
             return Err(AppError::NotFound(format!(
                 "unknown lookup table: {table_name}"
@@ -1458,6 +1838,44 @@ async fn get_usage_count(pool: &sqlx::PgPool, table_name: &str, id: Uuid) -> App
         "organisational-units" => {
             sqlx::query_scalar::<_, i64>(
                 "SELECT COUNT(*) FROM organisational_units WHERE parent_unit_id = $1",
+            ).bind(id).fetch_one(pool).await?
+        }
+        // Application lookups
+        "app-classifications" => {
+            sqlx::query_scalar::<_, i64>(
+                "SELECT COUNT(*) FROM applications WHERE classification_id = $1",
+            ).bind(id).fetch_one(pool).await?
+        }
+        "dr-tiers" => {
+            sqlx::query_scalar::<_, i64>(
+                "SELECT COUNT(*) FROM applications WHERE dr_tier_id = $1",
+            ).bind(id).fetch_one(pool).await?
+        }
+        "lifecycle-stages" => {
+            sqlx::query_scalar::<_, i64>(
+                "SELECT COUNT(*) FROM applications WHERE lifecycle_stage_id = $1",
+            ).bind(id).fetch_one(pool).await?
+        }
+        "criticality-tiers" => {
+            sqlx::query_scalar::<_, i64>(
+                "SELECT COUNT(*) FROM applications WHERE criticality_tier_id = $1",
+            ).bind(id).fetch_one(pool).await?
+        }
+        "risk-ratings" => {
+            sqlx::query_scalar::<_, i64>(
+                "SELECT COUNT(*) FROM applications WHERE risk_rating_id = $1",
+            ).bind(id).fetch_one(pool).await?
+        }
+        // Process lookups
+        "process-categories" => {
+            sqlx::query_scalar::<_, i64>(
+                "SELECT COUNT(*) FROM business_processes WHERE category_id = $1",
+            ).bind(id).fetch_one(pool).await?
+        }
+        // Glossary tags
+        "tags" => {
+            sqlx::query_scalar::<_, i64>(
+                "SELECT COUNT(*) FROM glossary_term_tags WHERE tag_id = $1",
             ).bind(id).fetch_one(pool).await?
         }
         _ => return Err(AppError::NotFound(format!("unknown lookup table: {table_name}"))),

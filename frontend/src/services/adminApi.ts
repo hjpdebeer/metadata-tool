@@ -84,18 +84,30 @@ export interface LookupTableMeta {
 }
 
 export const LOOKUP_TABLES: LookupTableMeta[] = [
+  // Glossary
   { key: 'domains', label: 'Domains', hasCode: true },
   { key: 'categories', label: 'Categories', hasCode: false },
   { key: 'term-types', label: 'Term Types', hasCode: true },
-  { key: 'classifications', label: 'Classifications', hasCode: true },
-  { key: 'units-of-measure', label: 'Units of Measure', hasCode: true },
+  { key: 'tags', label: 'Tags', hasCode: false },
+  { key: 'regulatory-tags', label: 'Regulatory Tags', hasCode: true },
+  { key: 'subject-areas', label: 'Subject Areas', hasCode: true },
+  // Data Dictionary
+  { key: 'classifications', label: 'Data Classifications', hasCode: true },
+  // Applications
+  { key: 'app-classifications', label: 'App Classifications', hasCode: true },
+  { key: 'dr-tiers', label: 'DR Tiers', hasCode: true },
+  { key: 'lifecycle-stages', label: 'Lifecycle Stages', hasCode: true },
+  { key: 'criticality-tiers', label: 'Criticality Tiers', hasCode: true },
+  { key: 'risk-ratings', label: 'Risk Ratings', hasCode: true },
+  // Business Processes
+  { key: 'process-categories', label: 'Process Categories', hasCode: false },
+  // Shared
+  { key: 'organisational-units', label: 'Organisational Units', hasCode: true },
   { key: 'review-frequencies', label: 'Review Frequencies', hasCode: true },
   { key: 'confidence-levels', label: 'Confidence Levels', hasCode: true },
   { key: 'visibility-levels', label: 'Visibility Levels', hasCode: true },
+  { key: 'units-of-measure', label: 'Units of Measure', hasCode: true },
   { key: 'languages', label: 'Languages', hasCode: true },
-  { key: 'regulatory-tags', label: 'Regulatory Tags', hasCode: true },
-  { key: 'subject-areas', label: 'Subject Areas', hasCode: true },
-  { key: 'organisational-units', label: 'Organisational Units', hasCode: true },
 ];
 
 // ---------------------------------------------------------------------------

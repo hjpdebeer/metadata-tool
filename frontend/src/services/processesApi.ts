@@ -21,6 +21,7 @@ export interface BusinessProcess {
   category_id: string | null;
   status_id: string;
   owner_user_id: string | null;
+  steward_user_id: string | null;
   parent_process_id: string | null;
   is_critical: boolean;
   criticality_rationale: string | null;
@@ -61,6 +62,8 @@ export interface BusinessProcessFullView {
   status_code: string;
   owner_user_id: string | null;
   owner_name: string | null;
+  steward_user_id: string | null;
+  steward_name: string | null;
   parent_process_id: string | null;
   parent_process_name: string | null;
   is_critical: boolean;
@@ -122,11 +125,13 @@ export interface ProcessApplicationLink {
 
 export interface CreateProcessRequest {
   process_name: string;
-  process_code: string;
+  process_code?: string;
   description: string;
   detailed_description?: string;
   category_id?: string;
   parent_process_id?: string;
+  owner_user_id?: string;
+  steward_user_id?: string;
   is_critical?: boolean;
   criticality_rationale?: string;
   frequency?: string;
@@ -137,12 +142,12 @@ export interface CreateProcessRequest {
 
 export interface UpdateProcessRequest {
   process_name?: string;
-  process_code?: string;
   description?: string;
   detailed_description?: string;
   category_id?: string;
   parent_process_id?: string;
   owner_user_id?: string;
+  steward_user_id?: string;
   is_critical?: boolean;
   criticality_rationale?: string;
   frequency?: string;

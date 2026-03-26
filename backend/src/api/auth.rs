@@ -313,6 +313,13 @@ pub async fn dev_login(
         return Err(AppError::Unauthorized("invalid email or password".into()));
     }
 
+    // Update last login timestamp
+    sqlx::query("UPDATE users SET last_login_at = NOW() WHERE user_id = $1")
+        .bind(row.user_id)
+        .execute(&state.pool)
+        .await
+        .map_err(|e| AppError::Internal(e.into()))?;
+
     // Issue JWT
     let token = crate::auth::create_token(
         row.user_id,

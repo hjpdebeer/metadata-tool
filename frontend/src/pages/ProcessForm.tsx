@@ -5,6 +5,7 @@ import {
   Breadcrumb,
   Button,
   Card,
+  Collapse,
   Form,
   Input,
   Select,
@@ -83,7 +84,6 @@ const ProcessForm: React.FC = () => {
       setIsCritical(response.data.is_critical);
       form.setFieldsValue({
         process_name: response.data.process_name,
-        process_code: response.data.process_code,
         description: response.data.description,
         detailed_description: response.data.detailed_description || undefined,
         category_id: response.data.category_id || undefined,
@@ -120,7 +120,6 @@ const ProcessForm: React.FC = () => {
         const updateData: UpdateProcessRequest = {};
         const fields: (keyof CreateProcessRequest)[] = [
           'process_name',
-          'process_code',
           'description',
           'detailed_description',
           'category_id',
@@ -150,13 +149,10 @@ const ProcessForm: React.FC = () => {
       } else {
         const cleanData: CreateProcessRequest = {
           process_name: values.process_name,
-          process_code: values.process_code,
           description: values.description,
           detailed_description: values.detailed_description || undefined,
           category_id: values.category_id || undefined,
           parent_process_id: values.parent_process_id || undefined,
-          is_critical: values.is_critical,
-          criticality_rationale: values.criticality_rationale || undefined,
           frequency: values.frequency || undefined,
           regulatory_requirement: values.regulatory_requirement || undefined,
           sla_description: values.sla_description || undefined,
@@ -256,22 +252,6 @@ const ProcessForm: React.FC = () => {
           </Form.Item>
 
           <Form.Item
-            name="process_code"
-            label="Process Code"
-            rules={[
-              { required: true, message: 'Process code is required' },
-              { max: 64, message: 'Process code cannot exceed 64 characters' },
-              {
-                pattern: /^[A-Z][A-Z0-9]*(_[A-Z0-9]+)*$/,
-                message: 'Process code must be UPPER_SNAKE_CASE (e.g., CUSTOMER_ONBOARDING)',
-              },
-            ]}
-            tooltip="Must be UPPER_SNAKE_CASE (e.g., CUSTOMER_ONBOARDING)"
-          >
-            <Input placeholder="e.g., CUSTOMER_ONBOARDING" disabled={isEditing} />
-          </Form.Item>
-
-          <Form.Item
             name="description"
             label="Description"
             rules={[
@@ -288,17 +268,6 @@ const ProcessForm: React.FC = () => {
             />
           </Form.Item>
 
-          <Form.Item
-            name="detailed_description"
-            label="Detailed Description"
-            tooltip="Extended description with step-by-step details, constraints, and edge cases"
-          >
-            <TextArea
-              rows={4}
-              placeholder="Provide detailed process documentation"
-            />
-          </Form.Item>
-
           <Form.Item name="category_id" label="Category">
             <Select
               placeholder="Select a category"
@@ -309,100 +278,129 @@ const ProcessForm: React.FC = () => {
             />
           </Form.Item>
 
-          <Form.Item
-            name="parent_process_id"
-            label="Parent Process"
-            tooltip="Select a parent process if this is a sub-process"
-          >
-            <Select
-              placeholder="Select a parent process"
-              options={parentProcessOptions}
-              allowClear
-              showSearch
-              optionFilterProp="label"
-            />
-          </Form.Item>
-
-          <Form.Item
-            name="is_critical"
-            label="Critical Business Process"
-            valuePropName="checked"
-          >
-            <Switch
-              checkedChildren="Yes"
-              unCheckedChildren="No"
-              onChange={(checked) => setIsCritical(checked)}
-            />
-          </Form.Item>
-
-          {isCritical && (
+          {isEditing && (
             <>
-              <Alert
-                type="warning"
-                showIcon
-                icon={<WarningOutlined />}
-                message="CDE Auto-Designation"
-                description="All data elements linked to this process will be automatically designated as Critical Data Elements (CDEs). This cannot be undone by simply unlinking — CDE status must be removed manually from each element."
-                style={{ marginBottom: 16 }}
-              />
               <Form.Item
-                name="criticality_rationale"
-                label="Criticality Rationale"
-                tooltip="Explain why this process is classified as critical"
-                rules={[
-                  { required: true, message: 'Please provide a rationale for critical designation' },
-                ]}
+                name="is_critical"
+                label="Critical Business Process"
+                valuePropName="checked"
               >
-                <TextArea
-                  rows={3}
-                  placeholder="e.g., Regulatory reporting process mandated by the central bank — failure to execute impacts compliance"
+                <Switch
+                  checkedChildren="Yes"
+                  unCheckedChildren="No"
+                  onChange={(checked) => setIsCritical(checked)}
                 />
               </Form.Item>
+
+              {isCritical && (
+                <>
+                  <Alert
+                    type="warning"
+                    showIcon
+                    icon={<WarningOutlined />}
+                    message="CDE Auto-Designation"
+                    description="All data elements linked to this process will be automatically designated as Critical Data Elements (CDEs). This cannot be undone by simply unlinking — CDE status must be removed manually from each element."
+                    style={{ marginBottom: 16 }}
+                  />
+                  <Form.Item
+                    name="criticality_rationale"
+                    label="Criticality Rationale"
+                    tooltip="Explain why this process is classified as critical"
+                    rules={[
+                      { required: true, message: 'Please provide a rationale for critical designation' },
+                    ]}
+                  >
+                    <TextArea
+                      rows={3}
+                      placeholder="e.g., Regulatory reporting process mandated by the central bank — failure to execute impacts compliance"
+                    />
+                  </Form.Item>
+                </>
+              )}
             </>
           )}
 
-          <Form.Item name="frequency" label="Frequency">
-            <Select
-              placeholder="Select process frequency"
-              options={FREQUENCIES}
-              allowClear
-            />
-          </Form.Item>
-
-          <Form.Item
-            name="regulatory_requirement"
-            label="Regulatory Requirement"
-            tooltip="Reference to the regulation that mandates or governs this process"
-          >
-            <TextArea
-              rows={3}
-              placeholder="e.g., Basel III Pillar 3 disclosure requirement, BCBS 239 compliance"
-            />
-          </Form.Item>
-
-          <Form.Item
-            name="sla_description"
-            label="SLA Description"
-            tooltip="Service Level Agreement details for this process"
-          >
-            <TextArea
-              rows={2}
-              placeholder="e.g., Must complete by T+1 end of business, 99.9% uptime"
-            />
-          </Form.Item>
-
-          <Form.Item
-            name="documentation_url"
-            label="Documentation URL"
-            rules={[
+          <Collapse
+            ghost
+            style={{ marginBottom: 16 }}
+            items={[
               {
-                type: 'url',
-                message: 'Please enter a valid URL',
+                key: 'additional',
+                label: 'Additional Details',
+                children: (
+                  <>
+                    <Form.Item
+                      name="detailed_description"
+                      label="Detailed Description"
+                      tooltip="Extended description with step-by-step details, constraints, and edge cases"
+                    >
+                      <TextArea
+                        rows={4}
+                        placeholder="Provide detailed process documentation"
+                      />
+                    </Form.Item>
+
+                    <Form.Item
+                      name="parent_process_id"
+                      label="Parent Process"
+                      tooltip="Select a parent process if this is a sub-process"
+                    >
+                      <Select
+                        placeholder="Select a parent process"
+                        options={parentProcessOptions}
+                        allowClear
+                        showSearch
+                        optionFilterProp="label"
+                      />
+                    </Form.Item>
+
+                    <Form.Item name="frequency" label="Frequency">
+                      <Select
+                        placeholder="Select process frequency"
+                        options={FREQUENCIES}
+                        allowClear
+                      />
+                    </Form.Item>
+
+                    <Form.Item
+                      name="regulatory_requirement"
+                      label="Regulatory Requirement"
+                      tooltip="Reference to the regulation that mandates or governs this process"
+                    >
+                      <TextArea
+                        rows={3}
+                        placeholder="e.g., Basel III Pillar 3 disclosure requirement, BCBS 239 compliance"
+                      />
+                    </Form.Item>
+
+                    <Form.Item
+                      name="sla_description"
+                      label="SLA Description"
+                      tooltip="Service Level Agreement details for this process"
+                    >
+                      <TextArea
+                        rows={2}
+                        placeholder="e.g., Must complete by T+1 end of business, 99.9% uptime"
+                      />
+                    </Form.Item>
+
+                    <Form.Item
+                      name="documentation_url"
+                      label="Documentation URL"
+                      rules={[
+                        {
+                          type: 'url',
+                          message: 'Please enter a valid URL',
+                        },
+                      ]}
+                    >
+                      <Input placeholder="https://..." />
+                    </Form.Item>
+                  </>
+                ),
               },
             ]}
-          >
-            <Input placeholder="https://..." />
-          </Form.Item>
+          />
 
           <Form.Item style={{ marginTop: 24 }}>
             <Space>

@@ -17,7 +17,7 @@ permissions:
 
 env:
   AWS_REGION: eu-west-1
-  AWS_ACCOUNT_ID: "027024253852"
+  AWS_ACCOUNT_ID: ${{ vars.AWS_ACCOUNT_ID }}
   ECR_REPOSITORY: metadata-tool-demo
   ECS_CLUSTER: metadata-tool-demo
   ECS_SERVICE: metadata-tool-api
@@ -35,7 +35,7 @@ jobs:
       - name: Configure AWS credentials (OIDC)
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: arn:aws:iam::027024253852:role/github-actions-metadata-tool
+          role-to-assume: arn:aws:iam::${{ vars.AWS_ACCOUNT_ID }}:role/github-actions-metadata-tool
           aws-region: ${{ env.AWS_REGION }}
 
       - name: Login to Amazon ECR

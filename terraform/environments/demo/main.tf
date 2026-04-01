@@ -80,6 +80,11 @@ module "compute" {
   db_password = var.db_password
 
   domain       = var.domain
+
+  # Entra SSO (passed as variables, not hardcoded)
+  entra_tenant_id     = var.entra_tenant_id
+  entra_client_id     = var.entra_client_id
+  entra_client_secret = var.entra_client_secret
 }
 
 module "frontend" {

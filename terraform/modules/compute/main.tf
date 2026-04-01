@@ -110,10 +110,10 @@ resource "aws_ecs_task_definition" "api" {
         { name = "AI_PRIMARY_PROVIDER", value = "claude" },
         { name = "ANTHROPIC_MODEL", value = "claude-sonnet-4-6" },
         { name = "OPENAI_MODEL", value = "gpt-4o" },
-        # Entra SSO
-        { name = "ENTRA_TENANT_ID", value = "28972789-b904-42eb-aafb-c4eebc7efde3" },
-        { name = "ENTRA_CLIENT_ID", value = "ea1513ea-1834-4448-9e80-5450b923994a" },
-        { name = "ENTRA_CLIENT_SECRET", value = "pNx8Q~zGwG6DdEL6cf6OB_QJxicCxKVKVKv5~ceF" },
+        # Entra SSO (from variables, never hardcoded)
+        { name = "ENTRA_TENANT_ID", value = var.entra_tenant_id },
+        { name = "ENTRA_CLIENT_ID", value = var.entra_client_id },
+        { name = "ENTRA_CLIENT_SECRET", value = var.entra_client_secret },
         { name = "ENTRA_REDIRECT_URI", value = "https://${var.domain}/api/v1/auth/callback" },
         # Graph API — leave empty (email notifications disabled)
         { name = "GRAPH_TENANT_ID", value = "" },

@@ -117,3 +117,23 @@ variable "openai_api_key" {
   sensitive   = true
   default     = ""
 }
+
+# Entra SSO
+variable "entra_tenant_id" {
+  description = "Microsoft Entra tenant ID"
+  type        = string
+  default     = ""
+}
+
+variable "entra_client_id" {
+  description = "Microsoft Entra application (client) ID"
+  type        = string
+  default     = ""
+}
+
+variable "entra_client_secret" {
+  description = "Microsoft Entra client secret"
+  type        = string
+  sensitive   = true
+  default     = ""
+}

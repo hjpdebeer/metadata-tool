@@ -102,7 +102,7 @@ resource "aws_ecs_task_definition" "api" {
 
       # Environment variables (non-sensitive)
       environment = [
-        { name = "DATABASE_URL", value = "postgres://${var.db_username}:${var.db_password}@localhost:6432/${var.db_name}" },
+        { name = "DATABASE_URL", value = "postgres://${var.db_username}:${var.db_password}@${var.db_host}:${var.db_port}/${var.db_name}?sslmode=require" },
         { name = "HOST", value = "0.0.0.0" },
         { name = "PORT", value = "8080" },
         { name = "RUST_LOG", value = "metadata_tool=info,tower_http=info" },
@@ -139,15 +139,12 @@ resource "aws_ecs_task_definition" "api" {
         }
       }
 
-      dependsOn = [{
-        containerName = "pgcat"
-        condition     = "START"
-      }]
+      # PgCat sidecar bypassed for now (direct RDS with sslmode=require)
     },
     {
       name      = "pgcat"
       image     = "ghcr.io/postgresml/pgcat:latest"
-      essential = true
+      essential = false
       cpu       = 256
       memory    = 256
 
@@ -225,6 +222,7 @@ resource "aws_lb" "api" {
   load_balancer_type = "application"
   security_groups    = [var.alb_security_group_id]
   subnets            = var.public_subnet_ids
+  idle_timeout       = 120 # AI enrichment calls can take 60+ seconds
 
   tags = {
     Name = "metadata-tool-${var.environment}-alb"
